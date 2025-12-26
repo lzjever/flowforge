@@ -23,32 +23,59 @@ class Routine(Serializable):
     Features:
     - Support for slots (input slots)
     - Support for events (output events)
-    - Provides stats() method to return state dictionary
+    - Statistics dictionary (_stats) for tracking execution metrics
     - Configuration dictionary (_config) for storing routine-specific settings
+    
+    Statistics Management (_stats):
+        The _stats dictionary is used to track runtime statistics and execution
+        metrics. It is automatically serialized/deserialized and can be accessed
+        via stats(), get_stat(), set_stat(), and increment_stat() methods.
+        
+        Common statistics tracked automatically:
+        - "called": Boolean indicating if routine has been called
+        - "call_count": Number of times routine has been executed
+        - "emitted_events": List of events emitted with their data
+        
+        Subclasses can track custom statistics:
+        - Processing counts, error counts, timing information, etc.
+        - Use set_stat() or increment_stat() for type-safe updates
+        - Direct access via self._stats is also supported
+    
+    Configuration Management (_config):
+        The _config dictionary stores routine-specific configuration that should
+        persist across serialization. Use set_config() and get_config() methods
+        for convenient access.
     
     Important Constraints:
         - Routines MUST NOT accept constructor parameters (except self).
           This is required for proper serialization/deserialization.
         - All configuration should be stored in the _config dictionary.
-        - Configuration can be set after object creation using set_config()
-          or by directly modifying self._config.
-        - The _config dictionary is automatically included in serialization.
+        - All statistics should be stored in the _stats dictionary.
+        - Both _config and _stats are automatically included in serialization.
     
     Examples:
-        Correct usage:
+        Correct usage with configuration and statistics:
             >>> class MyRoutine(Routine):
             ...     def __init__(self):
             ...         super().__init__()
-            ...         self._config["name"] = "my_routine"
-            ...         self._config["timeout"] = 30
-            ...         # Or use set_config()
+            ...         # Set configuration
             ...         self.set_config(name="my_routine", timeout=30)
+            ...         # Initialize statistics
+            ...         self.set_stat("processed_count", 0)
+            ...         self.set_stat("error_count", 0)
+            ...     
+            ...     def __call__(self, **kwargs):
+            ...         super().__call__(**kwargs)
+            ...         # Track custom statistics
+            ...         self.increment_stat("processed_count")
+            ...         # Use configuration
+            ...         timeout = self.get_config("timeout", default=10)
         
         Incorrect usage (will break serialization):
             >>> class BadRoutine(Routine):
             ...     def __init__(self, name: str):  # ❌ Don't do this!
             ...         super().__init__()
-            ...         self.name = name
+            ...         self.name = name  # Use _config instead!
     """
     
     def __init__(self):
@@ -63,11 +90,26 @@ class Routine(Serializable):
         self._id: str = hex(id(self))
         self._slots: Dict[str, 'Slot'] = {}
         self._events: Dict[str, 'Event'] = {}
+        
+        # Statistics dictionary for tracking execution metrics and runtime statistics
+        # Automatically tracked statistics:
+        #   - "called": Boolean, set to True when routine is executed
+        #   - "call_count": Integer, incremented each time routine is called
+        #   - "emitted_events": List of dicts, records each event emission with data
+        # Subclasses can add custom statistics like:
+        #   - Processing counts, error counts, timing information, etc.
+        # Use set_stat(), get_stat(), increment_stat() methods for type-safe access
+        # Direct access via self._stats[key] is also supported
         self._stats: Dict[str, Any] = {}
-        self._config: Dict[str, Any] = {}  # Configuration dictionary
+        
+        # Configuration dictionary for storing routine-specific settings
+        # All configuration values are automatically serialized/deserialized
+        # Use set_config() and get_config() methods for convenient access
+        self._config: Dict[str, Any] = {}
         
         # Register serializable fields
-        # _config is included to ensure configuration is preserved during serialization
+        # Both _stats and _config are included to ensure they are preserved
+        # during serialization/deserialization
         self.add_serializable_fields(["_id", "_stats", "_slots", "_events", "_config"])
     
     def __repr__(self) -> str:
@@ -195,8 +237,16 @@ class Routine(Serializable):
         
         event.emit(flow=flow, **kwargs)
         
-        # Update state
-        self._stats.setdefault("emitted_events", []).append({
+        # Track event emission in statistics
+        # This records each event emission for monitoring and debugging purposes
+        # The emitted_events list contains dictionaries with event name and data
+        # This is useful for:
+        #   - Debugging event flow
+        #   - Monitoring routine behavior
+        #   - Analyzing execution patterns
+        if "emitted_events" not in self._stats:
+            self._stats["emitted_events"] = []
+        self._stats["emitted_events"].append({
             "event": event_name,
             "data": kwargs
         })
@@ -220,26 +270,160 @@ class Routine(Serializable):
                 )
     
     def stats(self) -> Dict[str, Any]:
-        """Return a copy of the state dictionary.
-
+        """Return a copy of the statistics dictionary.
+        
+        This method returns a snapshot of all statistics tracked by this routine.
+        The returned dictionary is a copy, so modifications won't affect the
+        original _stats dictionary.
+        
         Returns:
-            Copy of the state dictionary.
+            Copy of the _stats dictionary containing all tracked statistics.
+            Common keys include:
+            - "called": Boolean indicating if routine has been executed
+            - "call_count": Number of times routine has been called
+            - "emitted_events": List of event emission records
+            - Custom statistics added by subclasses
+        
+        Examples:
+            >>> routine = MyRoutine()
+            >>> routine()  # Execute routine
+            >>> stats = routine.stats()
+            >>> print(stats["call_count"])  # 1
+            >>> print(stats["called"])  # True
+            >>> print(len(stats.get("emitted_events", [])))  # Number of events emitted
         """
         return self._stats.copy()
+    
+    def set_stat(self, key: str, value: Any) -> None:
+        """Set a statistics value in the _stats dictionary.
+        
+        This is the recommended way to set or update statistics. All statistics
+        are automatically serialized/deserialized.
+        
+        Args:
+            key: Statistics key name.
+            value: Statistics value to set. Can be any serializable type.
+        
+        Examples:
+            >>> routine = MyRoutine()
+            >>> routine.set_stat("processed_count", 0)
+            >>> routine.set_stat("last_processed_time", time.time())
+            >>> routine.set_stat("status", "active")
+            
+            >>> # You can also set stats directly:
+            >>> routine._stats["custom_metric"] = 42
+        """
+        self._stats[key] = value
+    
+    def get_stat(self, key: str, default: Any = None) -> Any:
+        """Get a statistics value from the _stats dictionary.
+        
+        Args:
+            key: Statistics key to retrieve.
+            default: Default value to return if key doesn't exist.
+        
+        Returns:
+            Statistics value if found, default value otherwise.
+        
+        Examples:
+            >>> routine = MyRoutine()
+            >>> routine.set_stat("processed_count", 10)
+            >>> count = routine.get_stat("processed_count", default=0)  # Returns 10
+            >>> errors = routine.get_stat("error_count", default=0)  # Returns 0
+        """
+        return self._stats.get(key, default)
+    
+    def increment_stat(self, key: str, amount: int = 1) -> int:
+        """Increment a numeric statistics value.
+        
+        This is a convenience method for incrementing counters. If the key
+        doesn't exist, it's initialized to 0 before incrementing.
+        
+        Args:
+            key: Statistics key to increment.
+            amount: Amount to increment by (default: 1).
+        
+        Returns:
+            The new value after incrementing.
+        
+        Examples:
+            >>> routine = MyRoutine()
+            >>> routine.increment_stat("processed_count")  # Returns 1
+            >>> routine.increment_stat("processed_count")  # Returns 2
+            >>> routine.increment_stat("processed_count", amount=5)  # Returns 7
+            >>> routine.get_stat("processed_count")  # 7
+        """
+        if key not in self._stats:
+            self._stats[key] = 0
+        self._stats[key] += amount
+        return self._stats[key]
+    
+    def reset_stats(self, keys: Optional[List[str]] = None) -> None:
+        """Reset statistics values.
+        
+        Args:
+            keys: List of statistic keys to reset. If None, resets all statistics
+                except "emitted_events" (which is typically preserved for history).
+                If empty list, no statistics are reset.
+        
+        Examples:
+            >>> routine = MyRoutine()
+            >>> routine.set_stat("count", 10)
+            >>> routine.set_stat("errors", 5)
+            >>> routine.reset_stats(["count"])  # Reset only "count"
+            >>> routine.get_stat("count")  # None or default
+            >>> routine.get_stat("errors")  # Still 5
+            
+            >>> routine.reset_stats()  # Reset all except "emitted_events"
+        """
+        if keys is None:
+            # Reset all statistics except emitted_events (preserve history)
+            emitted_events = self._stats.get("emitted_events", [])
+            self._stats.clear()
+            if emitted_events:
+                self._stats["emitted_events"] = emitted_events
+        else:
+            # Reset only specified keys
+            for key in keys:
+                if key in self._stats:
+                    del self._stats[key]
     
     def __call__(self, **kwargs) -> None:
         """Execute routine.
 
         Subclasses should override this method to implement specific execution logic.
+        The base implementation automatically tracks execution statistics.
 
         Args:
             **kwargs: Parameters passed to the routine.
-        """
-        # Update state
-        self._stats["called"] = True
-        self._stats["call_count"] = self._stats.get("call_count", 0) + 1
+
+        Note:
+            The base implementation automatically updates statistics:
+            - Sets "called" to True
+            - Increments "call_count" by 1
+            Subclasses can track additional statistics using set_stat() or
+            increment_stat() methods.
         
-        # Subclasses can override this method to implement specific logic
+        Examples:
+            >>> class MyRoutine(Routine):
+            ...     def __call__(self, **kwargs):
+            ...         super().__call__(**kwargs)  # Track base statistics
+            ...         # Track custom statistics
+            ...         self.increment_stat("custom_operations")
+            ...         # Your custom logic here
+        """
+        # Track execution statistics
+        # Mark routine as having been called at least once
+        self._stats["called"] = True
+        
+        # Increment call counter to track how many times routine has been executed
+        # This is useful for monitoring routine usage and performance analysis
+        if "call_count" not in self._stats:
+            self._stats["call_count"] = 0
+        self._stats["call_count"] += 1
+        
+        # Subclasses should override this method to implement specific execution logic
+        # They can call super().__call__(**kwargs) to maintain base statistics tracking
         pass
     
     def get_slot(self, name: str) -> Optional['Slot']:
