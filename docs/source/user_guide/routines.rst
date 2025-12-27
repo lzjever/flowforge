@@ -50,7 +50,7 @@ Events are output mechanisms for routines. Define an event with output parameter
    self.output_event = self.define_event("output", ["result", "status"])
 
 Emitting Events
---------------
+---------------
 
 Emit events to trigger connected slots:
 
@@ -139,4 +139,100 @@ Routines are executed by calling them:
    routine(data="test")
 
 Or through a Flow's execute method (see :doc:`flows`).
+
+Multiple Slots Behavior
+------------------------
+
+A routine can have multiple slots, each connected to different upstream routines.
+When an upstream routine emits data, it triggers the handler of the connected slot.
+
+**Important**: Each slot has its own handler and is triggered independently.
+
+**Example:**
+
+.. code-block:: python
+
+   class TargetRoutine(Routine):
+       def __init__(self):
+           super().__init__()
+           # Define three slots, each with its own handler
+           self.slot1 = self.define_slot("input1", handler=self._handle_input1)
+           self.slot2 = self.define_slot("input2", handler=self._handle_input2)
+           self.slot3 = self.define_slot("input3", handler=self._handle_input3)
+       
+       def _handle_input1(self, data1=None, **kwargs):
+           # This handler is called when slot1 receives data
+           pass
+       
+       def _handle_input2(self, data2=None, **kwargs):
+           # This handler is called when slot2 receives data
+           pass
+       
+       def _handle_input3(self, data3=None, **kwargs):
+           # This handler is called when slot3 receives data
+           pass
+
+If three upstream routines each emit once:
+- **Source1** emits → **slot1** receives → **handler1** is called (1st time)
+- **Source2** emits → **slot2** receives → **handler2** is called (2nd time)
+- **Source3** emits → **slot3** receives → **handler3** is called (3rd time)
+
+**Result**: The target routine's handlers are called **3 times** (once per slot).
+
+**Multiple Emissions**:
+
+If each upstream routine emits multiple times, the downstream routine is called
+for each emission:
+
+.. code-block:: python
+
+   # Each source emits 3 times
+   source1()  # Emits 3 times → slot1 handler called 3 times
+   source2()  # Emits 3 times → slot2 handler called 3 times
+   source3()  # Emits 3 times → slot3 handler called 3 times
+   
+   # Total: 3 sources × 3 emissions = 9 handler calls
+
+Each slot operates independently:
+* Each slot maintains its own ``_data`` state
+* Each slot's merge_strategy applies independently
+* Each slot's handler is called immediately when data is received
+* Each emission triggers the handler once
+* Handlers can be different functions or the same function
+
+**Concurrent Execution Mode**:
+
+The same behavior applies in concurrent execution mode. When using
+``execution_strategy="concurrent"``, each slot's handler is still called
+once for each emission it receives, but handlers may execute concurrently
+in different threads.
+
+.. code-block:: python
+
+   # Create concurrent flow
+   flow = Flow(execution_strategy="concurrent", max_workers=5)
+   
+   # Same connections as before
+   flow.connect(source1_id, "output", target_id, "input1")
+   flow.connect(source2_id, "output", target_id, "input2")
+   flow.connect(source3_id, "output", target_id, "input3")
+   
+   # Each source emits 3 times
+   flow.execute(source1_id)  # Emits 3 times → slot1 handler called 3 times
+   flow.execute(source2_id)  # Emits 3 times → slot2 handler called 3 times
+   flow.execute(source3_id)  # Emits 3 times → slot3 handler called 3 times
+   
+   # Wait for all concurrent tasks to complete
+   flow.wait_for_completion(timeout=10.0)
+   
+   # Total: Still 9 handler calls (3 sources × 3 emissions)
+   # Note: In concurrent mode, calls may be interleaved across threads
+
+**Important Notes for Concurrent Mode**:
+* Each slot's handler is called in a separate thread when data is received
+* Handler calls may be interleaved (not necessarily in order)
+* Use thread-safe operations if handlers share state
+* The total number of calls remains the same as sequential mode
+* Always call ``wait_for_completion()`` to ensure all handlers finish
+* Always call ``shutdown(wait=True)`` when done to clean up resources
 
