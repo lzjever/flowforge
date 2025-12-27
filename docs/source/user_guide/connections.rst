@@ -55,39 +55,23 @@ for each emission:
    
    # Total: 3 sources × 3 emissions = 9 handler calls
 
-**Concurrent Execution Mode**:
+**Note on Execution Strategy**:
 
-In concurrent execution mode (``execution_strategy="concurrent"``), the same
-behavior applies - each slot's handler is called once for each emission:
-
-.. code-block:: python
-
-   flow = Flow(execution_strategy="concurrent", max_workers=5)
-   
-   # Same connections
-   flow.connect(source1_id, "output", target_id, "input1")
-   flow.connect(source2_id, "output", target_id, "input2")
-   flow.connect(source3_id, "output", target_id, "input3")
-   
-   # Each source emits 3 times
-   flow.execute(source1_id)  # 3 emissions → 3 handler calls
-   flow.execute(source2_id)  # 3 emissions → 3 handler calls
-   flow.execute(source3_id)  # 3 emissions → 3 handler calls
-   
-   flow.wait_for_completion(timeout=10.0)
-   # Total: 9 handler calls (same as sequential mode)
-   # Note: Calls may be interleaved across threads
-
-**Key Points**:
-* Total number of handler calls is the same in both sequential and concurrent modes
-* In concurrent mode, handlers execute in separate threads
-* Handler calls may be interleaved (order not guaranteed)
-* Use thread-safe operations if handlers share state
-* Always call ``wait_for_completion()`` and ``shutdown()`` in concurrent mode
+The behavior described above applies regardless of the Flow's execution strategy
+(sequential or concurrent). The key point is that each slot's handler is called
+once for each emission it receives. For details on how execution strategy affects
+the order and timing of handler execution, see :doc:`flows`.
 
 This is the expected behavior - each slot operates independently and triggers
-its handler **once for each emission** it receives from its connected event,
-regardless of execution strategy.
+its handler **once for each emission** it receives from its connected event.
+
+See Also
+--------
+
+* :doc:`flows` - Flow execution strategies and execution order
+* :doc:`routines` - Defining slots and events
+* :doc:`../api_reference/event` - Event API documentation
+* :doc:`../api_reference/slot` - Slot API documentation
 
 Merge Strategy
 ---------------

@@ -32,11 +32,54 @@ from flowforge.serialization_utils import (
 class Flow(Serializable):
     """Flow manager for orchestrating workflow execution.
     
-    Responsibilities:
-    - Manage multiple Routine nodes
-    - Manage connections between nodes
-    - Execute workflow
-    - Persistence and restoration
+    A Flow is a container that manages multiple Routine nodes and their
+    connections, providing workflow orchestration capabilities including
+    execution, error handling, state management, and persistence.
+    
+    Key Responsibilities:
+        - Routine Management: Add, organize, and track routines in the workflow
+        - Connection Management: Link routines via events and slots
+        - Execution Control: Execute workflows sequentially or concurrently
+        - Error Handling: Apply error handling strategies at flow or routine level
+        - State Management: Track execution state via JobState
+        - Persistence: Serialize and restore flow state for resumption
+    
+    Execution Modes:
+        - Sequential: Routines execute one at a time in dependency order.
+          Suitable for workflows with dependencies or when order matters.
+        - Concurrent: Independent routines execute in parallel using threads.
+          Suitable for independent operations that can run simultaneously.
+          Use max_workers to control parallelism.
+    
+    Error Handling:
+        Error handlers can be set at two levels:
+        1. Flow-level: Default handler for all routines (set_error_handler())
+        2. Routine-level: Override for specific routines (routine.set_error_handler())
+        
+        Priority: Routine-level > Flow-level > Default (STOP)
+    
+    Examples:
+        Basic workflow:
+            >>> flow = Flow()
+            >>> routine1 = DataProcessor()
+            >>> routine2 = DataValidator()
+            >>> id1 = flow.add_routine(routine1, "processor")
+            >>> id2 = flow.add_routine(routine2, "validator")
+            >>> flow.connect(id1, "output", id2, "input")
+            >>> job_state = flow.execute(id1, entry_params={"data": "test"})
+        
+        Concurrent execution:
+            >>> flow = Flow(execution_strategy="concurrent", max_workers=5)
+            >>> # Add routines and connections...
+            >>> job_state = flow.execute(entry_id)
+            >>> flow.wait_for_completion()  # Wait for all threads
+            >>> flow.shutdown()  # Clean up thread pool
+        
+        Error handling:
+            >>> from flowforge import ErrorHandler, ErrorStrategy
+            >>> flow.set_error_handler(ErrorHandler(strategy=ErrorStrategy.CONTINUE))
+            >>> # Or set per-routine:
+            >>> routine.set_as_critical(max_retries=3)
     """
     
     def __init__(
@@ -187,16 +230,44 @@ class Flow(Serializable):
     
     def add_routine(self, routine: 'Routine', routine_id: Optional[str] = None) -> str:
         """Add a routine to the flow.
-
+        
+        This method registers a Routine instance in the flow, making it available
+        for connections and execution. Each routine must have a unique ID within
+        the flow.
+        
         Args:
-            routine: Routine object.
-            routine_id: Routine ID (uses routine._id if None).
-
+            routine: Routine instance to add. Must be a subclass of Routine.
+                The routine should be fully configured (slots/events defined)
+                before adding to the flow, though you can modify it afterward.
+            routine_id: Optional unique identifier for this routine in the flow.
+                If None, uses routine._id (auto-generated hex ID).
+                If provided, must be unique within this flow.
+                Recommended: Use descriptive names like "data_processor", "validator"
+                for better readability in logs and debugging.
+        
         Returns:
-            Routine ID.
-
+            The routine ID used (either provided or routine._id).
+            Store this ID to use when connecting routines or executing the flow.
+        
         Raises:
-            ValueError: If routine_id already exists.
+            ValueError: If routine_id already exists in the flow.
+                Each routine must have a unique ID.
+        
+        Examples:
+            Basic usage:
+                >>> flow = Flow()
+                >>> routine = MyRoutine()
+                >>> routine_id = flow.add_routine(routine, "my_routine")
+                >>> # Use routine_id for connections and execution
+            
+            Using auto-generated ID:
+                >>> routine_id = flow.add_routine(routine)  # Uses routine._id
+                >>> print(routine_id)  # e.g., "0x7f8a1b2c3d4e"
+            
+            Multiple routines:
+                >>> processor_id = flow.add_routine(Processor(), "processor")
+                >>> validator_id = flow.add_routine(Validator(), "validator")
+                >>> flow.connect(processor_id, "output", validator_id, "input")
         """
         rid = routine_id or routine._id
         if rid in self.routines:
@@ -213,20 +284,75 @@ class Flow(Serializable):
         target_slot: str,
         param_mapping: Optional[Dict[str, str]] = None
     ) -> 'Connection':
-        """Connect two routines.
-
+        """Connect two routines by linking a source event to a target slot.
+        
+        This creates a data flow connection: when the source routine emits the
+        specified event, the data is automatically passed to the target routine's
+        slot handler.
+        
+        Parameter Mapping:
+            The param_mapping dictionary allows you to rename parameters when
+            passing data from event to slot. This is useful when:
+            - Event and slot use different parameter names
+            - You want to transform parameter names for clarity
+            - You need to map multiple events to the same slot with different names
+            
+            Format: {event_param_name: slot_param_name}
+            
+            If param_mapping is None, parameters are passed with their original names.
+            If an event parameter is not in the mapping, it's passed with the same name.
+            If a slot parameter is not in the mapping and the event doesn't have
+            a parameter with that name, it will be missing (handler should handle this).
+        
         Args:
-            source_routine_id: Source routine identifier.
-            source_event: Source event name.
-            target_routine_id: Target routine identifier.
-            target_slot: Target slot name.
-            param_mapping: Parameter mapping dictionary.
-
+            source_routine_id: Identifier of the routine that emits the event.
+                Must be a routine added to this flow via add_routine().
+            source_event: Name of the event to connect from. This event must
+                be defined in the source routine using define_event().
+            target_routine_id: Identifier of the routine that receives the data.
+                Must be a routine added to this flow via add_routine().
+            target_slot: Name of the slot to connect to. This slot must be
+                defined in the target routine using define_slot().
+            param_mapping: Optional dictionary mapping event parameter names to
+                slot parameter names. If None, parameters are passed unchanged.
+                Example: {"event_data": "slot_input", "event_count": "slot_count"}
+        
         Returns:
-            Connection object.
-
+            Connection object representing this connection. You typically don't
+            need to use this return value, but it can be useful for:
+            - Inspecting connection details
+            - Programmatically managing connections
+            - Debugging connection issues
+        
         Raises:
-            ValueError: If routine, event, or slot does not exist.
+            ValueError: If any of the following conditions are not met:
+                - Source routine does not exist
+                - Source event does not exist in source routine
+                - Target routine does not exist
+                - Target slot does not exist in target routine
+        
+        Examples:
+            Basic connection (no parameter mapping):
+                >>> flow = Flow()
+                >>> source_id = flow.add_routine(SourceRoutine(), "source")
+                >>> target_id = flow.add_routine(TargetRoutine(), "target")
+                >>> flow.connect(source_id, "output", target_id, "input")
+                >>> # When source emits "output" with {"data": "value"},
+                >>> # target's "input" slot handler receives {"data": "value"}
+            
+            Connection with parameter mapping:
+                >>> flow.connect(
+                ...     source_id, "output",
+                ...     target_id, "input",
+                ...     param_mapping={"source_data": "target_input", "count": "total"}
+                ... )
+                >>> # Event emits: {"source_data": "x", "count": 5, "extra": "ignored"}
+                >>> # Slot receives: {"target_input": "x", "total": 5, "extra": "ignored"}
+            
+            Multiple connections from same event:
+                >>> flow.connect(source_id, "output", target1_id, "input1")
+                >>> flow.connect(source_id, "output", target2_id, "input2")
+                >>> # Both targets receive data when source emits "output"
         """
         # Validate source routine
         if source_routine_id not in self.routines:
@@ -258,12 +384,47 @@ class Flow(Serializable):
         return connection
     
     def set_error_handler(self, error_handler: 'ErrorHandler') -> None:
-        """Set error handler.
-
+        """Set error handler for the flow.
+        
+        This sets the default error handler for all routines in the flow.
+        Individual routines can override this by setting their own error handler
+        using routine.set_error_handler().
+        
+        Priority order:
+        1. Routine-level error handler (if set)
+        2. Flow-level error handler (if set)
+        3. Default behavior (STOP)
+        
         Args:
             error_handler: ErrorHandler object.
         """
         self.error_handler = error_handler
+    
+    def _get_error_handler_for_routine(
+        self, 
+        routine: 'Routine', 
+        routine_id: str
+    ) -> Optional['ErrorHandler']:
+        """Get error handler for a routine.
+        
+        Priority order:
+        1. Routine-level error handler (if set)
+        2. Flow-level error handler (if set)
+        3. None (default STOP behavior)
+        
+        Args:
+            routine: Routine object.
+            routine_id: Routine ID.
+        
+        Returns:
+            ErrorHandler instance or None.
+        """
+        # Priority 1: Routine-level error handler
+        if routine.get_error_handler() is not None:
+            return routine.get_error_handler()
+        
+        # Priority 2: Flow-level error handler
+        return self.error_handler
     
     def pause(self, reason: str = "", checkpoint: Optional[Dict[str, Any]] = None) -> None:
         """Pause execution.
@@ -290,18 +451,68 @@ class Flow(Serializable):
         entry_params: Optional[Dict[str, Any]] = None,
         execution_strategy: Optional[str] = None
     ) -> 'JobState':
-        """Execute the flow.
-
+        """Execute the flow starting from the specified entry routine.
+        
+        This method initiates workflow execution. The flow will:
+        1. Execute the entry routine with the provided parameters
+        2. Propagate execution through connected routines based on events/slots
+        3. Handle errors according to configured error handlers
+        4. Track execution state in the returned JobState
+        
+        Execution Strategy:
+            - "sequential": Routines execute one at a time in dependency order
+            - "concurrent": Independent routines can execute in parallel using threads
+            
+        The execution strategy can be set:
+            - At Flow initialization (execution_strategy parameter)
+            - Via set_execution_strategy() method
+            - Per-execution via this method's execution_strategy parameter (temporary override)
+        
         Args:
-            entry_routine_id: Entry routine identifier.
-            entry_params: Entry parameters.
-            execution_strategy: Execution strategy (optional, overrides default).
-
+            entry_routine_id: Identifier of the routine to start execution from.
+                This routine must exist in the flow (added via add_routine()).
+            entry_params: Optional dictionary of parameters to pass to the entry
+                routine's __call__ method. These are passed as keyword arguments.
+                Example: {"data": "value", "count": 42}
+            execution_strategy: Optional execution strategy override.
+                If provided, temporarily overrides the flow's default strategy
+                for this execution only. Must be "sequential" or "concurrent".
+                If None, uses the flow's default strategy.
+        
         Returns:
-            JobState object.
-
+            JobState object containing:
+            - Execution status ("completed", "failed", "paused", "cancelled")
+            - State of each routine in the flow
+            - Execution history with timestamps
+            - Error information (if any)
+            
+            Use job_state.status to check execution result.
+            Use job_state.get_routine_state(routine_id) to inspect individual routine states.
+        
         Raises:
-            ValueError: If entry_routine_id does not exist.
+            ValueError: If entry_routine_id does not exist in the flow.
+            RuntimeError: If flow is already executing (concurrent execution not supported).
+        
+        Examples:
+            Basic execution:
+                >>> flow = Flow()
+                >>> routine = MyRoutine()
+                >>> routine_id = flow.add_routine(routine, "my_routine")
+                >>> job_state = flow.execute(routine_id, entry_params={"input": "data"})
+                >>> print(job_state.status)  # "completed" or "failed"
+            
+            Execution with custom strategy:
+                >>> job_state = flow.execute(
+                ...     routine_id,
+                ...     entry_params={"input": "data"},
+                ...     execution_strategy="concurrent"  # Override default
+                ... )
+            
+            Checking execution results:
+                >>> job_state = flow.execute(routine_id)
+                >>> if job_state.status == "completed":
+                ...     routine_state = job_state.get_routine_state(routine_id)
+                ...     print(f"Routine executed: {routine_state['status']}")
         """
         if entry_routine_id not in self.routines:
             raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
@@ -383,13 +594,15 @@ class Flow(Serializable):
             
         except Exception as e:
             # Use error handler to process error
-            if self.error_handler:
-                should_continue = self.error_handler.handle_error(
+            # Priority: routine-level > flow-level > default (STOP)
+            error_handler = self._get_error_handler_for_routine(entry_routine, entry_routine_id)
+            if error_handler:
+                should_continue = error_handler.handle_error(
                     e, entry_routine, entry_routine_id, self
                 )
                 
                 # If continue strategy, mark as completed
-                if self.error_handler.strategy.value == "continue":
+                if error_handler.strategy.value == "continue":
                     job_state.status = "completed"
                     job_state.update_routine_state(entry_routine_id, {
                         "status": "error_continued",
@@ -399,32 +612,35 @@ class Flow(Serializable):
                     return job_state
                 
                 # If skip strategy, mark as completed
-                if self.error_handler.strategy.value == "skip":
+                if error_handler.strategy.value == "skip":
                     job_state.status = "completed"
                     return job_state
                 
                 # If retry strategy
-                if should_continue and self.error_handler.strategy.value == "retry":
-                    # Retry logic (handle_error already incremented retry_count, continue retrying here)
+                if should_continue and error_handler.strategy.value == "retry":
+                    # Retry logic (handle_error already incremented retry_count if exception is retryable)
                     # max_retries represents maximum retry count, so total attempts = 1 + max_retries
                     retry_success = False
                     # Already attempted once (initial call), need to retry max_retries more times
-                    remaining_retries = self.error_handler.max_retries
+                    remaining_retries = error_handler.max_retries
                     for attempt in range(remaining_retries):
                         try:
                             entry_routine(**entry_params)
                             retry_success = True
                             break
                         except Exception as retry_error:
-                            # On each retry failure, call handle_error again to update retry_count
-                            if attempt < remaining_retries - 1:
-                                should_continue_retry = self.error_handler.handle_error(
-                                    retry_error, entry_routine, entry_routine_id, self
-                                )
-                                if not should_continue_retry:
-                                    e = retry_error
-                                    break
-                            else:
+                            # On each retry failure, check if we should continue
+                            # For non-retryable exceptions, handle_error returns False immediately
+                            should_continue_retry = error_handler.handle_error(
+                                retry_error, entry_routine, entry_routine_id, self
+                            )
+                            if not should_continue_retry:
+                                # Non-retryable exception or max retries exceeded
+                                e = retry_error
+                                break
+                            # If should_continue_retry is True, we'll continue to next retry
+                            # (unless we've exhausted all retries)
+                            if attempt >= remaining_retries - 1:
                                 # Last retry failed
                                 e = retry_error
                                 break
@@ -437,7 +653,7 @@ class Flow(Serializable):
                             "status": "completed",
                             "stats": entry_routine.stats(),
                             "execution_time": execution_time,
-                            "retry_count": self.error_handler.retry_count
+                            "retry_count": error_handler.retry_count
                         })
                         job_state.record_execution(entry_routine_id, "completed", {
                             "execution_time": execution_time,
@@ -592,8 +808,12 @@ class Flow(Serializable):
                 })
             except Exception as e:
                 # Use error handler
-                if self.error_handler:
-                    should_continue = self.error_handler.handle_error(
+                # Priority: routine-level > flow-level > default (STOP)
+                error_handler = self._get_error_handler_for_routine(
+                    routine, job_state.current_routine_id
+                )
+                if error_handler:
+                    should_continue = error_handler.handle_error(
                         e, routine, job_state.current_routine_id, self
                     )
                     if not should_continue:

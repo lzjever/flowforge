@@ -214,9 +214,8 @@ All built-in routines have comprehensive test coverage with **50 test cases**:
   * DataTransformer: 4 tests
   * DataValidator: 5 tests
 
-* **Control Flow Routines**: 9 tests
-  * ConditionalRouter: 4 tests
-  * RetryHandler: 5 tests
+* **Control Flow Routines**: 10 tests
+  * ConditionalRouter: 10 tests
 
 All tests pass with 100% success rate. Each routine package includes its own
 test directory for easy maintenance and standalone usage.

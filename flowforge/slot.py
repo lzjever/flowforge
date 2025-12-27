@@ -18,52 +18,70 @@ from flowforge.serialization_utils import serialize_callable, deserialize_callab
 class Slot(Serializable):
     """Input slot for receiving data from other routines.
     
-    A slot can be connected to multiple events (many-to-many relationship),
-    allowing data to be received from multiple sources. When data is received,
-    it is merged with existing data according to the merge_strategy, then
-    passed to the handler function.
+    A Slot represents an input point in a Routine that can receive data from
+    connected Events in other routines. Slots enable many-to-many data reception:
+    a slot can connect to multiple events, and an event can connect to multiple
+    slots. When data arrives, it's merged with existing data and passed to a
+    handler function.
+    
+    Key Concepts:
+        - Slots are defined in routines using define_slot()
+        - Slots connect to events via Flow.connect()
+        - Data is received automatically when connected events are emitted
+        - Data merging follows the configured merge_strategy
+        - Handler functions process the merged data
     
     Merge Strategy Behavior:
         - "override" (default): Each new data completely replaces the previous
-          data. The handler receives only the latest data. This is suitable for
-          scenarios where only the most recent data is needed.
+          data. The handler receives only the latest data. Best for stateless
+          processing where only the most recent value matters.
+          Example: Latest sensor reading, current configuration
         
         - "append": New data values are appended to lists. If a key doesn't
           exist, it's initialized as an empty list. If the existing value is not
           a list, it's converted to a list first. The handler receives the
-          accumulated data each time. This is useful for aggregation scenarios
-          where you need to collect multiple data points over time.
+          accumulated data each time. Best for aggregation scenarios.
+          Example: Collecting multiple data points, building arrays
         
-        - Custom function: A callable that takes (old_data, new_data) and
-          returns the merged result. This allows for custom merge logic such
-          as deep merging, averaging, or other domain-specific operations.
+        - Custom function: A callable(old_data, new_data) -> merged_data.
+          Allows custom merge logic like deep merging, averaging, or other
+          domain-specific operations. Provides full control over merge behavior.
+    
+    Handler Function:
+        The handler can accept data in two ways (auto-detected):
+        1. handler(data) - receives merged data as a dictionary
+        2. ``handler(**data)`` - receives unpacked keyword arguments
+        
+        Handler errors are caught and logged to routine._stats["errors"],
+        but don't stop flow execution (slot handlers are always error-tolerant).
     
     Important Notes:
         - The merge_strategy affects both what data is stored in self._data
           and what data is passed to the handler.
-        - In concurrent execution scenarios, merge operations are not atomic.
+        - In concurrent execution, merge operations are not atomic.
           If multiple events send data simultaneously, race conditions may occur.
-        - The handler is called immediately after each receive() call with
-          the merged data, not deferred until all data is collected.
+        - The handler is called immediately after each receive() with the
+          merged data, not deferred until all data is collected.
+        - Parameter mapping (from Flow.connect()) is applied before merging.
     
     Examples:
         Override strategy (default):
-            >>> slot = routine.define_slot("input", merge_strategy="override")
-            >>> slot.receive({"value": 1})  # handler receives {"value": 1}
-            >>> slot.receive({"value": 2})  # handler receives {"value": 2}
-            >>> # slot._data is {"value": 2}
+            >>> slot = routine.define_slot("input", handler=process, merge_strategy="override")
+            >>> # Event emits {"value": 1} -> handler receives {"value": 1}
+            >>> # Event emits {"value": 2} -> handler receives {"value": 2}
+            >>> # slot._data is {"value": 2} (previous data replaced)
         
         Append strategy:
-            >>> slot = routine.define_slot("input", merge_strategy="append")
-            >>> slot.receive({"value": 1})  # handler receives {"value": [1]}
-            >>> slot.receive({"value": 2})  # handler receives {"value": [1, 2]}
-            >>> # slot._data is {"value": [1, 2]}
+            >>> slot = routine.define_slot("input", handler=aggregate, merge_strategy="append")
+            >>> # Event emits {"value": 1} -> handler receives {"value": [1]}
+            >>> # Event emits {"value": 2} -> handler receives {"value": [1, 2]}
+            >>> # slot._data is {"value": [1, 2]} (values accumulated)
         
         Custom merge function:
             >>> def custom_merge(old, new):
-            ...     return dict(old, **new, merged=True)
-            >>> slot = routine.define_slot("input", merge_strategy=custom_merge)
-            >>> slot.receive({"a": 1})  # handler receives {"a": 1, "merged": True}
+            ...     return {**old, **new, "merged_at": time.time()}
+            >>> slot = routine.define_slot("input", handler=process, merge_strategy=custom_merge)
+            >>> # Custom logic: deep merge with timestamp
     """
     
     def __init__(
@@ -151,29 +169,42 @@ class Slot(Serializable):
                 event.connected_slots.remove(self)
     
     def receive(self, data: Dict[str, Any]) -> None:
-        """Receive data and call handler.
-
-        This method is called when an event connected to this slot emits data.
-        The received data is merged with existing data according to the
-        merge_strategy, then passed to the handler function if one is defined.
-
-        Process flow:
-            1. Merge new data with existing self._data using merge_strategy
-            2. Update self._data with the merged result
-            3. Call handler with the merged data (if handler is defined)
-            4. Handle any exceptions from the handler without interrupting flow
-
-        Args:
-            data: Received data dictionary from the connected event. This will
-                be merged with any existing data in self._data according to
-                the merge_strategy before being passed to the handler.
+        """Receive data, merge with existing data, and call handler.
         
-        Note:
-            - The handler is called synchronously and immediately after merging.
-            - If the handler raises an exception, it's logged but doesn't stop
-              the execution flow.
-            - In concurrent execution, multiple receive() calls may happen
-              simultaneously, which can cause race conditions in merge operations.
+        This method is called automatically when a connected event is emitted.
+        You typically don't call this directly - it's invoked by the event
+        emission mechanism. However, you may call it directly for testing
+        or manual data injection.
+        
+        Processing Steps:
+            1. Merge new data with existing slot data according to merge_strategy
+            2. Update slot's internal _data dictionary with merged result
+            3. Call the handler function (if defined) with the merged data
+            4. Handler receives data either as dict or unpacked kwargs (auto-detected)
+        
+        Handler Invocation:
+        
+        The handler is called immediately after merging. If the handler
+        accepts ``**kwargs``, data is unpacked; otherwise it's passed as a dict.
+        Errors in the handler are caught and logged to routine._stats["errors"],
+        but don't stop flow execution (slot handler errors are always tolerated).
+        
+        Args:
+            data: Dictionary of data to receive. This is typically the data
+                emitted by a connected event, possibly transformed by
+                parameter mapping from the Connection.
+                Example: {"result": "success", "count": 42}
+        
+        Examples:
+            Manual data injection (for testing):
+                >>> slot = routine.define_slot("input", handler=process_data)
+                >>> slot.receive({"value": "test", "count": 1})
+                >>> # Handler is called with merged data
+            
+            Automatic reception (normal usage):
+                >>> # When connected event emits, receive() is called automatically
+                >>> event.emit(flow=my_flow, value="data", count=5)
+                >>> # Slot's receive() is called internally with {"value": "data", "count": 5}
         """
         # Merge new data with existing data according to merge_strategy
         # This updates self._data and returns the merged result

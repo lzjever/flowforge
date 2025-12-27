@@ -122,6 +122,245 @@ When a flow is set to concurrent execution mode:
 3. **Dependency Handling**: Routines wait for their dependencies to complete before executing
 4. **Thread Safety**: All state updates are thread-safe
 
+Event Execution Order
+~~~~~~~~~~~~~~~~~~~~~
+
+When an event emits data, it may be connected to multiple slots. The execution
+order of these slots depends on the execution strategy and whether downstream
+routines emit further events.
+
+Sequential Execution Mode (Depth-First)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In sequential execution mode (default), when an event emits:
+
+1. **Connection Order**: Slots are processed in the order they were connected
+   to the event (the order in ``event.connected_slots`` list)
+
+2. **Synchronous Processing**: Each slot's ``receive()`` method is called
+   synchronously and immediately
+
+3. **Handler Execution**: The slot's handler is called immediately after data
+   is merged (synchronously)
+
+4. **Depth-First Behavior**: If a handler emits a new event, the downstream
+   slots connected to that event are processed **immediately and completely**
+   before continuing to the next sibling slot
+
+**Key Behavior**:
+    * Slots execute in connection order (first connected = first executed)
+    * Each slot's handler completes fully before moving to the next slot
+    * If a handler emits events, the entire downstream chain executes before
+      returning to process the next sibling slot
+    * This creates a **depth-first execution pattern**
+
+**Example: Sequential Execution Order**
+
+.. code-block:: python
+
+   from flowforge import Flow, Routine
+   
+   class SourceRoutine(Routine):
+       def __init__(self):
+           super().__init__()
+           self.output_event = self.define_event("output")
+       
+       def __call__(self, **kwargs):
+           # Emit to 3 connected slots
+           self.emit("output", data="test")
+   
+   class IntermediateRoutine(Routine):
+       def __init__(self, name):
+           super().__init__()
+           self.name = name
+           self.input_slot = self.define_slot("input", handler=self._handle)
+           self.output_event = self.define_event("output")
+       
+       def _handle(self, data=None, **kwargs):
+           print(f"{self.name} received data")
+           # Emit to downstream
+           self.emit("output", data="downstream")
+   
+   class LeafRoutine(Routine):
+       def __init__(self, name):
+           super().__init__()
+           self.name = name
+           self.input_slot = self.define_slot("input", handler=self._handle)
+       
+       def _handle(self, data=None, **kwargs):
+           print(f"{self.name} received data")
+   
+   # Create flow
+   flow = Flow()  # Sequential mode (default)
+   
+   source = SourceRoutine()
+   intermediate1 = IntermediateRoutine("Intermediate1")
+   intermediate2 = IntermediateRoutine("Intermediate2")
+   leaf1 = LeafRoutine("Leaf1")
+   leaf2 = LeafRoutine("Leaf2")
+   leaf3 = LeafRoutine("Leaf3")
+   
+   flow.add_routine(source, "source")
+   flow.add_routine(intermediate1, "intermediate1")
+   flow.add_routine(intermediate2, "intermediate2")
+   flow.add_routine(leaf1, "leaf1")
+   flow.add_routine(leaf2, "leaf2")
+   flow.add_routine(leaf3, "leaf3")
+   
+   # Connect: source -> intermediate1, intermediate2, leaf3
+   flow.connect("source", "output", "intermediate1", "input")
+   flow.connect("source", "output", "intermediate2", "input")
+   flow.connect("source", "output", "leaf3", "input")
+   
+   # Connect intermediates to their leaves
+   flow.connect("intermediate1", "output", "leaf1", "input")
+   flow.connect("intermediate2", "output", "leaf2", "input")
+   
+   flow.execute("source")
+   
+   # Execution order (depth-first):
+   # 1. source emits
+   # 2. intermediate1 receives (first connected slot)
+   # 3. intermediate1 emits -> leaf1 receives (complete chain before next sibling)
+   # 4. intermediate2 receives (second connected slot)
+   # 5. intermediate2 emits -> leaf2 receives
+   # 6. leaf3 receives (third connected slot)
+
+**Execution Flow Diagram**:
+
+.. code-block:: text
+
+   Source emits
+   │
+   ├─> Intermediate1 (1st slot)
+   │   │
+   │   └─> Leaf1 (downstream of Intermediate1)
+   │       (entire chain completes)
+   │
+   ├─> Intermediate2 (2nd slot)
+   │   │
+   │   └─> Leaf2 (downstream of Intermediate2)
+   │       (entire chain completes)
+   │
+   └─> Leaf3 (3rd slot)
+       (executes last)
+
+**Important Notes for Sequential Mode**:
+* Execution is **deterministic** - same connection order = same execution order
+* Downstream chains complete **before** moving to next sibling
+* No parallelism - everything executes in a single thread
+* Blocking operations in handlers will block the entire flow
+
+Concurrent Execution Mode (Event Order)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In concurrent execution mode (``execution_strategy="concurrent"``), when an
+event emits:
+
+1. **Concurrent Submission**: All connected slots are submitted to a thread
+   pool **immediately** (non-blocking)
+
+2. **Parallel Execution**: Slots execute concurrently in separate threads
+
+3. **No Order Guarantee**: Execution order is **not guaranteed** - slots may
+   execute in any order
+
+4. **Independent Execution**: Each slot's handler executes independently
+   without waiting for siblings
+
+5. **Downstream Concurrency**: If a handler emits events, those downstream
+   slots also execute concurrently (not blocked by sibling slots)
+
+**Key Behavior**:
+* All sibling slots start executing concurrently (as soon as tasks are submitted)
+* Downstream slots also execute concurrently (not blocked by siblings)
+* Execution order is **non-deterministic** - may vary between runs
+* Thread-safe operations are required if handlers share state
+
+**Example: Concurrent Execution Order**
+
+.. code-block:: python
+
+   flow = Flow(execution_strategy="concurrent", max_workers=5)
+   
+   # Same setup as above
+   # ...
+   
+   flow.execute("source")
+   flow.wait_for_completion()  # Wait for all tasks to complete
+   flow.shutdown()  # Clean up thread pool
+   
+   # Execution order (non-deterministic):
+   # All slots may execute in any order:
+   # - intermediate1, intermediate2, leaf3 may execute concurrently
+   # - leaf1, leaf2 may execute concurrently with their parents or siblings
+   # - No guarantee on order
+
+**Important Notes for Concurrent Mode**:
+* Execution order is **non-deterministic**
+* All slots execute concurrently (siblings and downstream)
+* Must call ``wait_for_completion()`` to ensure all tasks complete
+* Must call ``shutdown()`` to clean up thread pool
+* Use thread-safe operations for shared state
+* Exception handling is per-thread (exceptions don't stop other threads)
+
+Comparison: Sequential vs Concurrent
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
++------------------+------------------+------------------+
+| Aspect           | Sequential       | Concurrent       |
++==================+==================+==================+
+| Execution order  | Deterministic    | Non-deterministic|
+|                  | (connection      | (may vary)       |
+|                  | order)           |                  |
++------------------+------------------+------------------+
+| Sibling slots    | Execute one by   | Execute          |
+|                  | one              | concurrently     |
++------------------+------------------+------------------+
+| Downstream slots | Complete before  | Execute          |
+|                  | next sibling     | concurrently     |
++------------------+------------------+------------------+
+| Threading        | Single thread    | Thread pool      |
++------------------+------------------+------------------+
+| Blocking ops     | Blocks entire    | Blocks only      |
+|                  | flow             | that thread      |
++------------------+------------------+------------------+
+| State sharing    | Safe (single     | Requires thread  |
+|                  | thread)          | safety           |
++------------------+------------------+------------------+
+| Performance      | Slower (one at   | Faster (parallel)|
+|                  | a time)          |                  |
++------------------+------------------+------------------+
+
+Best Practices for Execution Strategy
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. **Use Sequential Mode** when:
+   * Execution order matters
+   * You need deterministic behavior
+   * Handlers share non-thread-safe state
+   * Debugging is easier with sequential execution
+
+2. **Use Concurrent Mode** when:
+   * Routines are independent and can run in parallel
+   * Performance is critical
+   * Handlers perform I/O operations (network, disk)
+   * You need to handle high throughput
+
+3. **Connection Order Matters** (in sequential mode):
+   * Connect slots in the order you want them to execute
+   * First connected = first executed
+   * Use this to control execution order
+
+4. **Thread Safety** (in concurrent mode):
+   * Use locks for shared state
+   * Avoid modifying shared objects without synchronization
+   * Use thread-safe data structures when needed
+
+5. **Wait for Completion** (in concurrent mode):
+   * Always call ``wait_for_completion()`` before accessing results
+   * Always call ``shutdown()`` to clean up resources
+
 Example: Concurrent Data Fetching
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from flowforge.slot import Slot
     from flowforge.event import Event
     from flowforge.flow import Flow
+    from flowforge.error_handler import ErrorHandler, ErrorStrategy
 
 from flowforge.utils.serializable import register_serializable, Serializable
 from flowforge.serialization_utils import get_routine_class_info
@@ -107,10 +108,15 @@ class Routine(Serializable):
         # Use set_config() and get_config() methods for convenient access
         self._config: Dict[str, Any] = {}
         
+        # Error handler for this routine (optional)
+        # If set, this routine will use its own error handler instead of the flow's default
+        # Priority: routine-level error handler > flow-level error handler > default (STOP)
+        self._error_handler: Optional['ErrorHandler'] = None
+        
         # Register serializable fields
         # Both _stats and _config are included to ensure they are preserved
         # during serialization/deserialization
-        self.add_serializable_fields(["_id", "_stats", "_slots", "_events", "_config"])
+        self.add_serializable_fields(["_id", "_stats", "_slots", "_events", "_config", "_error_handler"])
     
     def __repr__(self) -> str:
         """Return string representation of the Routine."""
@@ -199,17 +205,52 @@ class Routine(Serializable):
         name: str,
         output_params: Optional[List[str]] = None
     ) -> 'Event':
-        """Define an output event.
-
+        """Define an output event for transmitting data to other routines.
+        
+        This method creates a new event that can be connected to slots in
+        other routines. When you emit this event, the data is automatically
+        sent to all connected slots.
+        
+        Event Emission:
+            Use emit() method to trigger the event and send data:
+            - ``emit(event_name, **kwargs)`` - passes kwargs as data
+            - Data is sent to all connected slots via their connections
+            - Parameter mapping (from Flow.connect()) is applied during transmission
+        
         Args:
-            name: Event name.
-            output_params: List of output parameter names (optional, for documentation).
-
+            name: Event name. Must be unique within this routine.
+                Used to identify the event when connecting via Flow.connect().
+                Example: "output", "result", "error"
+            output_params: Optional list of parameter names this event emits.
+                This is for documentation purposes only - it doesn't enforce
+                what parameters can be emitted. Helps document the event's API.
+                Example: ["result", "status", "metadata"]
+        
         Returns:
-            Event object.
-
+            Event object. You typically don't need to use this, but it can be
+            useful for programmatic access or advanced use cases.
+        
         Raises:
-            ValueError: If event name already exists.
+            ValueError: If event name already exists in this routine.
+        
+        Examples:
+            Basic event definition:
+                >>> class MyRoutine(Routine):
+                ...     def __init__(self):
+                ...         super().__init__()
+                ...         self.output_event = self.define_event("output", ["result", "status"])
+                ...     
+                ...     def __call__(self):
+                ...         self.emit("output", result="success", status=200)
+            
+            Event with documentation:
+                >>> routine.define_event("data_ready", output_params=["data", "timestamp", "source"])
+                >>> # Documents that this event emits these parameters
+            
+            Multiple events:
+                >>> routine.define_event("success", ["result"])
+                >>> routine.define_event("error", ["error_code", "message"])
+                >>> # Can emit different events for different outcomes
         """
         if name in self._events:
             raise ValueError(f"Event '{name}' already exists in {self}")
@@ -222,15 +263,61 @@ class Routine(Serializable):
         return event
     
     def emit(self, event_name: str, flow: Optional['Flow'] = None, **kwargs) -> None:
-        """Emit an event.
-
+        """Emit an event and send data to all connected slots.
+        
+        This method triggers the specified event and transmits the provided
+        data to all slots connected to this event. The data transmission
+        respects parameter mappings defined in Flow.connect().
+        
+        Data Flow:
+            1. Event is emitted with ``**kwargs`` data
+            2. For each connected slot:
+               a. Parameter mapping is applied (if defined in Flow.connect())
+               b. Data is merged with slot's existing data (according to merge_strategy)
+               c. Slot's handler is called with the merged data
+            3. In concurrent mode, handlers may execute in parallel threads
+        
+        Flow Context:
+            If flow is not provided, the method attempts to get it from the
+            routine's context (_current_flow). This works automatically when
+            the routine is executed within a Flow context. For standalone
+            usage or testing, you may need to provide the flow explicitly.
+        
         Args:
-            event_name: Event name.
-            flow: Flow object (for parameter mapping, optional, will try to get from context if not provided).
-            **kwargs: Data to pass to the event.
-
+            event_name: Name of the event to emit. Must be defined using
+                define_event() before calling this method.
+            flow: Optional Flow object. Used for:
+                - Finding Connection objects for parameter mapping
+                - Recording execution history
+                - Tracking event emissions
+                If None, attempts to get from routine context.
+                Provide explicitly for standalone usage or testing.
+            ``**kwargs``: Data to transmit via the event. These keyword arguments
+                become the data dictionary sent to connected slots.
+                Example: emit("output", result="success", count=42)
+                sends {"result": "success", "count": 42} to connected slots.
+        
         Raises:
-            ValueError: If event does not exist.
+            ValueError: If event_name does not exist in this routine.
+                Define the event first using define_event().
+        
+        Examples:
+            Basic emission:
+                >>> routine.define_event("output", ["result"])
+                >>> routine.emit("output", result="data", status="ok")
+                >>> # Sends {"result": "data", "status": "ok"} to connected slots
+            
+            Emission with flow context:
+                >>> routine.emit("output", flow=my_flow, data="value")
+                >>> # Explicitly provides flow for parameter mapping
+            
+            Multiple parameters:
+                >>> routine.emit("result",
+                ...              success=True,
+                ...              data={"key": "value"},
+                ...              timestamp=time.time(),
+                ...              metadata={"source": "processor"})
+                >>> # All parameters are sent to connected slots
         """
         if event_name not in self._events:
             raise ValueError(f"Event '{event_name}' does not exist in {self}")
@@ -495,7 +582,7 @@ class Routine(Serializable):
         The base implementation automatically tracks execution statistics.
 
         Args:
-            **kwargs: Parameters passed to the routine.
+            ``**kwargs``: Parameters passed to the routine.
 
         Note:
             The base implementation automatically updates statistics:
@@ -556,7 +643,7 @@ class Routine(Serializable):
         be automatically serialized/deserialized.
         
         Args:
-            **kwargs: Configuration key-value pairs to set. These will be stored
+            ``**kwargs``: Configuration key-value pairs to set. These will be stored
                 in self._config dictionary.
         
         Examples:
@@ -608,6 +695,81 @@ class Routine(Serializable):
             >>> print(config)  # {"name": "test", "timeout": 30}
         """
         return self._config.copy()
+    
+    def set_error_handler(self, error_handler: 'ErrorHandler') -> None:
+        """Set error handler for this routine.
+        
+        When an error occurs in this routine, the routine-level error handler
+        takes priority over the flow-level error handler. If no routine-level
+        error handler is set, the flow-level error handler (if any) will be used.
+        
+        Args:
+            error_handler: ErrorHandler instance to use for this routine.
+        
+        Examples:
+            >>> from flowforge import ErrorHandler, ErrorStrategy
+            >>> routine = MyRoutine()
+            >>> routine.set_error_handler(ErrorHandler(strategy=ErrorStrategy.RETRY, max_retries=3))
+        """
+        self._error_handler = error_handler
+    
+    def get_error_handler(self) -> Optional['ErrorHandler']:
+        """Get error handler for this routine.
+        
+        Returns:
+            ErrorHandler instance if set, None otherwise.
+        """
+        return self._error_handler
+    
+    def set_as_optional(self, strategy: 'ErrorStrategy' = None) -> None:
+        """Mark this routine as optional (failures are tolerated).
+        
+        This is a convenience method that sets up an error handler with CONTINUE
+        strategy by default, allowing the routine to fail without stopping the flow.
+        
+        Args:
+            strategy: Error handling strategy. If None, defaults to CONTINUE.
+                Can be ErrorStrategy.CONTINUE or ErrorStrategy.SKIP.
+        
+        Examples:
+            >>> from flowforge import ErrorStrategy
+            >>> optional_routine = OptionalRoutine()
+            >>> optional_routine.set_as_optional()  # Uses CONTINUE by default
+            >>> optional_routine.set_as_optional(ErrorStrategy.SKIP)  # Use SKIP instead
+        """
+        from flowforge.error_handler import ErrorHandler, ErrorStrategy as ES
+        if strategy is None:
+            strategy = ES.CONTINUE
+        self.set_error_handler(ErrorHandler(strategy=strategy, is_critical=False))
+    
+    def set_as_critical(
+        self,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+        retry_backoff: float = 2.0
+    ) -> None:
+        """Mark this routine as critical (must succeed, retry on failure).
+        
+        This is a convenience method that sets up an error handler with RETRY
+        strategy and is_critical=True. If all retries fail, the flow will fail.
+        
+        Args:
+            max_retries: Maximum number of retry attempts.
+            retry_delay: Initial retry delay in seconds.
+            retry_backoff: Retry delay backoff multiplier.
+        
+        Examples:
+            >>> critical_routine = CriticalRoutine()
+            >>> critical_routine.set_as_critical(max_retries=5, retry_delay=2.0)
+        """
+        from flowforge.error_handler import ErrorHandler, ErrorStrategy
+        self.set_error_handler(ErrorHandler(
+            strategy=ErrorStrategy.RETRY,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            retry_backoff=retry_backoff,
+            is_critical=True
+        ))
     
     def serialize(self) -> Dict[str, Any]:
         """Serialize Routine, including class information and state.

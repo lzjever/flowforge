@@ -609,19 +609,20 @@ class TestConcurrentSerialization:
                 self.emit("output", data="test", flow=flow)
         
         class TargetRoutine(Routine):
-            def __init__(self, name):
+            def __init__(self):
                 super().__init__()
-                self.name = name
                 self.input_slot = self.define_slot("input", handler=self.process)
             
             def process(self, data):
                 time.sleep(0.1)
                 with execution_lock:
-                    execution_order.append(self.name)
+                    execution_order.append(self.get_config("name"))
         
         source = SourceRoutine()
-        target1 = TargetRoutine("target1")
-        target2 = TargetRoutine("target2")
+        target1 = TargetRoutine()
+        target1.set_config(name="target1")
+        target2 = TargetRoutine()
+        target2.set_config(name="target2")
         
         source_id = flow.add_routine(source, "source")
         t1_id = flow.add_routine(target1, "target1")
@@ -723,17 +724,17 @@ class TestConcurrentEdgeCases:
                     self.emit("output", data=i, flow=flow)
         
         class TargetRoutine(Routine):
-            def __init__(self, name):
+            def __init__(self):
                 super().__init__()
-                self.name = name
                 self.input_slot = self.define_slot("input", handler=self.process)
             
             def process(self, data):
                 with execution_lock:
-                    execution_order.append((self.name, data))
+                    execution_order.append((self.get_config("name"), data))
         
         source = SourceRoutine()
-        target = TargetRoutine("target")
+        target = TargetRoutine()
+        target.set_config(name="target")
         
         source_id = flow.add_routine(source, "source")
         target_id = flow.add_routine(target, "target")

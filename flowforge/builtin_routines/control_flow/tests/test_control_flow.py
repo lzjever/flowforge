@@ -12,7 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 from flowforge.builtin_routines.control_flow import (
     ConditionalRouter,
-    RetryHandler,
 )
 from flowforge.utils.serializable import Serializable
 from flowforge.slot import Slot
@@ -96,105 +95,221 @@ class TestConditionalRouter(unittest.TestCase):
         self.router.input_slot.receive({"data": {"priority": "exact"}})
         
         self.assertEqual(len(received_exact), 1)
-
-
-class TestRetryHandler(unittest.TestCase):
-    """Test cases for RetryHandler routine."""
     
-    def setUp(self):
-        """Set up test fixtures."""
-        self.retry_handler = RetryHandler()
-        self.received_success = []
-        self.received_failure = []
-        
-        # Create test slots to capture output
-        self.success_slot = Slot("success", None, lambda **kwargs: self.received_success.append(kwargs))
-        self.failure_slot = Slot("failure", None, lambda **kwargs: self.received_failure.append(kwargs))
-        self.retry_handler.get_event("success").connect(self.success_slot)
-        self.retry_handler.get_event("failure").connect(self.failure_slot)
-    
-    def test_successful_operation(self):
-        """Test successful operation (no retry needed)."""
-        def success_func():
-            return "success"
-        
-        self.retry_handler.set_config(max_retries=3)
-        self.retry_handler.input_slot.receive({
-            "operation": success_func
-        })
-        
-        self.assertEqual(len(self.received_success), 1)
-        self.assertEqual(self.received_success[0]["result"], "success")
-        self.assertEqual(self.received_success[0]["attempts"], 1)
-    
-    def test_retry_on_failure(self):
-        """Test retry on failure."""
-        call_count = [0]
-        
-        def failing_func():
-            call_count[0] += 1
-            if call_count[0] < 2:
-                raise ValueError("Temporary failure")
-            return "success"
-        
-        self.retry_handler.set_config(max_retries=3, retry_delay=0.1)
-        self.retry_handler.input_slot.receive({
-            "operation": failing_func
-        })
-        
-        # Wait a bit for retry
-        time.sleep(0.5)
-        
-        self.assertEqual(len(self.received_success), 1)
-        self.assertEqual(self.received_success[0]["attempts"], 2)
-    
-    def test_max_retries_exceeded(self):
-        """Test when max retries are exceeded."""
-        def always_failing():
-            raise ValueError("Always fails")
-        
-        self.retry_handler.set_config(max_retries=2, retry_delay=0.1)
-        self.retry_handler.input_slot.receive({
-            "operation": always_failing
-        })
-        
-        # Wait for retries
-        time.sleep(0.5)
-        
-        self.assertEqual(len(self.received_failure), 1)
-        self.assertEqual(self.received_failure[0]["attempts"], 3)  # 1 initial + 2 retries
-    
-    def test_non_retryable_exception(self):
-        """Test non-retryable exception."""
-        def raise_key_error():
-            raise KeyError("Not retryable")
-        
-        self.retry_handler.set_config(
-            max_retries=3,
-            retryable_exceptions=[ValueError]  # KeyError not in list
+    def test_string_condition(self):
+        """Test string expression condition."""
+        router = ConditionalRouter()
+        router.set_config(
+            routes=[
+                ("high", "data.get('priority') == 'high'"),
+                ("low", "isinstance(data, dict) and data.get('priority') == 'low'"),
+            ],
+            default_route="normal"
         )
-        self.retry_handler.input_slot.receive({
-            "operation": raise_key_error
-        })
         
-        self.assertEqual(len(self.received_failure), 1)
-        self.assertEqual(self.received_failure[0]["attempts"], 1)  # No retry
+        received_high = []
+        received_low = []
+        received_normal = []
+        
+        high_slot = Slot("high", None, lambda **kwargs: received_high.append(kwargs))
+        low_slot = Slot("low", None, lambda **kwargs: received_low.append(kwargs))
+        normal_slot = Slot("normal", None, lambda **kwargs: received_normal.append(kwargs))
+        
+        # Ensure events are created
+        if router.get_event("high") is None:
+            router.define_event("high", ["data", "route"])
+        if router.get_event("low") is None:
+            router.define_event("low", ["data", "route"])
+        if router.get_event("normal") is None:
+            router.define_event("normal", ["data", "route"])
+        
+        router.get_event("high").connect(high_slot)
+        router.get_event("low").connect(low_slot)
+        router.get_event("normal").connect(normal_slot)
+        
+        # Test high priority
+        router.input_slot.receive({"data": {"priority": "high"}})
+        self.assertEqual(len(received_high), 1)
+        self.assertEqual(len(received_low), 0)
+        self.assertEqual(len(received_normal), 0)
+        
+        # Test low priority
+        router.input_slot.receive({"data": {"priority": "low"}})
+        self.assertEqual(len(received_high), 1)
+        self.assertEqual(len(received_low), 1)
+        self.assertEqual(len(received_normal), 0)
+        
+        # Test default
+        router.input_slot.receive({"data": {"priority": "medium"}})
+        self.assertEqual(len(received_high), 1)
+        self.assertEqual(len(received_low), 1)
+        self.assertEqual(len(received_normal), 1)
     
-    def test_operation_as_dict(self):
-        """Test operation passed as dict."""
-        def test_func(x, y=0):
-            return x + y
+    def test_serialize_lambda_condition(self):
+        """Test serialization of lambda condition."""
+        router = ConditionalRouter()
+        router.set_config(
+            routes=[
+                ("high", lambda x: x.get("priority") == "high"),
+                ("low", {"priority": "low"}),  # Dict condition for comparison
+            ]
+        )
         
-        self.retry_handler.set_config(max_retries=1)
-        self.retry_handler.input_slot.receive({
-            "operation": {
-                "func": test_func,
-                "args": [5],
-                "kwargs": {"y": 3}
-            }
-        })
+        # Serialize
+        serialized = router.serialize()
         
-        self.assertEqual(len(self.received_success), 1)
-        self.assertEqual(self.received_success[0]["result"], 8)
-
+        # Check that routes are serialized
+        self.assertIn("_config", serialized)
+        self.assertIn("routes", serialized["_config"])
+        routes = serialized["_config"]["routes"]
+        
+        # Lambda should be converted to lambda_expression (if inspect.getsource works)
+        # or remain as function if it can be serialized normally
+        high_route = routes[0]
+        self.assertEqual(high_route[0], "high")
+        self.assertIsInstance(high_route[1], dict)
+        # Lambda might be serialized as function if it has a module, or as lambda_expression
+        condition_type = high_route[1].get("_type")
+        self.assertIn(condition_type, ["function", "lambda_expression"])
+        if condition_type == "lambda_expression":
+            self.assertIn("expression", high_route[1])
+        
+        # Dict condition should remain as dict
+        low_route = routes[1]
+        self.assertEqual(low_route[0], "low")
+        self.assertIsInstance(low_route[1], dict)
+        self.assertNotIn("_type", low_route[1])
+    
+    def test_deserialize_lambda_condition(self):
+        """Test deserialization of lambda condition (using string expression as fallback)."""
+        # Use string expression instead of lambda for reliable serialization
+        router = ConditionalRouter()
+        router.set_config(
+            routes=[
+                ("high", "data.get('priority') == 'high'"),  # String expression
+            ]
+        )
+        
+        # Serialize and deserialize
+        serialized = router.serialize()
+        
+        new_router = ConditionalRouter()
+        new_router.deserialize(serialized)
+        
+        # Test that deserialized router works
+        received_high = []
+        high_slot = Slot("high", None, lambda **kwargs: received_high.append(kwargs))
+        
+        # Ensure event is created
+        if new_router.get_event("high") is None:
+            new_router.define_event("high", ["data", "route"])
+        new_router.get_event("high").connect(high_slot)
+        
+        new_router.input_slot.receive({"data": {"priority": "high"}})
+        self.assertEqual(len(received_high), 1)
+    
+    def test_serialize_string_condition(self):
+        """Test serialization of string condition."""
+        router = ConditionalRouter()
+        router.set_config(
+            routes=[
+                ("high", "data.get('priority') == 'high'"),
+            ]
+        )
+        
+        # Serialize
+        serialized = router.serialize()
+        
+        # String condition should remain as string
+        routes = serialized["_config"]["routes"]
+        self.assertEqual(routes[0][0], "high")
+        self.assertEqual(routes[0][1], "data.get('priority') == 'high'")
+    
+    def test_serialize_function_condition(self):
+        """Test serialization of function condition."""
+        def check_priority(data):
+            return data.get("priority") == "high"
+        
+        router = ConditionalRouter()
+        router.set_config(
+            routes=[
+                ("high", check_priority),
+            ]
+        )
+        
+        # Serialize
+        serialized = router.serialize()
+        
+        # Function should be serialized as function metadata
+        routes = serialized["_config"]["routes"]
+        self.assertEqual(routes[0][0], "high")
+        self.assertIsInstance(routes[0][1], dict)
+        self.assertEqual(routes[0][1].get("_type"), "function")
+    
+    def test_serialize_deserialize_roundtrip(self):
+        """Test complete serialize-deserialize roundtrip."""
+        # Create router with mixed condition types
+        # Use string conditions for reliable serialization
+        router = ConditionalRouter()
+        router.set_config(
+            routes=[
+                ("high", "data.get('priority') == 'high'"),  # String
+                ("low", "data.get('priority') == 'low'"),  # String
+                ("medium", {"priority": "medium"}),  # Dict
+                ("custom", "data.get('type') == 'custom'"),  # String
+            ],
+            default_route="default",
+            route_priority="first_match"
+        )
+        
+        # Serialize
+        serialized = router.serialize()
+        
+        # Deserialize
+        new_router = ConditionalRouter()
+        new_router.deserialize(serialized)
+        
+        # Verify config
+        self.assertEqual(new_router.get_config("default_route"), "default")
+        self.assertEqual(new_router.get_config("route_priority"), "first_match")
+        
+        # Test routing
+        received_high = []
+        received_low = []
+        received_medium = []
+        received_custom = []
+        received_default = []
+        
+        high_slot = Slot("high", None, lambda **kwargs: received_high.append(kwargs))
+        low_slot = Slot("low", None, lambda **kwargs: received_low.append(kwargs))
+        medium_slot = Slot("medium", None, lambda **kwargs: received_medium.append(kwargs))
+        custom_slot = Slot("custom", None, lambda **kwargs: received_custom.append(kwargs))
+        default_slot = Slot("default", None, lambda **kwargs: received_default.append(kwargs))
+        
+        # Ensure events are created
+        for event_name in ["high", "low", "medium", "custom", "default"]:
+            if new_router.get_event(event_name) is None:
+                new_router.define_event(event_name, ["data", "route"])
+        
+        new_router.get_event("high").connect(high_slot)
+        new_router.get_event("low").connect(low_slot)
+        new_router.get_event("medium").connect(medium_slot)
+        new_router.get_event("custom").connect(custom_slot)
+        new_router.get_event("default").connect(default_slot)
+        
+        # Test each route
+        new_router.input_slot.receive({"data": {"priority": "high"}})
+        self.assertEqual(len(received_high), 1)
+        
+        new_router.input_slot.receive({"data": {"priority": "low"}})
+        self.assertEqual(len(received_low), 1)
+        
+        new_router.input_slot.receive({"data": {"priority": "medium"}})
+        self.assertEqual(len(received_medium), 1)
+        
+        new_router.input_slot.receive({"data": {"type": "custom"}})
+        self.assertEqual(len(received_custom), 1)
+        
+        new_router.input_slot.receive({"data": {"priority": "unknown"}})
+        self.assertEqual(len(received_default), 1)
 

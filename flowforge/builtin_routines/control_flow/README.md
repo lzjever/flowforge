@@ -15,8 +15,11 @@ from flowforge.builtin_routines.control_flow import ConditionalRouter
 router = ConditionalRouter()
 router.set_config(
     routes=[
-        ("high", lambda x: isinstance(x, dict) and x.get("priority") == "high"),
-        ("low", lambda x: isinstance(x, dict) and x.get("priority") == "low"),
+        # String expression (recommended for serialization)
+        ("high", "data.get('priority') == 'high'"),
+        ("low", "isinstance(data, dict) and data.get('priority') == 'low'"),
+        # Dictionary condition
+        ("medium", {"priority": "medium"}),
     ],
     default_route="normal"
 )
@@ -26,9 +29,13 @@ flow.add_routine(router, "router")
 ```
 
 **Configuration:**
-- `routes` (list): List of (route_name, condition_function) tuples
+- `routes` (list): List of (route_name, condition) tuples. Condition can be:
+  - **String expression** (recommended): `"data.get('priority') == 'high'"` - Fully serializable
+  - **Function reference**: A callable function - Serializable if function is in a module
+  - **Dictionary**: Field matching condition - Fully serializable
+  - **Lambda function**: `lambda x: x.get('priority') == 'high'` - May be converted to string expression during serialization
 - `default_route` (str): Default route name if no condition matches
-- `route_priority` (str): Priority strategy - "first_match" or "all" (default: "first_match")
+- `route_priority` (str): Priority strategy - "first_match" or "all_matches" (default: "first_match")
 
 **Input:**
 - `data` (Any): Data to route
@@ -38,46 +45,12 @@ flow.add_routine(router, "router")
 - `data` (Any): Original data
 - `route` (str): Route name that matched
 
-### RetryHandler
-
-Handles retry logic for operations that may fail.
-
-**Usage:**
-```python
-from flowforge.builtin_routines.control_flow import RetryHandler
-
-retry_handler = RetryHandler()
-retry_handler.set_config(
-    max_retries=3,
-    retry_delay=1.0,
-    backoff_multiplier=2.0,
-    retryable_exceptions=[ValueError, KeyError]
-)
-
-flow = Flow()
-flow.add_routine(retry_handler, "retry_handler")
-```
-
-**Configuration:**
-- `max_retries` (int): Maximum number of retries (default: 3)
-- `retry_delay` (float): Initial delay between retries in seconds (default: 1.0)
-- `backoff_multiplier` (float): Multiplier for exponential backoff (default: 2.0)
-- `retryable_exceptions` (list): List of exception types to retry (default: [Exception])
-- `retry_condition` (callable, optional): Custom condition function for retries
-
-**Input:**
-- `operation` (dict): Operation definition with:
-  - `function` (callable): Function to execute
-  - `args` (list, optional): Positional arguments
-  - `kwargs` (dict, optional): Keyword arguments
-
-**Output:**
-- `success` event: Emitted on successful execution
-  - `result` (Any): Function result
-  - `attempts` (int): Number of attempts made
-- `failure` event: Emitted on final failure
-  - `error` (Exception): Last exception raised
-  - `attempts` (int): Number of attempts made
+**Serialization:**
+ConditionalRouter supports full serialization/deserialization. For best results:
+- ✅ **Use string expressions**: `"data.get('priority') == 'high'"` - Always serializable
+- ✅ **Use dictionary conditions**: `{"priority": "high"}` - Always serializable
+- ✅ **Use module-level functions**: Functions defined at module level can be serialized
+- ⚠️ **Lambda functions**: May be automatically converted to string expressions, but complex lambdas may fail
 
 ## Installation
 

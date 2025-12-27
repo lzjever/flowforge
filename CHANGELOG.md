@@ -1,5 +1,25 @@
 # flowforge 更新日志
 
+## [Unreleased]
+
+### 新增功能
+
+- ✅ **Routine 级别的错误处理**: 支持为每个 routine 设置独立的错误处理策略，优先级高于 flow 级别
+- ✅ **Critical/Optional routine 标记**: 新增 `set_as_critical()` 和 `set_as_optional()` 便捷方法
+- ✅ **`is_critical` 标志**: ErrorHandler 新增 `is_critical` 参数，用于标记关键 routine
+- ✅ **错误处理优先级系统**: 优先级顺序为 routine-level > flow-level > default (STOP)
+
+### 改进
+
+- ✅ **向后兼容**: 保持对现有代码的完全兼容，flow 级别的错误处理仍然有效
+- ✅ **Critical routine 重试失败处理**: Critical routine 在重试失败后会导致 flow 失败
+
+### 文档
+
+- ✅ 更新错误处理文档，添加 routine 级别错误处理示例
+- ✅ 添加 critical 和 optional routine 使用模式文档
+- ✅ 明确说明 CONTINUE 和 SKIP 策略的区别
+
 ## [0.1.2] - 2024-12-26
 
 ### 新增功能

@@ -18,8 +18,40 @@ from flowforge.utils.serializable import register_serializable, Serializable
 class Event(Serializable):
     """Output event for transmitting data to other routines.
     
-    An Event can be connected to multiple Slots (many-to-many relationship),
-    allowing data to be broadcast to multiple receivers simultaneously.
+    An Event represents an output point in a Routine that can transmit data
+    to connected Slots in other routines. Events enable one-to-many data
+    distribution: when an event is emitted, all connected slots receive
+    the data simultaneously.
+    
+    Key Concepts:
+        - Events are defined in routines using define_event()
+        - Events are emitted using emit() or Routine.emit()
+        - Events can connect to multiple slots (broadcast pattern)
+        - Slots can connect to multiple events (aggregation pattern)
+        - Parameter mapping can transform data during transmission
+    
+    Connection Model:
+        Events support many-to-many connections:
+        - One event can connect to many slots (broadcasting)
+        - One slot can connect to many events (aggregation)
+        - Connections are managed via Flow.connect()
+        - Parameter mappings can rename parameters per connection
+    
+    Examples:
+        Basic usage:
+            >>> class MyRoutine(Routine):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.output = self.define_event("output", ["result"])
+            ...     
+            ...     def __call__(self):
+            ...         self.emit("output", result="success", status=200)
+        
+        Multiple connections:
+            >>> # One event, multiple receivers
+            >>> flow.connect(source_id, "output", target1_id, "input1")
+            >>> flow.connect(source_id, "output", target2_id, "input2")
+            >>> # Both targets receive data when source emits "output"
     """
     
     def __init__(
@@ -110,11 +142,45 @@ class Event(Serializable):
     def emit(self, flow: Optional['Flow'] = None, **kwargs) -> None:
         """Emit the event and send data to all connected slots.
         
-        In concurrent mode, uses a thread pool to execute connected routines concurrently.
-
+        This method transmits data to all slots connected to this event.
+        The data is sent according to the connection's parameter mapping,
+        then merged with each slot's existing data according to the slot's
+        merge_strategy, and finally passed to the slot's handler.
+        
+        Execution Mode:
+            - Sequential mode: Handlers are called synchronously, one after another.
+              Execution order follows the order of connections.
+            - Concurrent mode: Handlers may execute in parallel threads if the
+              flow's execution_strategy is "concurrent". This allows independent
+              routines to process data simultaneously.
+        
+        Parameter Mapping:
+            If a Connection has param_mapping defined (via Flow.connect()),
+            parameter names are transformed before being sent to the slot.
+            Unmapped parameters are passed with their original names.
+        
         Args:
-            flow: Flow object (used to find Connection for parameter mapping).
-            **kwargs: Data to transmit.
+            flow: Optional Flow object. Required for:
+                - Finding Connection objects to apply parameter mappings
+                - Recording execution history in JobState
+                - Enabling concurrent execution mode
+                If None, parameter mapping won't work and execution history
+                won't be recorded. Should be provided when emitting from
+                within a Flow execution context.
+            ``**kwargs``: Data to transmit. These keyword arguments form the
+                data dictionary sent to connected slots. All values must be
+                serializable if the flow uses persistence.
+                Example: emit(flow=my_flow, result="success", count=42)
+        
+        Examples:
+            Basic emission:
+                >>> event = routine.define_event("output", ["result"])
+                >>> event.emit(flow=my_flow, result="data", status="ok")
+                >>> # Sends data to all connected slots
+            
+            Without flow (limited functionality):
+                >>> event.emit(result="data")  # No parameter mapping, no history
+                >>> # Still works, but parameter mapping won't be applied
         """
         if flow is None or flow.execution_strategy != "concurrent":
             # Sequential execution mode

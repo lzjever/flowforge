@@ -55,8 +55,3 @@ Control Flow Routines
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: flowforge.builtin_routines.control_flow.retry_handler
-   :members:
-   :undoc-members:
-   :show-inheritance:
-

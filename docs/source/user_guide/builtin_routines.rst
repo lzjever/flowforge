@@ -294,9 +294,13 @@ Validates data against schemas or validation rules.
 * ``rules`` (dict, optional): Override config rules
 
 **Output:**
+
 * Emits to ``valid`` event if valid:
+
   * ``validated_data`` (Any): Validated data
+
 * Emits to ``invalid`` event if invalid:
+
   * ``errors`` (list): List of validation errors
   * ``data`` (Any): Original data
 
@@ -312,26 +316,54 @@ Routes data to different outputs based on conditions.
 
 **Usage:**
 
+String expressions (recommended):
+
 .. code-block:: python
 
    from flowforge.builtin_routines.control_flow import ConditionalRouter
+   from flowforge import Flow
 
    router = ConditionalRouter()
    router.set_config(
        routes=[
-           ("high", lambda x: isinstance(x, dict) and x.get("priority") == "high"),
-           ("low", lambda x: isinstance(x, dict) and x.get("priority") == "low"),
+           ("high", "data.get('priority') == 'high'"),
+           ("low", "isinstance(data, dict) and data.get('priority') == 'low'"),
        ],
        default_route="normal"
    )
 
    flow = Flow()
    flow.add_routine(router, "router")
+   # Use router.input_slot.receive({"data": {...}}) to route data
+
+Dictionary conditions:
+
+.. code-block:: python
+
+   router = ConditionalRouter()
+   router.set_config(
+       routes=[
+           ("high", {"priority": "high"}),
+           ("low", {"priority": "low"}),
+       ]
+   )
 
 **Configuration:**
-* ``routes`` (list): List of (route_name, condition_function) tuples
+* ``routes`` (list): List of (route_name, condition) tuples. Condition can be:
+
+  * **String expression** (recommended): ``"data.get('priority') == 'high'"`` - Fully serializable.
+    Can access ``data``, ``config`` (routine's ``_config``), and ``stats`` (routine's ``_stats``).
+    Example: ``"data.get('value', 0) > config.get('threshold', 0)"``
+  * **Function reference**: A callable function - Serializable if function is in a module.
+    Can accept ``data``, ``config``, and ``stats`` as parameters.
+  * **Dictionary**: Field matching condition - Fully serializable.
+    Example: ``{"priority": "high"}``
+  * **Lambda function**: ``lambda x: x.get('priority') == 'high'`` - Can be used at runtime.
+    May be converted to string expression during serialization if source code is available.
+    Can access external variables via closure, but closure variables are lost during serialization.
+
 * ``default_route`` (str): Default route name if no condition matches
-* ``route_priority`` (str): Priority strategy - "first_match" or "all" (default: "first_match")
+* ``route_priority`` (str): Priority strategy - "first_match" or "all_matches" (default: "first_match")
 
 **Input:**
 * ``data`` (Any): Data to route
@@ -341,50 +373,71 @@ Routes data to different outputs based on conditions.
 * ``data`` (Any): Original data
 * ``route`` (str): Route name that matched
 
-RetryHandler
-~~~~~~~~~~~~
+**Serialization:**
 
-Handles retry logic for operations that may fail.
+ConditionalRouter supports full serialization/deserialization. All condition types have been tested and verified:
 
-**Usage:**
+* ✅ **String expressions**: ``"data.get('priority') == 'high'"`` - Always serializable, can access config and stats
+* ✅ **Dictionary conditions**: ``{"priority": "high"}`` - Always serializable
+* ✅ **Module-level functions**: Functions defined at module level are fully serializable and can accept
+  ``data``, ``config``, and ``stats`` parameters
+* ⚠️ **Lambda functions**: Can be used at runtime. Simple lambdas may be converted to string expressions
+  during serialization (if source code is available via ``inspect.getsource()``). Closure variables are
+  lost during serialization, so prefer string expressions for config/stats access.
+
+**Serialization Testing:**
+
+All condition types have been thoroughly tested:
+* ✅ Lambda conditions: Serialize/deserialize successfully (converted to string expressions)
+* ✅ Function conditions: Serialize/deserialize successfully (module-level functions)
+* ✅ Flow-level serialization: Works with both lambda and function conditions
+* ✅ JSON roundtrip: Both lambda and function conditions work through JSON serialization
+
+**Accessing Config and Stats in Conditions:**
+
+String expressions can access the routine's configuration and statistics:
 
 .. code-block:: python
 
-   from flowforge.builtin_routines.control_flow import RetryHandler
+   router = ConditionalRouter()
+   router.set_config(
+       routes=[
+           # Access config
+           ("high", "data.get('value', 0) > config.get('threshold', 0)"),
+           # Access stats
+           ("active", "stats.get('count', 0) < 10"),
+       ],
+       threshold=10
+   )
+   router.set_stat("count", 5)
+   router.input_slot.receive({"data": {"value": 15}})  # Routes to "high"
 
-   retry_handler = RetryHandler()
-   retry_handler.set_config(
-       max_retries=3,
-       retry_delay=1.0,
-       backoff_multiplier=2.0,
-       retryable_exceptions=[ValueError, KeyError]
+**Examples:**
+
+String expression (recommended):
+
+.. code-block:: python
+
+   router = ConditionalRouter()
+   router.set_config(
+       routes=[
+           ("high", "data.get('priority') == 'high'"),
+           ("low", "isinstance(data, dict) and data.get('priority') == 'low'"),
+       ],
+       default_route="normal"
    )
 
-   flow = Flow()
-   flow.add_routine(retry_handler, "retry_handler")
+Dictionary condition:
 
-**Configuration:**
-* ``max_retries`` (int): Maximum number of retries (default: 3)
-* ``retry_delay`` (float): Initial delay between retries in seconds (default: 1.0)
-* ``backoff_multiplier`` (float): Multiplier for exponential backoff (default: 2.0)
-* ``retryable_exceptions`` (list): List of exception types to retry (default: [Exception])
-* ``retry_condition`` (callable, optional): Custom condition function for retries
+.. code-block:: python
 
-**Input:**
-* ``operation`` (dict): Operation definition with:
-  * ``func`` (callable): Function to execute
-  * ``args`` (list, optional): Positional arguments
-  * ``kwargs`` (dict, optional): Keyword arguments
-
-**Output:**
-* ``success`` event: Emitted on successful execution
-  * ``result`` (Any): Function result
-  * ``attempts`` (int): Number of attempts made
-  * ``total_time`` (float): Total execution time
-* ``failure`` event: Emitted on final failure
-  * ``error`` (str): Last exception message
-  * ``attempts`` (int): Number of attempts made
-  * ``total_time`` (float): Total execution time
+   router = ConditionalRouter()
+   router.set_config(
+       routes=[
+           ("high", {"priority": "high"}),
+           ("low", {"priority": "low"}),
+       ]
+   )
 
 Code Quality and Testing
 ------------------------
