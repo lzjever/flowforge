@@ -13,7 +13,25 @@ from flowforge.job_state import JobState, ExecutionRecord
 from flowforge.execution_tracker import ExecutionTracker
 from flowforge.error_handler import ErrorHandler, ErrorStrategy
 
+# Import built-in routines
+from flowforge.builtin_routines import (
+    # Text processing
+    TextClipper,
+    TextRenderer,
+    ResultExtractor,
+    # Utils
+    TimeProvider,
+    DataFlattener,
+    # Data processing
+    DataTransformer,
+    DataValidator,
+    # Control flow
+    ConditionalRouter,
+    RetryHandler,
+)
+
 __all__ = [
+    # Core classes
     "Routine",
     "Slot",
     "Event",
@@ -24,6 +42,19 @@ __all__ = [
     "ExecutionTracker",
     "ErrorHandler",
     "ErrorStrategy",
+    # Built-in routines - Text processing
+    "TextClipper",
+    "TextRenderer",
+    "ResultExtractor",
+    # Built-in routines - Utils
+    "TimeProvider",
+    "DataFlattener",
+    # Built-in routines - Data processing
+    "DataTransformer",
+    "DataValidator",
+    # Built-in routines - Control flow
+    "ConditionalRouter",
+    "RetryHandler",
 ]
 
 __version__ = "0.1.0"

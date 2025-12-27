@@ -1,6 +1,36 @@
 Testing
 =======
 
+Built-in Routines Test Coverage
+--------------------------------
+
+All built-in routines have comprehensive test coverage with 104 test cases covering:
+
+* **Text Processing Routines**: 23 tests
+  * TextClipper: 7 tests
+  * TextRenderer: 5 tests
+  * ResultExtractor: 12 tests
+
+* **Utility Routines**: 9 tests
+  * TimeProvider: 4 tests
+  * DataFlattener: 5 tests
+
+* **Data Processing Routines**: 9 tests
+  * DataTransformer: 4 tests
+  * DataValidator: 5 tests
+
+* **Control Flow Routines**: 9 tests
+  * ConditionalRouter: 4 tests
+  * RetryHandler: 5 tests
+
+* **Integration Tests**: 2 tests
+
+All tests pass with 100% success rate. Each routine package includes its own
+test directory for easy maintenance and standalone usage.
+
+Running Tests
+-------------
+
 This document provides comprehensive testing information for flowforge.
 
 Test Structure

@@ -8,6 +8,7 @@ Complete API documentation for all modules and classes.
 
    flow
    routine
+   builtin_routines
    event
    slot
    connection

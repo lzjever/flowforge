@@ -388,6 +388,100 @@ class Routine(Serializable):
                 if key in self._stats:
                     del self._stats[key]
     
+    def _extract_input_data(self, data: Any = None, **kwargs) -> Any:
+        """Extract input data from slot parameters.
+        
+        This method provides a consistent way to extract data from slot inputs,
+        handling various input patterns. It's particularly useful in slot handlers
+        to simplify data extraction logic.
+        
+        Input patterns handled:
+        - Direct data parameter: Returns data as-is
+        - 'data' key in kwargs: Returns kwargs["data"]
+        - Single value in kwargs: Returns the single value
+        - Multiple values in kwargs: Returns the entire kwargs dict
+        - Empty input: Returns empty dict
+        
+        Args:
+            data: Direct data parameter (optional).
+            **kwargs: Additional keyword arguments from slot.
+        
+        Returns:
+            Extracted data value. Type depends on input.
+        
+        Examples:
+            >>> # In a slot handler
+            >>> def _handle_input(self, data=None, **kwargs):
+            ...     # Extract data using helper
+            ...     data = self._extract_input_data(data, **kwargs)
+            ...     # Process data...
+            
+            >>> # Direct parameter
+            >>> self._extract_input_data("text")
+            'text'
+            
+            >>> # From kwargs
+            >>> self._extract_input_data(None, data="text")
+            'text'
+            
+            >>> # Single value in kwargs
+            >>> self._extract_input_data(None, text="value")
+            'value'
+            
+            >>> # Multiple values
+            >>> self._extract_input_data(None, a=1, b=2)
+            {'a': 1, 'b': 2}
+        """
+        if data is not None:
+            return data
+        
+        if "data" in kwargs:
+            return kwargs["data"]
+        
+        if len(kwargs) == 1:
+            return list(kwargs.values())[0]
+        
+        if len(kwargs) > 0:
+            return kwargs
+        
+        return {}
+    
+    def _track_operation(self, operation_name: str, success: bool = True, **metadata) -> None:
+        """Track operation statistics with metadata.
+        
+        This method provides a consistent way to track operations across routines,
+        automatically maintaining success/failure counts and operation history.
+        
+        Args:
+            operation_name: Name of the operation (e.g., "processing", "validation").
+            success: Whether operation succeeded (default: True).
+            **metadata: Additional metadata to store in operation history.
+        
+        Examples:
+            >>> # Track successful operation
+            >>> self._track_operation("processing", success=True, items_processed=10)
+            
+            >>> # Track failed operation with error info
+            >>> self._track_operation("validation", success=False, error="Invalid format")
+            
+            >>> # Access statistics
+            >>> stats = self.stats()
+            >>> print(stats["total_processing"])  # Total operations
+            >>> print(stats["successful_processing"])  # Successful operations
+            >>> print(stats["processing_history"])  # Operation history with metadata
+        """
+        self.increment_stat(f"total_{operation_name}")
+        if success:
+            self.increment_stat(f"successful_{operation_name}")
+        else:
+            self.increment_stat(f"failed_{operation_name}")
+        
+        if metadata:
+            history_key = f"{operation_name}_history"
+            history = self._stats.get(history_key, [])
+            history.append(metadata)
+            self._stats[history_key] = history
+    
     def __call__(self, **kwargs) -> None:
         """Execute routine.
 

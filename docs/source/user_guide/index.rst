@@ -7,6 +7,7 @@ This section provides detailed guidance on using flowforge.
    :maxdepth: 2
 
    routines
+   builtin_routines
    flows
    connections
    state_management

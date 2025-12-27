@@ -29,11 +29,20 @@ Let's create a simple routine that processes data:
            # Define an output event
            self.output_event = self.define_event("output", ["result"])
        
-       def process_data(self, data: str):
+       def process_data(self, data=None, **kwargs):
+           # Extract input data using helper method
+           extracted_data = self._extract_input_data(data, **kwargs)
+           if isinstance(extracted_data, dict):
+               data_value = extracted_data.get("data", extracted_data)
+           else:
+               data_value = extracted_data
+           
            # Process the data
-           result = f"Processed: {data}"
-           # Update statistics
-           self._stats["processed_count"] = self._stats.get("processed_count", 0) + 1
+           result = f"Processed: {data_value}"
+           
+           # Track operation statistics
+           self._track_operation("processing", success=True)
+           
            # Emit the result
            self.emit("output", result=result)
 

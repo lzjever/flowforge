@@ -73,12 +73,28 @@ Track routine statistics using the ``_stats`` dictionary:
 
    self._stats["processed_count"] = self._stats.get("processed_count", 0) + 1
 
+Or use the convenient ``_track_operation()`` method for consistent tracking:
+
+.. code-block:: python
+
+   def process_data(self, data):
+       try:
+           # Process the data
+           result = self.process(data)
+           # Track successful operation
+           self._track_operation("processing", success=True, items_processed=1)
+           return result
+       except Exception as e:
+           # Track failed operation
+           self._track_operation("processing", success=False, error=str(e))
+           raise
+
 Retrieve statistics:
 
 .. code-block:: python
 
    stats = routine.stats()
-   print(stats)  # {"processed_count": 1, ...}
+   print(stats)  # {"processed_count": 1, "total_processing": 1, "successful_processing": 1, ...}
 
 Getting Slots and Events
 ------------------------
@@ -89,6 +105,29 @@ Retrieve slots and events by name:
 
    slot = routine.get_slot("input")
    event = routine.get_event("output")
+
+Extracting Input Data
+---------------------
+
+When handling slot inputs, you can use the ``_extract_input_data()`` helper method
+to simplify data extraction from various input patterns:
+
+.. code-block:: python
+
+   def process_input(self, data=None, **kwargs):
+       # Extract data using the helper method
+       # Handles: direct parameter, 'data' key, single value, or multiple values
+       extracted_data = self._extract_input_data(data, **kwargs)
+       
+       # Process the extracted data
+       result = self.process(extracted_data)
+       self.emit("output", result=result)
+
+This method handles various input patterns:
+- Direct parameter: ``_extract_input_data("text")`` → ``"text"``
+- 'data' key: ``_extract_input_data(None, data="text")`` → ``"text"``
+- Single value: ``_extract_input_data(None, text="value")`` → ``"value"``
+- Multiple values: ``_extract_input_data(None, a=1, b=2)`` → ``{"a": 1, "b": 2}``
 
 Executing Routines
 ------------------
