@@ -18,44 +18,6 @@ import importlib
 from typing import Dict, Any, Optional, Type
 
 
-# ============================================================================
-# Routine-specific Utilities (for backward compatibility)
-# ============================================================================
-
-def get_routine_class_info(routine: Any) -> Dict[str, Any]:
-    """Get class information for a Routine.
-
-    Args:
-        routine: Routine instance.
-
-    Returns:
-        Dictionary containing class information.
-    """
-    cls = routine.__class__
-    return {"class_name": cls.__name__, "module": cls.__module__}
-
-
-def load_routine_class(class_info: Dict[str, Any]) -> Optional[Type]:
-    """Load Routine class from class information.
-
-    Args:
-        class_info: Dictionary containing class_name and module.
-
-    Returns:
-        Routine class, or None if loading fails.
-    """
-    try:
-        module_name = class_info.get("module")
-        class_name = class_info.get("class_name")
-
-        if module_name and class_name:
-            module = importlib.import_module(module_name)
-            if hasattr(module, class_name):
-                return getattr(module, class_name)
-    except Exception:
-        pass
-
-    return None
 
 
 @register_serializable
@@ -813,10 +775,6 @@ class Routine(Serializable):
         # Base class automatically handles Serializable objects in dicts
         data = super().serialize()
 
-        # Add class information (Routine-specific metadata)
-        cls = self.__class__
-        data["_class_info"] = {"class_name": cls.__name__, "module": cls.__module__}
-
         return data
 
     def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
@@ -826,14 +784,10 @@ class Routine(Serializable):
             data: Serialized data dictionary.
             registry: Optional ObjectRegistry for deserializing callables.
         """
-        # Exclude _class_info from deserialization (it's metadata, not a field)
-        deserialize_data = {
-            k: v for k, v in data.items() if k != "_class_info"
-        }
-        
+
         # Let base class handle all registered fields including _slots and _events
         # Base class automatically deserializes Serializable objects in dicts
-        super().deserialize(deserialize_data, registry=registry)
+        super().deserialize(data, registry=registry)
 
         # Restore routine references for slots and events (required after deserialization)
         if hasattr(self, "_slots") and self._slots:

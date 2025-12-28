@@ -275,30 +275,33 @@ class TestFlowSerializationEdgeCases:
         assert len(flow.connections) == 0
 
     def test_deserialize_flow_with_invalid_connections(self):
-        """测试反序列化无效连接的 Flow"""
+        """测试反序列化无效连接的 Flow（连接指向不存在的 routine）"""
         flow = Flow()
 
         routine = Routine()
         routine_id = flow.add_routine(routine, "test")
 
-        # 创建包含无效连接的数据
+        # 创建包含无效连接的数据（连接指向不存在的 routine）
+        # 连接对象会被创建，但无法找到对应的 event 和 slot，应该被忽略
         invalid_data = {
             "_type": "Flow",
             "flow_id": "test_flow",
             "routines": {routine_id: routine.serialize()},
             "connections": [
                 {
+                    "_type": "Connection",
                     "_source_routine_id": "nonexistent",
                     "_source_event_name": "output",
                     "_target_routine_id": "nonexistent",
                     "_target_slot_name": "input",
+                    "param_mapping": {},
                 }
             ],
         }
 
         flow.deserialize(invalid_data)
 
-        # 无效连接应该被忽略
+        # 无效连接应该被忽略（因为找不到对应的 event 和 slot）
         assert len(flow.connections) == 0
 
 

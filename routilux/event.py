@@ -100,8 +100,6 @@ class Event(Serializable):
         # Base class is sufficient - no special handling needed
         super().deserialize(data, registry=registry)
 
-        # Note: routine reference is restored by Routine.deserialize(),
-        # not here - it's not Event's responsibility
 
     def __repr__(self) -> str:
         """Return string representation of the Event."""

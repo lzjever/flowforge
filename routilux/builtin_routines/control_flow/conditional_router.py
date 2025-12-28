@@ -8,9 +8,14 @@ from __future__ import annotations
 from typing import Dict, Any, Callable, Optional, Union
 import inspect
 from routilux.routine import Routine
-from routilux.utils.serializable import serialize_callable_with_fallback, deserialize_callable
+from routilux.utils.serializable import (
+    register_serializable,
+    serialize_callable_with_fallback,
+    deserialize_callable,
+)
 
 
+@register_serializable
 class ConditionalRouter(Routine):
     """Routine for routing data based on conditions.
 

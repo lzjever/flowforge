@@ -216,6 +216,7 @@ class Serializable:
         """Initialize a serializable object with no specific fields."""
         self.fields_to_serialize = []
 
+
     def add_serializable_fields(self, fields: List[str]) -> None:
         """Add field names to the list that should be included in serialization.
 
@@ -306,21 +307,32 @@ class Serializable:
 
         Automatically handles:
         - Serializable objects
-        - Lists and dicts containing Serializable objects
+        - Lists and dicts containing Serializable objects (with two-phase deserialization)
         - Callable objects (functions, methods, builtins)
         - Lists and dicts containing callable objects
+        - Automatic ObjectRegistry creation and propagation for callable deserialization
 
         Args:
             data: Dictionary containing all serializable fields.
             strict: If True, raise error for unknown fields. If False, ignore them (default).
             registry: Optional ObjectRegistry for deserializing callables. If None,
-                attempts to get from context or creates a minimal registry.
+                creates a new registry automatically.
         
         Raises:
             ValueError: If strict=True and unknown field is found, or if deserialization fails.
         """
+        # Create registry if not provided (needed for callable deserialization)
+        if registry is None:
+            registry = ObjectRegistry()
         
+        # Two-phase deserialization for containers (dict/list) containing Serializable objects:
+        # Phase 1: Create all Serializable instances and register them in registry
+        # Phase 2: Deserialize all instances (so callables can reference them)
+        
+        # Phase 1: Pre-create and register Serializable objects in containers
+        pre_created = {}  # Track pre-created objects by field name
         unknown_fields = []
+        
         for key, value in data.items():
             if key == "_type":
                 continue
@@ -333,25 +345,123 @@ class Serializable:
                     # Silently ignore unknown fields for backward compatibility
                     continue
             
+            # Phase 1: Pre-create Serializable objects in containers
+            if isinstance(value, dict):
+                # Check if it's a dict of Serializable objects (like routines: {id: data})
+                if "_type" not in value:
+                    # Regular dict - check if values are Serializable objects
+                    pre_created[key] = {}
+                    for k, v in value.items():
+                        if isinstance(v, dict) and "_type" in v and v.get("_type") != "callable":
+                            # Get class from registry
+                            attr_class = SerializableRegistry.get_class(v["_type"])
+                            
+                            # If class not found, raise error
+                            if attr_class is None:
+                                raise ValueError(
+                                    f"Cannot deserialize object of type '{v['_type']}' in field '{key}': "
+                                    f"class not found in registry. "
+                                    f"This usually means the class was not registered with @register_serializable."
+                                )
+                            
+                            obj = attr_class()
+                            # Register in registry if it has an _id or we can use the key
+                            object_id = v.get("_id") or k
+                            if hasattr(obj, "_id") or k:
+                                registry.register(obj, object_id=object_id if isinstance(object_id, str) else k)
+                            pre_created[key][k] = obj
+            elif isinstance(value, list):
+                # Check if it's a list of Serializable objects (like connections: [data, ...])
+                pre_created[key] = []
+                for i, item in enumerate(value):
+                    if isinstance(item, dict) and "_type" in item and item.get("_type") != "callable":
+                        attr_class = SerializableRegistry.get_class(item["_type"])
+                        if attr_class is None:
+                            raise ValueError(
+                                f"Cannot deserialize object of type '{item['_type']}' in list field '{key}': "
+                                f"class not found in registry. "
+                                f"This usually means the class was not registered with @register_serializable."
+                            )
+                        obj = attr_class()
+                        # Register in registry if it has an _id
+                        object_id = item.get("_id")
+                        if object_id or hasattr(obj, "_id"):
+                            registry.register(obj, object_id=object_id)
+                        pre_created[key].append(obj)
+        
+        # Phase 2: Deserialize all fields (including pre-created objects)
+        for key, value in data.items():
+            if key == "_type" or (strict and key not in self.fields_to_serialize):
+                continue
+            
+            if key not in self.fields_to_serialize:
+                continue
+            
             try:
                 if isinstance(value, dict):
                     if "_type" in value:
-                        # Check if it's a callable serialization
-                        if value.get("_type") == "callable":
+                        # Check if it's a callable serialization (callable or lambda_expression)
+                        if value.get("_type") == "callable" or value.get("_type") == "lambda_expression":
                             attr = deserialize_callable(value, registry=registry)
                         else:
                             # Try to deserialize as Serializable object
                             attr_class = SerializableRegistry.get_class(value["_type"])
-                            if attr_class:
-                                attr: Serializable = attr_class()
+                            if attr_class is None:
+                                raise ValueError(
+                                    f"Cannot deserialize object of type '{value['_type']}' in field '{key}': "
+                                    f"class not found in registry. "
+                                    f"This usually means the class was not registered with @register_serializable."
+                                )
+                            attr: Serializable = attr_class()
+                            # Check if deserialize accepts registry parameter
+                            import inspect
+                            deserialize_sig = inspect.signature(attr.deserialize)
+                            if 'registry' in deserialize_sig.parameters:
                                 attr.deserialize(value, registry=registry)
                             else:
-                                # Not a registered Serializable class, deserialize as dict
-                                attr = {k: Serializable.deserialize_item(v, registry=registry) for k, v in value.items()}
+                                attr.deserialize(value)
                     else:
-                        attr = {k: Serializable.deserialize_item(v, registry=registry) for k, v in value.items()}
+                        # Regular dict - use pre-created objects if available
+                        if key in pre_created:
+                            attr = {}
+                            for k, v in value.items():
+                                if k in pre_created[key]:
+                                    # Use pre-created object and deserialize it
+                                    obj = pre_created[key][k]
+                                    # Check if deserialize accepts registry parameter
+                                    import inspect
+                                    deserialize_sig = inspect.signature(obj.deserialize)
+                                    if 'registry' in deserialize_sig.parameters:
+                                        obj.deserialize(v, registry=registry)
+                                    else:
+                                        obj.deserialize(v)
+                                    attr[k] = obj
+                                else:
+                                    # Not in pre_created - deserialize normally
+                                    attr[k] = Serializable.deserialize_item(v, registry=registry)
+                        else:
+                            attr = {k: Serializable.deserialize_item(v, registry=registry) for k, v in value.items()}
                 elif isinstance(value, list):
-                    attr = [Serializable.deserialize_item(item, registry=registry) for item in value]
+                    # List - use pre-created objects if available
+                    if key in pre_created:
+                        attr = []
+                        for i, item in enumerate(value):
+                            if i < len(pre_created[key]):
+                                # Use pre-created object and deserialize it
+                                obj = pre_created[key][i]
+                                # Check if deserialize accepts registry parameter
+                                import inspect
+                                deserialize_sig = inspect.signature(obj.deserialize)
+                                if 'registry' in deserialize_sig.parameters:
+                                    obj.deserialize(item, registry=registry)
+                                else:
+                                    obj.deserialize(item)
+                                attr.append(obj)
+                            else:
+                                # Not a Serializable object, deserialize normally
+                                attr.append(Serializable.deserialize_item(item, registry=registry))
+                    else:
+                        attr = [Serializable.deserialize_item(item, registry=registry) for item in value]
                 else:
                     attr = value
                 setattr(self, key, attr)
@@ -382,17 +492,30 @@ class Serializable:
         
         if isinstance(item, dict):
             if "_type" in item:
-                # Check if it's a callable serialization
-                if item.get("_type") == "callable":
+                # Check if it's a callable serialization (callable or lambda_expression)
+                if item.get("_type") == "callable" or item.get("_type") == "lambda_expression":
                     return deserialize_callable(item, registry=registry)
                 
+                # Get class from registry
                 attr_class = SerializableRegistry.get_class(item["_type"])
-                if not attr_class:
-                    return {k: Serializable.deserialize_item(v, registry=registry) for k, v in item.items()}
-                else:
-                    obj: Serializable = attr_class()
+                
+                # If class not found, raise error
+                if attr_class is None:
+                    raise ValueError(
+                        f"Cannot deserialize object of type '{item['_type']}': "
+                        f"class not found in registry. "
+                        f"This usually means the class was not registered with @register_serializable."
+                    )
+                
+                obj: Serializable = attr_class()
+                # Check if deserialize accepts registry parameter
+                import inspect
+                deserialize_sig = inspect.signature(obj.deserialize)
+                if 'registry' in deserialize_sig.parameters:
                     obj.deserialize(item, registry=registry)
-                    return obj
+                else:
+                    obj.deserialize(item)
+                return obj
             else:
                 return {k: Serializable.deserialize_item(v, registry=registry) for k, v in item.items()}
         elif isinstance(item, list):

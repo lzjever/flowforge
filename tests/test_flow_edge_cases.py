@@ -4,6 +4,7 @@ Flow 边界情况和错误处理测试
 补充 Flow 类的测试覆盖，特别是边界情况和错误处理路径。
 """
 
+import pytest
 from routilux import Flow, Routine, JobState, ErrorHandler, ErrorStrategy
 
 
@@ -11,7 +12,7 @@ class TestFlowDeserializeEdgeCases:
     """测试 Flow 反序列化的边界情况"""
 
     def test_deserialize_with_missing_routine_class(self):
-        """测试反序列化时无法加载 routine 类"""
+        """测试反序列化时无法加载 routine 类（应该报错）"""
         flow = Flow()
 
         class TestRoutine(Routine):
@@ -23,17 +24,13 @@ class TestFlowDeserializeEdgeCases:
         # 序列化
         data = flow.serialize()
 
-        # 修改类信息使其无效
-        data["routines"][routine_id]["_class_info"] = {
-            "module": "nonexistent_module_12345",
-            "class_name": "NonexistentClass",
-        }
+        # 修改 _type 使其指向不存在的类
+        data["routines"][routine_id]["_type"] = "NonexistentRoutineClass"
 
-        # 反序列化应该创建基本的 Routine 实例
+        # 反序列化应该报错（因为类未注册）
         new_flow = Flow()
-        new_flow.deserialize(data)
-        assert routine_id in new_flow.routines
-        assert isinstance(new_flow.routines[routine_id], Routine)
+        with pytest.raises(ValueError, match="class not found in registry"):
+            new_flow.deserialize(data)
 
     def test_deserialize_with_invalid_job_state_datetime(self):
         """测试反序列化时 job_state datetime 处理"""
@@ -61,13 +58,17 @@ class TestFlowDeserializeEdgeCases:
 
     def test_deserialize_with_partial_connection_data(self):
         """测试反序列化时连接数据不完整"""
+        from routilux.utils.serializable import register_serializable
+        
         flow = Flow()
 
+        @register_serializable
         class R1(Routine):
             def __init__(self):
                 super().__init__()
                 self.output_event = self.define_event("output", ["data"])
 
+        @register_serializable
         class R2(Routine):
             def __init__(self):
                 super().__init__()

@@ -8,10 +8,6 @@ from routilux.utils.serializable import (
     serialize_callable,
     deserialize_callable,
 )
-from routilux.routine import (
-    get_routine_class_info,
-    load_routine_class,
-)
 from routilux import Routine
 
 
@@ -281,67 +277,4 @@ class TestDeserializeCallable:
         assert result is None
 
 
-class TestGetRoutineClassInfo:
-    """测试 get_routine_class_info 函数"""
 
-    def test_get_routine_class_info(self):
-        """测试获取 Routine 类信息"""
-
-        class CustomRoutine(Routine):
-            pass
-
-        routine = CustomRoutine()
-        info = get_routine_class_info(routine)
-
-        assert "class_name" in info
-        assert "module" in info
-        assert info["class_name"] == "CustomRoutine"
-        # 模块名可能是 routilux 或 tests.test_serialization_utils
-        assert isinstance(info["module"], str)
-        assert len(info["module"]) > 0
-
-
-class TestLoadRoutineClass:
-    """测试 load_routine_class 函数"""
-
-    def test_load_routine_class(self):
-        """测试加载 Routine 类"""
-        # 使用标准的 Routine 类，确保可以加载
-        from routilux.routine import Routine
-
-        routine = Routine()
-        class_info = get_routine_class_info(routine)
-
-        loaded_class = load_routine_class(class_info)
-        assert loaded_class is not None
-        assert loaded_class == Routine
-
-    def test_load_routine_class_invalid_module(self):
-        """测试加载无效模块的类"""
-        invalid_info = {"module": "nonexistent_module_12345", "class_name": "SomeClass"}
-        result = load_routine_class(invalid_info)
-        assert result is None
-
-    def test_load_routine_class_invalid_class(self):
-        """测试加载无效类名"""
-        # 使用一个存在的模块但无效的类名
-        class_info = {"module": "routilux.routine", "class_name": "NonexistentClass12345"}
-        result = load_routine_class(class_info)
-        assert result is None
-
-    def test_load_routine_class_missing_fields(self):
-        """测试加载缺少字段的类信息"""
-        incomplete_info = {"class_name": "SomeClass"}
-        result = load_routine_class(incomplete_info)
-        assert result is None
-
-        incomplete_info2 = {"module": "some.module"}
-        result2 = load_routine_class(incomplete_info2)
-        assert result2 is None
-
-    def test_load_routine_class_with_exception(self):
-        """测试加载类时发生异常"""
-        # 创建一个会导致加载失败的类信息
-        bad_info = {"module": None, "class_name": "SomeClass"}  # 无效的模块名
-        result = load_routine_class(bad_info)
-        assert result is None

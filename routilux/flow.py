@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 import threading
 from datetime import datetime
-from typing import Dict, Optional, Any, List, Set, Tuple, TYPE_CHECKING
+from typing import Dict, Optional, Any, List, Set, Tuple, Type, TYPE_CHECKING
 from concurrent.futures import ThreadPoolExecutor, Future
 
 if TYPE_CHECKING:
@@ -24,6 +24,7 @@ from routilux.utils.serializable import register_serializable, Serializable
 from routilux.utils.serializable import (
     deserialize_callable,
     ObjectRegistry,
+    SerializableRegistry,
 )
 import importlib
 
@@ -180,32 +181,6 @@ class Flow(Serializable):
             if r is routine:
                 return rid
         return None
-
-    def _create_routine_from_data(self, routine_data: Dict[str, Any]) -> "Routine":
-        """Create a Routine instance from serialized data.
-
-        Args:
-            routine_data: Serialized routine data dictionary.
-
-        Returns:
-            Routine instance (custom class if available, otherwise base Routine).
-        """
-        class_info = routine_data.get("_class_info", {})
-        if class_info:
-            module_name = class_info.get("module")
-            class_name = class_info.get("class_name")
-            if module_name and class_name:
-                try:
-                    module = importlib.import_module(module_name)
-                    if hasattr(module, class_name):
-                        routine_class = getattr(module, class_name)
-                        return routine_class()
-                except Exception:
-                    pass
-        
-        # Fallback to base Routine
-        from routilux.routine import Routine
-        return Routine()
 
     def _build_dependency_graph(self) -> Dict[str, Set[str]]:
         """Build routine dependency graph.
@@ -1019,7 +994,6 @@ class Flow(Serializable):
         # Special case: Handle job_state datetime conversion
         job_state_data = data.get("job_state", None)
         if job_state_data:
-            from routilux.job_state import JobState
             from datetime import datetime
 
             # Convert datetime strings to datetime objects
@@ -1028,43 +1002,20 @@ class Flow(Serializable):
             if isinstance(job_state_data.get("updated_at"), str):
                 job_state_data["updated_at"] = datetime.fromisoformat(job_state_data["updated_at"])
 
-            # Let base class deserialize job_state
-            job_state = JobState()
-            job_state.deserialize(job_state_data)
-            data["job_state"] = job_state
 
-        # Create registry and pre-register routines for callable deserialization
-        registry = ObjectRegistry()
-        routines_data = data.get("routines", {})
-        connections_data = data.get("connections", [])
+        super().deserialize(data)
         
-        # Create a copy of data without routines and connections for base class
-        # (to avoid modifying the original data dictionary)
-        base_data = {k: v for k, v in data.items() if k not in ["routines", "connections"]}
-        for routine_id, routine_data in routines_data.items():
-            routine = self._create_routine_from_data(routine_data)
-            registry.register(routine, object_id=routine_id)
-
-        # Let base class handle all fields except routines and connections
-        # (routines and connections need special handling with registry)
-        super().deserialize(base_data, registry=registry)
-
-        # Post-process: Restore routine instances from registry
-        self.routines = {}
-        for routine_id, routine_data in routines_data.items():
-            routine = registry.find_by_id(routine_id)
-            if routine:
-                routine.deserialize(routine_data, registry=registry)
-                self.routines[routine_id] = routine
-
-        # Post-process: Restore connections (base class can't handle them - Connection.deserialize doesn't accept registry)
-        from routilux.connection import Connection
-        self.connections = []
-        for conn_data in connections_data:
-            connection = Connection()
-            connection.deserialize(conn_data)
-            
-            # Restore connection references by finding routines with matching event/slot names
+        # Post-process: Restore routine references by finding routines with matching event/slot names
+        # (This is Flow-specific logic that base class cannot handle)
+        from routilux.routine import Routine
+        for routine in self.routines.values():
+            routine.current_flow = self._current_flow
+        
+        # Post-process: Restore connection references by finding routines with matching event/slot names
+        # (This is Flow-specific logic that base class cannot handle)
+        
+        valid_connections = []
+        for connection in self.connections:
             source_event_name = getattr(connection, "_source_event_name", None)
             target_slot_name = getattr(connection, "_target_slot_name", None)
 
@@ -1092,7 +1043,10 @@ class Flow(Serializable):
                 if connection.source_event not in connection.target_slot.connected_events:
                     connection.target_slot.connect(connection.source_event)
 
-                self.connections.append(connection)
+                valid_connections.append(connection)
                 # Rebuild mapping
                 key = (connection.source_event, connection.target_slot)
                 self._event_slot_connections[key] = connection
+        
+        # Update connections list with only valid connections
+        self.connections = valid_connections
