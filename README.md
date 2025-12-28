@@ -1,56 +1,56 @@
-# Routilux
+# Routilux ⚡
 
-Event-driven workflow orchestration framework with flexible connection, state management, and workflow orchestration capabilities.
+[![PyPI version](https://badge.fury.io/py/routilux.svg)](https://badge.fury.io/py/routilux)
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
+[![Documentation](https://readthedocs.org/projects/routilux/badge/?version=latest)](https://routilux.readthedocs.io)
 
-## Features
+**Routilux** is a powerful, event-driven workflow orchestration framework that makes building complex data pipelines and workflows effortless. With its intuitive API and flexible architecture, you can create sophisticated workflows in minutes, not hours.
 
-* **Slots and Events Mechanism**: Clear distinction between input slots and output events
-* **Many-to-Many Connections**: Flexible connection relationships between routines
-* **State Management**: Unified `stats()` method for tracking routine state
-* **Flow Manager**: Workflow orchestration, persistence, and recovery
-* **JobState Management**: Execution state recording and recovery functionality
-* **Error Handling**: Multiple error handling strategies (STOP, CONTINUE, RETRY, SKIP)
-* **Execution Tracking**: Comprehensive execution tracking and performance monitoring
-* **Serialization Support**: Full serialization/deserialization support for persistence
+## ✨ Why Routilux?
 
-## Installation
+- 🚀 **Event-Driven Architecture**: Build reactive workflows that respond to events naturally
+- 🔗 **Flexible Connections**: Many-to-many relationships between routines with intelligent data routing
+- 📊 **Built-in State Management**: Track execution state, performance metrics, and history out of the box
+- 🛡️ **Robust Error Handling**: Multiple strategies (STOP, CONTINUE, RETRY, SKIP) with automatic recovery
+- ⚡ **Concurrent Execution**: Automatic parallelization for I/O-bound operations
+- 💾 **Persistence & Recovery**: Save and resume workflows from any point
+- 🎯 **Production Ready**: Comprehensive error handling, execution tracking, and monitoring
 
-### For Development (Recommended)
+## 🎯 Perfect For
 
-```bash
-# Install package in editable mode with development dependencies
-pip install -e ".[dev]"
+- **Data Pipelines**: ETL processes, data transformation workflows
+- **API Orchestration**: Coordinating multiple API calls with complex dependencies
+- **Event Processing**: Real-time event streams and reactive systems
+- **Workflow Automation**: Business process automation and task scheduling
+- **Microservices Coordination**: Managing interactions between services
+- **LLM Agent Workflows**: Complex AI agent orchestration and chaining
 
-# Or using Makefile
-make dev-install
-```
+## 📦 Installation
 
-This installs the package in "editable" mode, meaning:
-- Changes to source code are immediately available
-- No need to reinstall after code changes
-- All imports work correctly without `sys.path` manipulation
-
-### For Production
-
-```bash
-pip install -e .
-```
-
-Or install from PyPI (when published):
+### Quick Install (Recommended)
 
 ```bash
 pip install routilux
 ```
 
-Or install from a built package:
+That's it! You're ready to go.
+
+### Development Install
+
+For development with all dependencies:
 
 ```bash
-pip install dist/routilux-*.whl
+pip install -e ".[dev]"
+# Or using Makefile
+make dev-install
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
-### Creating a Routine
+### Create Your First Workflow in 3 Steps
+
+**Step 1: Define a Routine**
 
 ```python
 from routilux import Routine
@@ -58,7 +58,9 @@ from routilux import Routine
 class DataProcessor(Routine):
     def __init__(self):
         super().__init__()
+        # Define input slot
         self.input_slot = self.define_slot("input", handler=self.process_data)
+        # Define output event
         self.output_event = self.define_event("output", ["result"])
     
     def process_data(self, data: str):
@@ -67,12 +69,12 @@ class DataProcessor(Routine):
         self.emit("output", result=result)
 ```
 
-### Creating and Connecting a Flow
+**Step 2: Create and Connect a Flow**
 
 ```python
 from routilux import Flow
 
-flow = Flow(flow_id="my_flow")
+flow = Flow(flow_id="my_workflow")
 
 processor1 = DataProcessor()
 processor2 = DataProcessor()
@@ -80,50 +82,126 @@ processor2 = DataProcessor()
 id1 = flow.add_routine(processor1, "processor1")
 id2 = flow.add_routine(processor2, "processor2")
 
+# Connect: processor1's output → processor2's input
 flow.connect(id1, "output", id2, "input")
 ```
 
-### Executing a Flow
+**Step 3: Execute**
 
 ```python
-job_state = flow.execute(id1, entry_params={"data": "test"})
+job_state = flow.execute(id1, entry_params={"data": "Hello, Routilux!"})
 print(job_state.status)  # "completed"
 print(processor1.stats())  # {"processed_count": 1}
 ```
 
-## Documentation
+**🎉 Done!** You've created your first workflow.
 
-Full documentation is available at:
+## 💡 Key Features
 
-* **Online**: [Read the Docs](https://routilux.readthedocs.io) (when published)
-* **Local**: Build with `cd docs && make html`
+### 🔄 Event-Driven Execution
 
-### Documentation Structure
+Routines communicate through events and slots, creating a natural, reactive flow:
 
-* **Introduction**: Overview and key concepts
-* **Installation**: Installation instructions
-* **Quick Start**: Getting started guide
-* **User Guide**: Detailed usage instructions
-  * Working with Routines
-  * Working with Flows
-  * Connections
-  * State Management
-  * Error Handling
-  * Serialization
-* **API Reference**: Complete API documentation
-* **Examples**: Practical code examples
-* **Design**: Design documentation and architecture
-* **Features**: Feature overview
-* **Testing**: Testing information
+```python
+# Multiple routines can listen to the same event
+flow.connect(processor1, "output", processor2, "input")
+flow.connect(processor1, "output", processor3, "input")  # Fan-out
 
-## Examples
+# Multiple events can feed into the same slot
+flow.connect(processor1, "output", aggregator, "input")
+flow.connect(processor2, "output", aggregator, "input")  # Fan-in
+```
 
-See the `examples/` directory for practical examples:
+### 🎛️ Flexible State Management
 
-* `basic_example.py` - Basic routine and flow usage
-* `data_processing.py` - Multi-stage data processing pipeline
-* `error_handling_example.py` - Error handling strategies
-* `state_management_example.py` - State management and tracking
+Track everything automatically:
+
+```python
+# Access routine state
+stats = routine.stats()  # {"processed_count": 42, "errors": 0}
+
+# Track execution history
+history = job_state.get_execution_history()
+
+# Performance metrics
+perf = flow.execution_tracker.get_routine_performance("processor1")
+```
+
+### 🛡️ Built-in Error Handling
+
+Choose the right strategy for your use case:
+
+```python
+from routilux import ErrorHandler, ErrorStrategy
+
+# Stop on error (default)
+flow.set_error_handler(ErrorHandler(ErrorStrategy.STOP))
+
+# Continue and log errors
+flow.set_error_handler(ErrorHandler(ErrorStrategy.CONTINUE))
+
+# Retry with exponential backoff
+flow.set_error_handler(ErrorHandler(
+    ErrorStrategy.RETRY,
+    max_retries=3,
+    retry_delay=1.0,
+    backoff_multiplier=2.0
+))
+```
+
+### ⚡ Concurrent Execution
+
+Automatic parallelization for better performance:
+
+```python
+# Enable concurrent execution
+flow.set_execution_strategy("concurrent", max_workers=4)
+
+# Routines that can run in parallel are automatically executed concurrently
+job_state = flow.execute(entry_routine_id)
+```
+
+### 💾 Persistence & Recovery
+
+Save and resume workflows:
+
+```python
+# Save workflow state
+job_state.save("workflow_state.json")
+
+# Later, resume from saved state
+saved_state = JobState.load("workflow_state.json")
+flow.resume(saved_state)
+```
+
+## 📚 Documentation
+
+**📖 Full documentation available at: [routilux.readthedocs.io](https://routilux.readthedocs.io)**
+
+### Documentation Highlights
+
+- **📘 [User Guide](https://routilux.readthedocs.io/en/latest/user_guide/index.html)**: Comprehensive guide covering all features
+- **🔧 [API Reference](https://routilux.readthedocs.io/en/latest/api_reference/index.html)**: Complete API documentation
+- **💻 [Examples](https://routilux.readthedocs.io/en/latest/examples/index.html)**: Real-world code examples
+- **🏗️ [Design](https://routilux.readthedocs.io/en/latest/design/index.html)**: Architecture and design principles
+
+### Build Documentation Locally
+
+```bash
+pip install -e ".[docs]"
+cd docs && make html
+```
+
+## 🎓 Examples
+
+Check out the `examples/` directory for practical examples:
+
+- **`basic_example.py`** - Your first workflow
+- **`data_processing.py`** - Multi-stage data pipeline
+- **`concurrent_flow_demo.py`** - Parallel execution
+- **`error_handling_example.py`** - Error handling strategies
+- **`state_management_example.py`** - State tracking and recovery
+- **`builtin_routines_demo.py`** - Using built-in routines
 
 Run examples:
 
@@ -131,73 +209,83 @@ Run examples:
 python examples/basic_example.py
 ```
 
-## Project Structure
+## 🧩 Built-in Routines
+
+Routilux comes with a rich set of built-in routines ready to use:
+
+- **Text Processing**: `TextClipper`, `TextRenderer`, `ResultExtractor`
+- **Data Processing**: `DataTransformer`, `DataValidator`, `DataFlattener`
+- **Control Flow**: `ConditionalRouter` for dynamic routing
+- **Utilities**: `TimeProvider` for timestamps
+
+```python
+from routilux.builtin_routines import ConditionalRouter, DataTransformer
+
+# Use built-in routines directly
+router = ConditionalRouter()
+transformer = DataTransformer()
+```
+
+## 🏗️ Project Structure
 
 ```
 routilux/
-├── routilux/          # Main package
-│   ├── routine.py          # Routine base class
-│   ├── flow.py             # Flow manager
-│   ├── job_state.py        # JobState management
-│   ├── connection.py       # Connection management
-│   ├── event.py            # Event class
-│   ├── slot.py             # Slot class
-│   ├── error_handler.py    # Error handler
-│   └── execution_tracker.py # Execution tracker
-├── tests/                  # Test cases
-├── examples/               # Usage examples
-├── docs/                    # Sphinx documentation
-└── README.md               # This file
+├── routilux/              # Main package
+│   ├── routine.py         # Routine base class
+│   ├── flow.py            # Flow manager
+│   ├── job_state.py       # State management
+│   ├── connection.py      # Connection management
+│   ├── event.py           # Event class
+│   ├── slot.py            # Slot class
+│   ├── error_handler.py   # Error handling
+│   └── execution_tracker.py # Performance tracking
+├── tests/                 # Comprehensive test suite
+├── examples/              # Usage examples
+└── docs/                  # Sphinx documentation
 ```
 
-## Testing
+## 🧪 Testing
 
-Run tests:
+Routilux comes with comprehensive tests:
 
 ```bash
-# All tests
-pytest tests/
+# Run all tests
+make test-all
 
-# With coverage
-pytest --cov=routilux --cov-report=html tests/
+# Run with coverage
+make test-cov
+
+# Run specific test suite
+pytest tests/                    # Core tests
+pytest routilux/builtin_routines/  # Built-in routines tests
 ```
 
-## Development
+## 🤝 Contributing
 
-### Building Documentation
+We welcome contributions! Here's how you can help:
 
-```bash
-pip install -e ".[docs]"
-cd docs && make html
-```
+1. **Star the project** ⭐ - Show your support
+2. **Report bugs** 🐛 - Help us improve
+3. **Suggest features** 💡 - Share your ideas
+4. **Submit PRs** 🔧 - Contribute code
 
-### Code Formatting
+## 📄 License
 
-```bash
-black routilux/
-flake8 routilux/
-```
+Routilux is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for details.
 
-## License
+## 🔗 Links
 
-Routilux is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+- **📦 PyPI**: [pypi.org/project/routilux](https://pypi.org/project/routilux)
+- **📚 Documentation**: [routilux.readthedocs.io](https://routilux.readthedocs.io)
+- **🐙 GitHub**: [github.com/lzjever/routilux](https://github.com/lzjever/routilux)
+- **📧 Issues**: [github.com/lzjever/routilux/issues](https://github.com/lzjever/routilux/issues)
 
-Copyright (c) 2024 Routilux Team
+## ⭐ Show Your Support
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+If Routilux helps you build amazing workflows, consider giving it a star on GitHub!
 
-    http://www.apache.org/licenses/LICENSE-2.0
+---
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+**Built with ❤️ by the Routilux Team**
 
-## Links
-
-* **Documentation**: See `docs/` directory
-* **Examples**: See `examples/` directory
-* **Tests**: See `tests/` directory
+*Making workflow orchestration simple, powerful, and fun.*
