@@ -36,6 +36,12 @@ This installs the package in "editable" mode, meaning:
 pip install -e .
 ```
 
+Or install from PyPI (when published):
+
+```bash
+pip install flowforge
+```
+
 Or install from a built package:
 
 ```bash

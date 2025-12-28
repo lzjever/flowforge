@@ -1,4 +1,4 @@
-.PHONY: help clean install dev-install test test-builtin test-all test-cov lint format check build sdist wheel docs html clean-docs test-rtd
+.PHONY: help clean install dev-install test test-builtin test-all test-cov lint format check build sdist wheel docs html clean-docs test-rtd upload upload-test check-package
 
 help:
 	@echo "Available targets:"
@@ -22,6 +22,11 @@ help:
 	@echo "  build         - Build source and wheel distributions"
 	@echo "  sdist         - Build source distribution"
 	@echo "  wheel         - Build wheel distribution"
+	@echo "  check-package - Check package before uploading"
+	@echo ""
+	@echo "Publishing:"
+	@echo "  upload        - Upload package to PyPI (requires PYPI_TOKEN env var)"
+	@echo "  upload-test   - Upload package to TestPyPI (requires TEST_PYPI_TOKEN env var)"
 	@echo ""
 	@echo "Documentation:"
 	@echo "  docs          - Build documentation"
@@ -71,6 +76,36 @@ sdist: clean
 
 wheel: clean
 	python -m build --wheel
+
+check-package: build
+	@echo "Checking package..."
+	pip install twine
+	twine check dist/*
+
+upload: check-package
+	@echo "Uploading to PyPI..."
+	@if [ -z "$$PYPI_TOKEN" ]; then \
+		echo "Error: PYPI_TOKEN environment variable is not set."; \
+		echo "Usage: PYPI_TOKEN=your-token make upload"; \
+		exit 1; \
+	fi
+	pip install twine
+	twine upload dist/* \
+		--username __token__ \
+		--password $$PYPI_TOKEN
+
+upload-test: check-package
+	@echo "Uploading to TestPyPI..."
+	@if [ -z "$$TEST_PYPI_TOKEN" ]; then \
+		echo "Error: TEST_PYPI_TOKEN environment variable is not set."; \
+		echo "Usage: TEST_PYPI_TOKEN=your-token make upload-test"; \
+		exit 1; \
+	fi
+	pip install twine
+	twine upload dist/* \
+		--repository testpypi \
+		--username __token__ \
+		--password $$TEST_PYPI_TOKEN
 
 docs:
 	cd docs && make html

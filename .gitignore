@@ -182,6 +182,11 @@ logs/
 .env.local
 .env.*.local
 
+# PyPI credentials (NEVER commit these!)
+.pypirc
+.pypirc.local
+.pypirc.*
+
 # Local configuration
 config.local.py
 settings.local.py
