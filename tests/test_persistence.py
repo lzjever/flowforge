@@ -491,8 +491,9 @@ class TestSerializationComprehensive:
         # 序列化
         data = flow.serialize()
 
-        # 删除 routine_id
-        if routine_id in data["routines"]:
+        # 尝试删除 routine_id（如果存在）
+        # 注意：routine_id 可能不在序列化数据中（因为我们已经移除了添加 routine_id 的代码）
+        if routine_id in data["routines"] and "routine_id" in data["routines"][routine_id]:
             del data["routines"][routine_id]["routine_id"]
 
         # 反序列化应该仍然成功（使用字典的 key 作为 routine_id）

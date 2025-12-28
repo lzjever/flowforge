@@ -114,9 +114,8 @@ class Flow(Serializable):
         self._active_futures: Set[Future] = set()
 
         # Register serializable fields
-        # Note: routines and connections are NOT included here because they require
-        # special handling (adding routine_id, restoring references, etc.).
-        # They are handled manually in serialize/deserialize methods.
+        # routines and connections are included - base class will automatically serialize/deserialize them
+        # We only need to add routine_id metadata and restore references after deserialization
         self.add_serializable_fields(
             [
                 "flow_id",
@@ -125,6 +124,8 @@ class Flow(Serializable):
                 "execution_strategy",
                 "max_workers",
                 "error_handler",
+                "routines",
+                "connections",
             ]
         )
 
@@ -179,6 +180,32 @@ class Flow(Serializable):
             if r is routine:
                 return rid
         return None
+
+    def _create_routine_from_data(self, routine_data: Dict[str, Any]) -> "Routine":
+        """Create a Routine instance from serialized data.
+
+        Args:
+            routine_data: Serialized routine data dictionary.
+
+        Returns:
+            Routine instance (custom class if available, otherwise base Routine).
+        """
+        class_info = routine_data.get("_class_info", {})
+        if class_info:
+            module_name = class_info.get("module")
+            class_name = class_info.get("class_name")
+            if module_name and class_name:
+                try:
+                    module = importlib.import_module(module_name)
+                    if hasattr(module, class_name):
+                        routine_class = getattr(module, class_name)
+                        return routine_class()
+                except Exception:
+                    pass
+        
+        # Fallback to base Routine
+        from routilux.routine import Routine
+        return Routine()
 
     def _build_dependency_graph(self) -> Dict[str, Set[str]]:
         """Build routine dependency graph.
@@ -975,75 +1002,11 @@ class Flow(Serializable):
         # Validate all Serializable objects before serialization
         # This catches issues early and provides clear error messages
         from routilux.utils.serializable import validate_serializable_tree
+        validate_serializable_tree(self)
 
-        try:
-            # Validate all routines
-            for routine_id, routine in self.routines.items():
-                try:
-                    validate_serializable_tree(routine)
-                except TypeError as e:
-                    raise TypeError(
-                        f"Routine '{routine_id}' ({type(routine).__name__}) cannot be serialized: {str(e)}"
-                    ) from e
-
-            # Validate all connections
-            for i, connection in enumerate(self.connections):
-                try:
-                    validate_serializable_tree(connection)
-                except TypeError as e:
-                    raise TypeError(f"Connection #{i} cannot be serialized: {str(e)}") from e
-
-            # Validate other Serializable fields (job_state, error_handler, etc.)
-            for field in self.fields_to_serialize:
-                if field in ["routines", "connections"]:
-                    continue  # Already validated above
-                value = getattr(self, field, None)
-                if isinstance(value, Serializable):
-                    try:
-                        validate_serializable_tree(value)
-                    except TypeError as e:
-                        raise TypeError(f"Field '{field}' cannot be serialized: {str(e)}") from e
-        except TypeError:
-            # Re-raise as-is (already has good error message)
-            raise
-        except Exception as e:
-            # Wrap unexpected errors
-            raise TypeError(f"Error validating Flow for serialization: {str(e)}") from e
-
-        # Let base class handle registered fields (flow_id, job_state, _paused, etc.)
+        # Let base class handle all registered fields including routines and connections
+        # Base class automatically handles Serializable objects in dicts and lists
         data = super().serialize()
-
-        # Serialize routines - let Routine handle its own serialization
-        # Flow only adds routine_id (which is Flow's responsibility, not Routine's)
-        routines_data = {}
-        for routine_id, routine in self.routines.items():
-            routine_data = routine.serialize()  # Routine handles its own serialization
-            routine_data["routine_id"] = routine_id  # Flow adds routine_id
-            routines_data[routine_id] = routine_data
-        data["routines"] = routines_data
-
-        # Serialize connections - let Connection handle its own serialization
-        # Flow only adds routine_id (which is Flow's responsibility, not Connection's)
-        connections_data = []
-        for connection in self.connections:
-            conn_data = connection.serialize()  # Connection handles its own serialization
-
-            # Flow finds and adds routine_id (Flow's responsibility)
-            source_routine_id = None
-            target_routine_id = None
-            for rid, routine in self.routines.items():
-                if routine == connection.source_event.routine:
-                    source_routine_id = rid
-                if routine == connection.target_slot.routine:
-                    target_routine_id = rid
-
-            if source_routine_id:
-                conn_data["_source_routine_id"] = source_routine_id
-            if target_routine_id:
-                conn_data["_target_routine_id"] = target_routine_id
-
-            connections_data.append(conn_data)
-        data["connections"] = connections_data
 
         return data
 
@@ -1053,133 +1016,83 @@ class Flow(Serializable):
         Args:
             data: Serialized data dictionary.
         """
-        # First deserialize basic fields registered in fields_to_serialize
-        # (flow_id, job_state, _paused, execution_strategy, max_workers, error_handler)
-        # Note: job_state needs special datetime handling, so handle it separately
-        basic_data = {
-            k: v
-            for k, v in data.items()
-            if k not in ["routines", "connections", "job_state"]
-        }
-
-        # Handle job_state if present (it has special datetime conversion)
-        if "job_state" in data and data["job_state"]:
+        # Special case: Handle job_state datetime conversion
+        job_state_data = data.get("job_state", None)
+        if job_state_data:
             from routilux.job_state import JobState
             from datetime import datetime
 
-            job_state_data = data["job_state"].copy()
-
-            # Handle datetime conversion (JobState's responsibility, but we need to do it here
-            # because the base class deserialize doesn't know about datetime)
+            # Convert datetime strings to datetime objects
             if isinstance(job_state_data.get("created_at"), str):
                 job_state_data["created_at"] = datetime.fromisoformat(job_state_data["created_at"])
             if isinstance(job_state_data.get("updated_at"), str):
                 job_state_data["updated_at"] = datetime.fromisoformat(job_state_data["updated_at"])
 
+            # Let base class deserialize job_state
             job_state = JobState()
             job_state.deserialize(job_state_data)
-            basic_data["job_state"] = job_state
+            data["job_state"] = job_state
 
-        # Let base class handle registered fields
-        super().deserialize(basic_data)
+        # Create registry and pre-register routines for callable deserialization
+        registry = ObjectRegistry()
+        routines_data = data.get("routines", {})
+        connections_data = data.get("connections", [])
+        
+        # Create a copy of data without routines and connections for base class
+        # (to avoid modifying the original data dictionary)
+        base_data = {k: v for k, v in data.items() if k not in ["routines", "connections"]}
+        for routine_id, routine_data in routines_data.items():
+            routine = self._create_routine_from_data(routine_data)
+            registry.register(routine, object_id=routine_id)
 
-        # Restore concurrent execution related (if deserialized as concurrent mode, need to reinitialize)
-        if self.execution_strategy == "concurrent":
-            self._execution_lock = threading.Lock()
-            self._dependency_graph = None
-            self._active_futures = set()  # Initialize futures tracking set
-            # Thread pool will be created when needed, not here
+        # Let base class handle all fields except routines and connections
+        # (routines and connections need special handling with registry)
+        super().deserialize(base_data, registry=registry)
 
-        # Restore routines - let Routine handle its own deserialization
-        # Flow only manages routine_id mapping
-        if "routines" in data:
-            routines_data = data["routines"]
-            self.routines = {}
+        # Post-process: Restore routine instances from registry
+        self.routines = {}
+        for routine_id, routine_data in routines_data.items():
+            routine = registry.find_by_id(routine_id)
+            if routine:
+                routine.deserialize(routine_data, registry=registry)
+                self.routines[routine_id] = routine
 
-            # Create object registry for callable deserialization
-            registry = ObjectRegistry()
+        # Post-process: Restore connections (base class can't handle them - Connection.deserialize doesn't accept registry)
+        from routilux.connection import Connection
+        self.connections = []
+        for conn_data in connections_data:
+            connection = Connection()
+            connection.deserialize(conn_data)
+            
+            # Restore connection references by finding routines with matching event/slot names
+            source_event_name = getattr(connection, "_source_event_name", None)
+            target_slot_name = getattr(connection, "_target_slot_name", None)
 
-            # First pass: create all routine instances and let them deserialize themselves
-            for routine_id, routine_data in routines_data.items():
-                class_info = routine_data.get("_class_info", {})
-                routine_class = None
-                
-                # Load class from class_info
-                if class_info:
-                    module_name = class_info.get("module")
-                    class_name = class_info.get("class_name")
-                    if module_name and class_name:
-                        try:
-                            module = importlib.import_module(module_name)
-                            if hasattr(module, class_name):
-                                routine_class = getattr(module, class_name)
-                        except Exception:
-                            pass
+            # Find source routine by event name
+            if source_event_name:
+                for routine in self.routines.values():
+                    source_event = routine.get_event(source_event_name)
+                    if source_event:
+                        connection.source_event = source_event
+                        break
 
-                if routine_class:
-                    # Create routine instance - let Routine handle its own creation
-                    routine = routine_class()
-                    # Register routine in registry before deserialization
-                    # (needed for callable deserialization)
-                    registry.register(routine, object_id=routine_id)
-                    self.routines[routine_id] = routine
-                else:
-                    # If class cannot be loaded, create a basic Routine instance
-                    from routilux.routine import Routine
+            # Find target routine by slot name
+            if target_slot_name:
+                for routine in self.routines.values():
+                    target_slot = routine.get_slot(target_slot_name)
+                    if target_slot:
+                        connection.target_slot = target_slot
+                        break
 
-                    routine = Routine()
-                    registry.register(routine, object_id=routine_id)
-                    self.routines[routine_id] = routine
+            # Only add connection if both event and slot are found (ignore invalid/incomplete connections)
+            if connection.source_event and connection.target_slot:
+                # Establish bidirectional connection
+                if connection.target_slot not in connection.source_event.connected_slots:
+                    connection.source_event.connect(connection.target_slot)
+                if connection.source_event not in connection.target_slot.connected_events:
+                    connection.target_slot.connect(connection.source_event)
 
-            # Second pass: deserialize routines with registry (for callable support)
-            # Now that all routines are registered, callables can be properly deserialized
-            for routine_id, routine_data in routines_data.items():
-                routine = self.routines.get(routine_id)
-                if routine:
-                    # Deserialize with registry - callables will be automatically handled
-                    routine.deserialize(routine_data, registry=registry)
-
-        # Restore connections - let Connection handle its own deserialization
-        # Flow only restores references (routine_id -> Routine mapping)
-        if "connections" in data:
-            from routilux.connection import Connection
-
-            self.connections = []
-
-            for conn_data in data["connections"]:
-                connection = Connection()
-                # Let Connection handle its own deserialization
-                connection.deserialize(conn_data)
-
-                # Flow restores references using routine_id (Flow's responsibility)
-                source_routine_id = getattr(connection, "_source_routine_id", None)
-                source_event_name = getattr(connection, "_source_event_name", None)
-                target_routine_id = getattr(connection, "_target_routine_id", None)
-                target_slot_name = getattr(connection, "_target_slot_name", None)
-
-                if source_routine_id and source_event_name:
-                    source_routine = self.routines.get(source_routine_id)
-                    if source_routine:
-                        source_event = source_routine.get_event(source_event_name)
-                        if source_event:
-                            connection.source_event = source_event
-
-                if target_routine_id and target_slot_name:
-                    target_routine = self.routines.get(target_routine_id)
-                    if target_routine:
-                        target_slot = target_routine.get_slot(target_slot_name)
-                        if target_slot:
-                            connection.target_slot = target_slot
-
-                # If successfully rebuilt references, add to connections
-                if connection.source_event and connection.target_slot:
-                    # Establish bidirectional connection (if not already established)
-                    if connection.target_slot not in connection.source_event.connected_slots:
-                        connection.source_event.connect(connection.target_slot)
-                    if connection.source_event not in connection.target_slot.connected_events:
-                        connection.target_slot.connect(connection.source_event)
-
-                    self.connections.append(connection)
-                    # Rebuild mapping
-                    key = (connection.source_event, connection.target_slot)
-                    self._event_slot_connections[key] = connection
+                self.connections.append(connection)
+                # Rebuild mapping
+                key = (connection.source_event, connection.target_slot)
+                self._event_slot_connections[key] = connection

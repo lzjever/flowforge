@@ -84,9 +84,9 @@ class TestFlowDeserializeEdgeCases:
         # 序列化
         data = flow.serialize()
 
-        # 修改连接数据使其不完整
+        # 修改连接数据使其不完整（删除 _source_event_name，这样连接就无法恢复）
         if "connections" in data and len(data["connections"]) > 0:
-            data["connections"][0].pop("_source_routine_id", None)
+            data["connections"][0].pop("_source_event_name", None)
 
         # 反序列化
         new_flow = Flow()

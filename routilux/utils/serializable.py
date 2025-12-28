@@ -340,11 +340,13 @@ class Serializable:
                         if value.get("_type") == "callable":
                             attr = deserialize_callable(value, registry=registry)
                         else:
+                            # Try to deserialize as Serializable object
                             attr_class = SerializableRegistry.get_class(value["_type"])
                             if attr_class:
                                 attr: Serializable = attr_class()
                                 attr.deserialize(value, registry=registry)
                             else:
+                                # Not a registered Serializable class, deserialize as dict
                                 attr = {k: Serializable.deserialize_item(v, registry=registry) for k, v in value.items()}
                     else:
                         attr = {k: Serializable.deserialize_item(v, registry=registry) for k, v in value.items()}

@@ -155,10 +155,10 @@ class Routine(Serializable):
         self._error_handler: Optional["ErrorHandler"] = None
 
         # Register serializable fields
-        # Note: _slots and _events are NOT included here because they need special handling
-        # (adding handler metadata, etc.). They are handled manually in serialize/deserialize.
+        # _slots and _events are included - base class will automatically serialize/deserialize them
+        # We only need to restore routine references after deserialization
         self.add_serializable_fields(
-            ["_id", "_stats", "_config", "_error_handler"]
+            ["_id", "_stats", "_config", "_error_handler", "_slots", "_events"]
         )
 
     def __repr__(self) -> str:
@@ -809,26 +809,13 @@ class Routine(Serializable):
         Returns:
             Serialized dictionary.
         """
-        # Let base class handle registered fields (_id, _stats, _config, _error_handler)
+        # Let base class handle all registered fields including _slots and _events
+        # Base class automatically handles Serializable objects in dicts
         data = super().serialize()
 
         # Add class information (Routine-specific metadata)
         cls = self.__class__
         data["_class_info"] = {"class_name": cls.__name__, "module": cls.__module__}
-
-        # Serialize slots - let Slot handle its own serialization
-        # Callables (handlers, merge_strategies) are automatically handled by Serializable
-        slots_data = {}
-        for name, slot in self._slots.items():
-            slot_data = slot.serialize()  # Slot handles its own serialization
-            slots_data[name] = slot_data
-        data["_slots"] = slots_data
-
-        # Serialize events - let Event handle its own serialization
-        events_data = {}
-        for name, event in self._events.items():
-            events_data[name] = event.serialize()  # Event handles its own serialization
-        data["_events"] = events_data
 
         return data
 
@@ -839,32 +826,20 @@ class Routine(Serializable):
             data: Serialized data dictionary.
             registry: Optional ObjectRegistry for deserializing callables.
         """
-        # First deserialize basic fields registered in fields_to_serialize
-        # (_id, _stats, _config, _error_handler)
-        basic_data = {
-            k: v for k, v in data.items() if k not in ["_slots", "_events", "_class_info"]
+        # Exclude _class_info from deserialization (it's metadata, not a field)
+        deserialize_data = {
+            k: v for k, v in data.items() if k != "_class_info"
         }
-        super().deserialize(basic_data, registry=registry)
+        
+        # Let base class handle all registered fields including _slots and _events
+        # Base class automatically deserializes Serializable objects in dicts
+        super().deserialize(deserialize_data, registry=registry)
 
-        # Restore slots - let Slot handle its own deserialization
-        # Callables are automatically handled by Serializable if registry is provided
-        if "_slots" in data:
-            from routilux.slot import Slot
+        # Restore routine references for slots and events (required after deserialization)
+        if hasattr(self, "_slots") and self._slots:
+            for slot in self._slots.values():
+                slot.routine = self
 
-            self._slots = {}
-            for name, slot_data in data["_slots"].items():
-                slot = Slot()
-                slot.deserialize(slot_data, registry=registry)  # Slot handles its own deserialization
-                slot.routine = self  # Restore reference (Routine's responsibility)
-                self._slots[name] = slot
-
-        # Restore events - let Event handle its own deserialization
-        if "_events" in data:
-            from routilux.event import Event
-
-            self._events = {}
-            for name, event_data in data["_events"].items():
-                event = Event()
-                event.deserialize(event_data, registry=registry)  # Event handles its own deserialization
-                event.routine = self  # Restore reference (Routine's responsibility)
-                self._events[name] = event
+        if hasattr(self, "_events") and self._events:
+            for event in self._events.values():
+                event.routine = self
