@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     from routilux.event import Event
 
 from routilux.utils.serializable import register_serializable, Serializable
-from routilux.serialization_utils import serialize_callable
 
 
 @register_serializable
@@ -135,7 +134,8 @@ class Slot(Serializable):
         self._data: Dict[str, Any] = {}
 
         # Register serializable fields
-        self.add_serializable_fields(["name", "_data", "merge_strategy"])
+        # handler and merge_strategy are automatically serialized if they're callables
+        self.add_serializable_fields(["name", "_data", "handler", "merge_strategy"])
 
     def __repr__(self) -> str:
         """Return string representation of the Slot."""
@@ -377,49 +377,45 @@ class Slot(Serializable):
     def serialize(self) -> Dict[str, Any]:
         """Serialize Slot.
 
+        Callables (handler, merge_strategy) are automatically handled by Serializable base class.
+
         Returns:
             Serialized dictionary.
         """
+        # Let base class handle registered fields (name, _data, handler, merge_strategy)
+        # Serializable automatically serializes callables
         data = super().serialize()
 
-        # Save routine reference (via routine_id)
-        if self.routine:
-            data["_routine_id"] = self.routine._id
-
-        # Save handler metadata (don't serialize function directly)
-        if self.handler:
-            handler_data = serialize_callable(self.handler)
-            if handler_data:
-                data["_handler_metadata"] = handler_data
-
-        # Handle merge_strategy (if function, also serialize metadata)
-        if callable(self.merge_strategy) and self.merge_strategy not in ["override", "append"]:
-            strategy_data = serialize_callable(self.merge_strategy)
-            if strategy_data:
-                data["_merge_strategy_metadata"] = strategy_data
-                data["merge_strategy"] = "_custom"
+        # Note: _routine_id is NOT serialized here - it's Flow's responsibility
+        # Flow will add routine_id when serializing routines
 
         return data
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
         """Deserialize Slot.
+
+        Callables (handler, merge_strategy) are automatically handled by Serializable base class.
 
         Args:
             data: Serialized data dictionary.
+            registry: Optional ObjectRegistry for deserializing callables.
         """
-        # Save routine_id for later reference restoration
-        routine_id = data.pop("_routine_id", None)
-        handler_metadata = data.pop("_handler_metadata", None)
-        strategy_metadata = data.pop("_merge_strategy_metadata", None)
+        # Let base class handle registered fields (name, _data, handler, merge_strategy)
+        # Serializable automatically deserializes callables if registry is provided
+        super().deserialize(data, registry=registry)
 
-        # Deserialize basic fields
-        super().deserialize(data)
+        # Handle legacy format: if merge_strategy was serialized as "_custom", restore it
+        if hasattr(self, "merge_strategy") and self.merge_strategy == "_custom":
+            # Try to restore from legacy metadata if present
+            if hasattr(self, "_merge_strategy_metadata"):
+                from routilux.utils.serializable import deserialize_callable
+                strategy = deserialize_callable(self._merge_strategy_metadata, registry=registry)
+                if strategy:
+                    self.merge_strategy = strategy
+                delattr(self, "_merge_strategy_metadata")
+            else:
+                # Fallback to override if no metadata
+                self.merge_strategy = "override"
 
-        # Routine reference needs to be restored when Flow is reconstructed
-        # Handler and merge_strategy also need to be restored
-        if handler_metadata:
-            self._handler_metadata = handler_metadata
-        if strategy_metadata:
-            self._merge_strategy_metadata = strategy_metadata
-        if routine_id:
-            self._routine_id = routine_id
+        # Note: routine reference (routine_id) is restored by Routine.deserialize()
+        # or Flow.deserialize(), not here - it's not Slot's responsibility

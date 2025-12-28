@@ -237,11 +237,18 @@ class TestConditionalRouter(unittest.TestCase):
         # Serialize
         serialized = router.serialize()
 
-        # Function should be serialized as function metadata
+        # Function should be serialized (as callable if accessible from module, or lambda_expression if not)
         routes = serialized["_config"]["routes"]
         self.assertEqual(routes[0][0], "high")
         self.assertIsInstance(routes[0][1], dict)
-        self.assertEqual(routes[0][1].get("_type"), "function")
+        condition_type = routes[0][1].get("_type")
+        # Function defined in test method cannot be accessed from module level,
+        # so it will be serialized as lambda_expression
+        self.assertIn(condition_type, ["callable", "lambda_expression"])
+        if condition_type == "callable":
+            self.assertEqual(routes[0][1].get("callable_type"), "function")
+        elif condition_type == "lambda_expression":
+            self.assertIn("expression", routes[0][1])
 
     def test_serialize_deserialize_roundtrip(self):
         """Test complete serialize-deserialize roundtrip."""

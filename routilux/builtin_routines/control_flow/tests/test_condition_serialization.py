@@ -30,7 +30,6 @@ class TestConditionSerialization(unittest.TestCase):
 
     def test_lambda_condition_serialization(self):
         """Test lambda condition serialization and deserialization."""
-
         # Create function at module level (so inspect.getsource can work)
         def test_lambda(x):
             return x.get("priority") == "high"
@@ -101,7 +100,8 @@ class TestConditionSerialization(unittest.TestCase):
         high_route = routes[0]
         self.assertEqual(high_route[0], "high")
         self.assertIsInstance(high_route[1], dict)
-        self.assertEqual(high_route[1].get("_type"), "function")
+        self.assertEqual(high_route[1].get("_type"), "callable")
+        self.assertEqual(high_route[1].get("callable_type"), "function")
         self.assertIn("module", high_route[1])
         self.assertIn("name", high_route[1])
 
@@ -183,7 +183,6 @@ class TestConditionSerialization(unittest.TestCase):
 
     def test_mixed_conditions_serialization(self):
         """Test serialization of mixed condition types."""
-
         # Module-level function for testing
         def test_lambda(x):
             return x.get("type") == "test"
@@ -243,7 +242,6 @@ class TestConditionSerialization(unittest.TestCase):
 
     def test_flow_level_serialization_with_lambda(self):
         """Test Flow-level serialization with lambda condition."""
-
         def test_lambda(x):
             return x.get("priority") == "high"
 

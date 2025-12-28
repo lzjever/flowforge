@@ -337,13 +337,14 @@ class ErrorHandler(Serializable):
             data["strategy"] = data["strategy"].value
         return data
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
         """Deserialize the ErrorHandler.
 
         Args:
             data: Serialized data dictionary.
+            registry: Optional ObjectRegistry for deserializing callables.
         """
         # ErrorStrategy needs to be converted from string to enum
         if "strategy" in data and isinstance(data["strategy"], str):
             data["strategy"] = ErrorStrategy(data["strategy"])
-        super().deserialize(data)
+        super().deserialize(data, registry=registry)

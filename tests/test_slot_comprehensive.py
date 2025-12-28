@@ -130,7 +130,9 @@ class TestSlotSerialization:
 
         data = slot.serialize()
         assert data["name"] == "test"
-        assert data.get("merge_strategy") == "_custom" or "_merge_strategy_metadata" in data
+        # With new automatic serialization, merge_strategy is directly serialized as callable
+        assert isinstance(data.get("merge_strategy"), dict)
+        assert data["merge_strategy"].get("_type") == "callable"
 
     def test_deserialize_slot_with_metadata(self):
         """测试反序列化带元数据的 Slot"""

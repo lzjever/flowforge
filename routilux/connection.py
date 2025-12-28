@@ -125,18 +125,19 @@ class Connection(Serializable):
         """Serialize the Connection.
 
         Returns:
-            Serialized dictionary containing connection data and references.
+            Serialized dictionary containing connection data.
         """
+        # Let base class handle registered fields (param_mapping)
         data = super().serialize()
 
-        # Save reference information (via routine_id + event/slot name)
-        if self.source_event and self.source_event.routine:
-            data["_source_routine_id"] = self.source_event.routine._id
+        # Save event and slot names (Connection's responsibility)
+        if self.source_event:
             data["_source_event_name"] = self.source_event.name
-
-        if self.target_slot and self.target_slot.routine:
-            data["_target_routine_id"] = self.target_slot.routine._id
+        if self.target_slot:
             data["_target_slot_name"] = self.target_slot.name
+
+        # Note: routine_id is NOT serialized here - it's Flow's responsibility
+        # Flow will add routine_id when serializing connections
 
         return data
 
@@ -146,16 +147,17 @@ class Connection(Serializable):
         Args:
             data: Serialized data dictionary.
         """
-        # Save reference information for later restoration
+        # Save reference information for later restoration by Flow
         source_routine_id = data.pop("_source_routine_id", None)
         source_event_name = data.pop("_source_event_name", None)
         target_routine_id = data.pop("_target_routine_id", None)
         target_slot_name = data.pop("_target_slot_name", None)
 
-        # Deserialize basic fields
+        # Let base class handle registered fields (param_mapping)
         super().deserialize(data)
 
-        # Save reference information to be restored when Flow is reconstructed
+        # Save reference information to be restored by Flow.deserialize()
+        # (Flow has access to routines dictionary to restore references)
         if source_routine_id:
             self._source_routine_id = source_routine_id
         if source_event_name:

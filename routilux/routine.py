@@ -14,7 +14,48 @@ if TYPE_CHECKING:
     from routilux.error_handler import ErrorHandler, ErrorStrategy
 
 from routilux.utils.serializable import register_serializable, Serializable
-from routilux.serialization_utils import get_routine_class_info
+import importlib
+from typing import Dict, Any, Optional, Type
+
+
+# ============================================================================
+# Routine-specific Utilities (for backward compatibility)
+# ============================================================================
+
+def get_routine_class_info(routine: Any) -> Dict[str, Any]:
+    """Get class information for a Routine.
+
+    Args:
+        routine: Routine instance.
+
+    Returns:
+        Dictionary containing class information.
+    """
+    cls = routine.__class__
+    return {"class_name": cls.__name__, "module": cls.__module__}
+
+
+def load_routine_class(class_info: Dict[str, Any]) -> Optional[Type]:
+    """Load Routine class from class information.
+
+    Args:
+        class_info: Dictionary containing class_name and module.
+
+    Returns:
+        Routine class, or None if loading fails.
+    """
+    try:
+        module_name = class_info.get("module")
+        class_name = class_info.get("class_name")
+
+        if module_name and class_name:
+            module = importlib.import_module(module_name)
+            if hasattr(module, class_name):
+                return getattr(module, class_name)
+    except Exception:
+        pass
+
+    return None
 
 
 @register_serializable
@@ -114,10 +155,10 @@ class Routine(Serializable):
         self._error_handler: Optional["ErrorHandler"] = None
 
         # Register serializable fields
-        # Both _stats and _config are included to ensure they are preserved
-        # during serialization/deserialization
+        # Note: _slots and _events are NOT included here because they need special handling
+        # (adding handler metadata, etc.). They are handled manually in serialize/deserialize.
         self.add_serializable_fields(
-            ["_id", "_stats", "_slots", "_events", "_config", "_error_handler"]
+            ["_id", "_stats", "_config", "_error_handler"]
         )
 
     def __repr__(self) -> str:
@@ -768,70 +809,62 @@ class Routine(Serializable):
         Returns:
             Serialized dictionary.
         """
+        # Let base class handle registered fields (_id, _stats, _config, _error_handler)
         data = super().serialize()
 
-        # Add class information
-        class_info = get_routine_class_info(self)
-        data["_class_info"] = class_info
+        # Add class information (Routine-specific metadata)
+        cls = self.__class__
+        data["_class_info"] = {"class_name": cls.__name__, "module": cls.__module__}
 
-        # Serialize slots (save name and metadata, not handler function)
+        # Serialize slots - let Slot handle its own serialization
+        # Callables (handlers, merge_strategies) are automatically handled by Serializable
         slots_data = {}
         for name, slot in self._slots.items():
-            slot_data = slot.serialize()
-            # Save handler metadata
-            from routilux.serialization_utils import serialize_callable
-
-            handler_data = serialize_callable(slot.handler)
-            if handler_data:
-                slot_data["_handler_metadata"] = handler_data
+            slot_data = slot.serialize()  # Slot handles its own serialization
             slots_data[name] = slot_data
         data["_slots"] = slots_data
 
-        # Serialize events
+        # Serialize events - let Event handle its own serialization
         events_data = {}
         for name, event in self._events.items():
-            events_data[name] = event.serialize()
+            events_data[name] = event.serialize()  # Event handles its own serialization
         data["_events"] = events_data
 
         return data
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
         """Deserialize Routine.
 
         Args:
             data: Serialized data dictionary.
+            registry: Optional ObjectRegistry for deserializing callables.
         """
-        # First deserialize basic fields (excluding _slots and _events, which need special handling)
+        # First deserialize basic fields registered in fields_to_serialize
+        # (_id, _stats, _config, _error_handler)
         basic_data = {
             k: v for k, v in data.items() if k not in ["_slots", "_events", "_class_info"]
         }
-        super().deserialize(basic_data)
+        super().deserialize(basic_data, registry=registry)
 
-        # Restore slots (basic structure, handler restored in Flow.deserialize)
+        # Restore slots - let Slot handle its own deserialization
+        # Callables are automatically handled by Serializable if registry is provided
         if "_slots" in data:
             from routilux.slot import Slot
 
             self._slots = {}
             for name, slot_data in data["_slots"].items():
                 slot = Slot()
-                slot.name = slot_data.get("name", name)
-                slot._data = slot_data.get("_data", {})
-                slot.merge_strategy = slot_data.get("merge_strategy", "override")
-                slot.routine = self
-                # Save handler metadata for later restoration
-                if "_handler_metadata" in slot_data:
-                    slot._handler_metadata = slot_data["_handler_metadata"]
-                if "_merge_strategy_metadata" in slot_data:
-                    slot._merge_strategy_metadata = slot_data["_merge_strategy_metadata"]
+                slot.deserialize(slot_data, registry=registry)  # Slot handles its own deserialization
+                slot.routine = self  # Restore reference (Routine's responsibility)
                 self._slots[name] = slot
 
-        # Restore events
+        # Restore events - let Event handle its own deserialization
         if "_events" in data:
             from routilux.event import Event
 
             self._events = {}
             for name, event_data in data["_events"].items():
                 event = Event()
-                event.deserialize(event_data)
-                event.routine = self
+                event.deserialize(event_data, registry=registry)  # Event handles its own deserialization
+                event.routine = self  # Restore reference (Routine's responsibility)
                 self._events[name] = event

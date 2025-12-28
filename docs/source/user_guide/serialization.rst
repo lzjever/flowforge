@@ -234,3 +234,68 @@ Some classes have special serialization behavior:
 
 * **ErrorHandler**: The ``ErrorStrategy`` enum is automatically converted to/from strings during serialization/deserialization.
 
+Handler Method Validation
+--------------------------
+
+When serializing slot handlers and merge strategies, the system validates that
+methods belong to the routine being serialized. This ensures cross-process
+serialization safety.
+
+**Why This Matters**:
+
+When serialized data is transferred to another process (e.g., for distributed
+execution), only methods of the serialized routine itself can be properly
+restored. Methods from other routines cannot be deserialized because their
+object instances don't exist in the new process.
+
+**Validation Rules**:
+
+* ✅ **Allowed**: Methods of the routine being serialized
+* ✅ **Allowed**: Module-level functions (can be imported in any process)
+* ✅ **Allowed**: Builtin functions
+* ❌ **Not Allowed**: Methods from other routine instances
+
+**Example - Correct Usage**:
+
+.. code-block:: python
+
+   class MyRoutine(Routine):
+       def __init__(self):
+           super().__init__()
+           # ✅ Correct: Use method from this routine
+           self.input_slot = self.define_slot("input", handler=self.process_data)
+       
+       def process_data(self, data):
+           return {"processed": data}
+
+**Example - Incorrect Usage**:
+
+.. code-block:: python
+
+   class MyRoutine(Routine):
+       def __init__(self):
+           super().__init__()
+           other_routine = OtherRoutine()
+           # ❌ Wrong: Using method from another routine
+           # This will raise ValueError during serialization
+           self.input_slot = self.define_slot("input", handler=other_routine.process)
+
+**Error Message**:
+
+If you try to serialize a method from another routine, you'll get a clear error:
+
+.. code-block:: python
+
+   ValueError: Cannot serialize method 'process' from OtherRoutine[other_id]. 
+   Only methods of the serialized object itself (MyRoutine[my_id]) 
+   can be serialized for cross-process execution.
+
+**What Gets Validated**:
+
+* Slot handlers (in ``Routine.define_slot()``)
+* Merge strategies (if they are callable methods)
+* Conditional router conditions (if they are callable methods)
+
+**Note**: Functions (not methods) are always allowed because they can be
+imported by module name in any process.
+

@@ -21,10 +21,11 @@ if TYPE_CHECKING:
     from routilux.error_handler import ErrorHandler
 
 from routilux.utils.serializable import register_serializable, Serializable
-from routilux.serialization_utils import (
-    load_routine_class,
+from routilux.utils.serializable import (
     deserialize_callable,
+    ObjectRegistry,
 )
+import importlib
 
 
 @register_serializable
@@ -113,16 +114,17 @@ class Flow(Serializable):
         self._active_futures: Set[Future] = set()
 
         # Register serializable fields
-        # Note: routines and connections require special handling in serialize method
+        # Note: routines and connections are NOT included here because they require
+        # special handling (adding routine_id, restoring references, etc.).
+        # They are handled manually in serialize/deserialize methods.
         self.add_serializable_fields(
             [
                 "flow_id",
-                "routines",
-                "connections",
                 "job_state",
                 "_paused",
                 "execution_strategy",
                 "max_workers",
+                "error_handler",
             ]
         )
 
@@ -1008,63 +1010,39 @@ class Flow(Serializable):
             # Wrap unexpected errors
             raise TypeError(f"Error validating Flow for serialization: {str(e)}") from e
 
-        # First call parent serialize, which handles registered fields
-        # But we need special handling for routines and connections
-        data = {}
+        # Let base class handle registered fields (flow_id, job_state, _paused, etc.)
+        data = super().serialize()
 
-        # Serialize basic fields
-        for field in self.fields_to_serialize:
-            if field in ["routines", "connections"]:
-                continue  # These fields require special handling
-            value = getattr(self, field, None)
-            if isinstance(value, Serializable):
-                data[field] = value.serialize()
-            elif isinstance(value, list):
-                data[field] = [
-                    item.serialize() if isinstance(item, Serializable) else item for item in value
-                ]
-            elif isinstance(value, dict):
-                data[field] = {
-                    k: v.serialize() if isinstance(v, Serializable) else v for k, v in value.items()
-                }
-            else:
-                data[field] = value
-
-        # Add type information
-        data["_type"] = type(self).__name__
-
-        # Serialize routines (complete information)
+        # Serialize routines - let Routine handle its own serialization
+        # Flow only adds routine_id (which is Flow's responsibility, not Routine's)
         routines_data = {}
         for routine_id, routine in self.routines.items():
-            routine_data = routine.serialize()
-            routine_data["routine_id"] = routine_id
+            routine_data = routine.serialize()  # Routine handles its own serialization
+            routine_data["routine_id"] = routine_id  # Flow adds routine_id
             routines_data[routine_id] = routine_data
-
         data["routines"] = routines_data
 
-        # Serialize connections (need to save Flow's routine_id, not routine._id)
+        # Serialize connections - let Connection handle its own serialization
+        # Flow only adds routine_id (which is Flow's responsibility, not Connection's)
         connections_data = []
         for connection in self.connections:
-            conn_data = connection.serialize()
+            conn_data = connection.serialize()  # Connection handles its own serialization
 
-            # Find routine_id in Flow
+            # Flow finds and adds routine_id (Flow's responsibility)
             source_routine_id = None
             target_routine_id = None
-
             for rid, routine in self.routines.items():
                 if routine == connection.source_event.routine:
                     source_routine_id = rid
                 if routine == connection.target_slot.routine:
                     target_routine_id = rid
 
-            # Override with Flow's routine_id
             if source_routine_id:
                 conn_data["_source_routine_id"] = source_routine_id
             if target_routine_id:
                 conn_data["_target_routine_id"] = target_routine_id
 
             connections_data.append(conn_data)
-
         data["connections"] = connections_data
 
         return data
@@ -1075,21 +1053,24 @@ class Flow(Serializable):
         Args:
             data: Serialized data dictionary.
         """
-        # First deserialize basic fields (excluding fields requiring special handling)
+        # First deserialize basic fields registered in fields_to_serialize
+        # (flow_id, job_state, _paused, execution_strategy, max_workers, error_handler)
+        # Note: job_state needs special datetime handling, so handle it separately
         basic_data = {
             k: v
             for k, v in data.items()
-            if k not in ["routines", "connections", "job_state", "_type"]
+            if k not in ["routines", "connections", "job_state"]
         }
 
-        # Handle job_state if present
+        # Handle job_state if present (it has special datetime conversion)
         if "job_state" in data and data["job_state"]:
             from routilux.job_state import JobState
             from datetime import datetime
 
             job_state_data = data["job_state"].copy()
 
-            # Handle datetime
+            # Handle datetime conversion (JobState's responsibility, but we need to do it here
+            # because the base class deserialize doesn't know about datetime)
             if isinstance(job_state_data.get("created_at"), str):
                 job_state_data["created_at"] = datetime.fromisoformat(job_state_data["created_at"])
             if isinstance(job_state_data.get("updated_at"), str):
@@ -1099,7 +1080,7 @@ class Flow(Serializable):
             job_state.deserialize(job_state_data)
             basic_data["job_state"] = job_state
 
-        # Call parent deserialize to handle basic fields
+        # Let base class handle registered fields
         super().deserialize(basic_data)
 
         # Restore concurrent execution related (if deserialized as concurrent mode, need to reinitialize)
@@ -1109,86 +1090,57 @@ class Flow(Serializable):
             self._active_futures = set()  # Initialize futures tracking set
             # Thread pool will be created when needed, not here
 
-        # Restore routines
+        # Restore routines - let Routine handle its own deserialization
+        # Flow only manages routine_id mapping
         if "routines" in data:
             routines_data = data["routines"]
             self.routines = {}
 
-            # First pass: create all routine instances
+            # Create object registry for callable deserialization
+            registry = ObjectRegistry()
+
+            # First pass: create all routine instances and let them deserialize themselves
             for routine_id, routine_data in routines_data.items():
                 class_info = routine_data.get("_class_info", {})
-                routine_class = load_routine_class(class_info)
+                routine_class = None
+                
+                # Load class from class_info
+                if class_info:
+                    module_name = class_info.get("module")
+                    class_name = class_info.get("class_name")
+                    if module_name and class_name:
+                        try:
+                            module = importlib.import_module(module_name)
+                            if hasattr(module, class_name):
+                                routine_class = getattr(module, class_name)
+                        except Exception:
+                            pass
 
                 if routine_class:
-                    # Create routine instance
+                    # Create routine instance - let Routine handle its own creation
                     routine = routine_class()
-                    # Deserialize routine (excluding slots and events references)
-                    routine.deserialize(routine_data)
+                    # Register routine in registry before deserialization
+                    # (needed for callable deserialization)
+                    registry.register(routine, object_id=routine_id)
                     self.routines[routine_id] = routine
                 else:
                     # If class cannot be loaded, create a basic Routine instance
-                    # But still try to restore slots and events
                     from routilux.routine import Routine
 
                     routine = Routine()
-                    routine._id = routine_data.get("_id", routine_id)
-                    routine._stats = routine_data.get("_stats", {})
-                    # Restore basic structure of slots and events
-                    if "_slots" in routine_data:
-                        from routilux.slot import Slot
-
-                        for slot_name, slot_data in routine_data["_slots"].items():
-                            slot = Slot()
-                            slot.name = slot_data.get("name", slot_name)
-                            slot._data = slot_data.get("_data", {})
-                            slot.merge_strategy = slot_data.get("merge_strategy", "override")
-                            slot.routine = routine
-                            if "_handler_metadata" in slot_data:
-                                slot._handler_metadata = slot_data["_handler_metadata"]
-                            routine._slots[slot_name] = slot
-                    if "_events" in routine_data:
-                        from routilux.event import Event
-
-                        for event_name, event_data in routine_data["_events"].items():
-                            event = Event()
-                            event.deserialize(event_data)
-                            event.routine = routine
-                            routine._events[event_name] = event
+                    registry.register(routine, object_id=routine_id)
                     self.routines[routine_id] = routine
 
-            # Second pass: restore slots' handlers and merge_strategy
+            # Second pass: deserialize routines with registry (for callable support)
+            # Now that all routines are registered, callables can be properly deserialized
             for routine_id, routine_data in routines_data.items():
                 routine = self.routines.get(routine_id)
-                if not routine:
-                    continue
+                if routine:
+                    # Deserialize with registry - callables will be automatically handled
+                    routine.deserialize(routine_data, registry=registry)
 
-                # Restore slots' handlers
-                if "_slots" in routine_data:
-                    for slot_name, slot_data in routine_data["_slots"].items():
-                        slot = routine._slots.get(slot_name)
-                        if slot:
-                            # Restore handler
-                            if "_handler_metadata" in slot_data:
-                                handler = deserialize_callable(
-                                    slot_data["_handler_metadata"], {"routines": self.routines}
-                                )
-                                if handler:
-                                    slot.handler = handler
-
-                            # Restore merge_strategy
-                            if "_merge_strategy_metadata" in slot_data:
-                                strategy = deserialize_callable(
-                                    slot_data["_merge_strategy_metadata"],
-                                    {"routines": self.routines},
-                                )
-                                if strategy:
-                                    slot.merge_strategy = strategy
-
-                            # Clean up temporary data
-                            if hasattr(slot, "_serialized_data"):
-                                delattr(slot, "_serialized_data")
-
-        # Restore connections
+        # Restore connections - let Connection handle its own deserialization
+        # Flow only restores references (routine_id -> Routine mapping)
         if "connections" in data:
             from routilux.connection import Connection
 
@@ -1196,9 +1148,10 @@ class Flow(Serializable):
 
             for conn_data in data["connections"]:
                 connection = Connection()
+                # Let Connection handle its own deserialization
                 connection.deserialize(conn_data)
 
-                # Rebuild reference relationships
+                # Flow restores references using routine_id (Flow's responsibility)
                 source_routine_id = getattr(connection, "_source_routine_id", None)
                 source_event_name = getattr(connection, "_source_event_name", None)
                 target_routine_id = getattr(connection, "_target_routine_id", None)

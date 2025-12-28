@@ -81,31 +81,27 @@ class Event(Serializable):
         """Serialize the Event.
 
         Returns:
-            Serialized dictionary containing event data and references.
+            Serialized dictionary containing event data.
         """
-        data = super().serialize()
+        # Let base class handle registered fields (name, output_params)
+        # Base class is sufficient - no special handling needed
+        # Note: _routine_id is NOT serialized here - it's Flow's responsibility
+        # Flow will add routine_id when serializing routines
+        return super().serialize()
 
-        # Save routine reference (via routine_id)
-        if self.routine:
-            data["_routine_id"] = self.routine._id
-
-        return data
-
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
         """Deserialize the Event.
 
         Args:
             data: Serialized data dictionary.
+            registry: Optional ObjectRegistry for deserializing callables.
         """
-        # Save routine_id for later reference restoration
-        routine_id = data.pop("_routine_id", None)
+        # Let base class handle registered fields (name, output_params)
+        # Base class is sufficient - no special handling needed
+        super().deserialize(data, registry=registry)
 
-        # Deserialize basic fields
-        super().deserialize(data)
-
-        # Routine reference needs to be restored when Flow is reconstructed
-        if routine_id:
-            self._routine_id = routine_id
+        # Note: routine reference is restored by Routine.deserialize(),
+        # not here - it's not Event's responsibility
 
     def __repr__(self) -> str:
         """Return string representation of the Event."""

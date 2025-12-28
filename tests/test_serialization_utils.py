@@ -4,9 +4,11 @@
 测试 serialization_utils 模块的所有功能，提高代码覆盖率。
 """
 
-from routilux.serialization_utils import (
+from routilux.utils.serializable import (
     serialize_callable,
     deserialize_callable,
+)
+from routilux.routine import (
     get_routine_class_info,
     load_routine_class,
 )
@@ -29,7 +31,8 @@ class TestSerializeCallable:
 
         result = serialize_callable(test_func)
         assert result is not None
-        assert result["_type"] == "function"
+        assert result["_type"] == "callable"
+        assert result["callable_type"] == "function"
         assert result["name"] == "test_func"
         assert "module" in result
 
@@ -48,7 +51,8 @@ class TestSerializeCallable:
 
         result = serialize_callable(method)
         assert result is not None
-        assert result["_type"] == "method"
+        assert result["_type"] == "callable"
+        assert result["callable_type"] == "method"
         assert result["class_name"] == "TestClass"
         assert result["method_name"] == "test_method"
         assert result["object_id"] == "test_id"
@@ -57,7 +61,8 @@ class TestSerializeCallable:
         """测试序列化内置函数"""
         result = serialize_callable(len)
         assert result is not None
-        assert result["_type"] == "builtin"
+        assert result["_type"] == "callable"
+        assert result["callable_type"] == "builtin"
         assert result["name"] == "len"
 
     def test_serialize_lambda(self):
@@ -69,7 +74,8 @@ class TestSerializeCallable:
         result = serialize_callable(lambda_func)
         # lambda 函数应该被当作普通函数处理
         assert result is not None
-        assert result["_type"] == "function"
+        assert result["_type"] == "callable"
+        assert result["callable_type"] == "function"
 
     def test_serialize_callable_with_exception(self):
         """测试序列化时发生异常的情况"""
@@ -87,6 +93,71 @@ class TestSerializeCallable:
         result = serialize_callable(bad_callable)
         # 应该返回 None 而不是抛出异常
         assert result is None
+
+    def test_serialize_method_with_owner_validation_success(self):
+        """测试序列化属于 owner 的方法（应该成功）"""
+
+        class TestRoutine(Routine):
+            def __init__(self):
+                super().__init__()
+                self._id = "test_routine"
+
+            def test_method(self):
+                pass
+
+        routine = TestRoutine()
+        method = routine.test_method
+
+        # 传递正确的 owner，应该成功
+        result = serialize_callable(method, owner=routine)
+        assert result is not None
+        assert result["_type"] == "callable"
+        assert result["callable_type"] == "method"
+        assert result["method_name"] == "test_method"
+        assert result["object_id"] == "test_routine"
+
+    def test_serialize_method_with_owner_validation_failure(self):
+        """测试序列化不属于 owner 的方法（应该抛出 ValueError）"""
+
+        class TestRoutine(Routine):
+            def __init__(self):
+                super().__init__()
+                self._id = "test_routine"
+
+            def test_method(self):
+                pass
+
+        routine1 = TestRoutine()
+        routine1._id = "routine1"
+        routine2 = TestRoutine()
+        routine2._id = "routine2"
+
+        # 尝试序列化 routine1 的方法，但传递 routine2 作为 owner
+        method = routine1.test_method
+
+        # 应该抛出 ValueError
+        import pytest
+
+        with pytest.raises(ValueError, match="Cannot serialize method"):
+            serialize_callable(method, owner=routine2)
+
+    def test_serialize_function_with_owner(self):
+        """测试序列化函数时传递 owner（应该成功，函数不需要验证）"""
+
+        def test_func():
+            pass
+
+        class TestRoutine(Routine):
+            pass
+
+        routine = TestRoutine()
+
+        # 函数不需要验证，应该成功
+        result = serialize_callable(test_func, owner=routine)
+        assert result is not None
+        assert result["_type"] == "callable"
+        assert result["callable_type"] == "function"
+        assert result["name"] == "test_func"
 
 
 class TestDeserializeCallable:
@@ -125,9 +196,11 @@ class TestDeserializeCallable:
         serialized = serialize_callable(method)
         assert serialized is not None
 
-        # 反序列化（需要提供 context）
-        context = {"routines": {"test_routine": routine}}
-        deserialized = deserialize_callable(serialized, context)
+        # 反序列化（需要提供 registry）
+        from routilux.utils.serializable import ObjectRegistry
+        registry = ObjectRegistry()
+        registry.register(routine, object_id="test_routine")
+        deserialized = deserialize_callable(serialized, registry=registry)
         assert deserialized is not None
         assert callable(deserialized)
         assert deserialized() == "test_result"

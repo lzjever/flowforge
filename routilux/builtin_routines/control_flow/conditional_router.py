@@ -7,9 +7,8 @@ Routes data to different outputs based on conditions.
 from __future__ import annotations
 from typing import Dict, Any, Callable, Optional, Union
 import inspect
-import warnings
 from routilux.routine import Routine
-from routilux.serialization_utils import serialize_callable, deserialize_callable
+from routilux.utils.serializable import serialize_callable_with_fallback, deserialize_callable
 
 
 class ConditionalRouter(Routine):
@@ -290,35 +289,12 @@ class ConditionalRouter(Routine):
         except Exception:
             return False
 
-    def _extract_lambda_expression(self, source: str) -> Optional[str]:
-        """Extract lambda expression from source code.
-
-        Args:
-            source: Source code string (e.g., "f = lambda x: x.get('priority') == 'high'").
-
-        Returns:
-            Lambda expression string (e.g., "x.get('priority') == 'high'"), or None if extraction fails.
-        """
-        # Find lambda keyword
-        lambda_pos = source.find("lambda")
-        if lambda_pos == -1:
-            return None
-
-        # Find the colon after lambda
-        colon_pos = source.find(":", lambda_pos)
-        if colon_pos == -1:
-            return None
-
-        # Extract expression after colon
-        expr = source[colon_pos + 1 :].strip()
-
-        # Remove trailing comma or semicolon if present
-        expr = expr.rstrip(",;")
-
-        return expr
 
     def serialize(self) -> Dict[str, Any]:
         """Serialize ConditionalRouter, handling lambda functions in routes.
+
+        Callable conditions are automatically serialized using the serialization module's
+        smart serialization with fallback to expression extraction.
 
         Returns:
             Serialized dictionary.
@@ -331,46 +307,15 @@ class ConditionalRouter(Routine):
 
         for route_name, condition in routes:
             if callable(condition):
-                # For lambda functions, always try to convert to string expression first
-                # (even if serialize_callable can serialize it, lambda cannot be deserialized)
-                if condition.__name__ == "<lambda>":
-                    try:
-                        source = inspect.getsource(condition)
-                        lambda_expr = self._extract_lambda_expression(source)
-                        if lambda_expr:
-                            serialized_routes.append(
-                                (
-                                    route_name,
-                                    {"_type": "lambda_expression", "expression": lambda_expr},
-                                )
-                            )
-                        else:
-                            warnings.warn(
-                                f"Lambda condition for route '{route_name}' cannot be serialized. "
-                                f"Consider using string expression or function reference instead."
-                            )
-                            # Skip this route
-                            continue
-                    except (OSError, TypeError) as e:
-                        # Cannot get source (e.g., dynamically created lambda)
-                        warnings.warn(
-                            f"Lambda condition for route '{route_name}' cannot be serialized: {e}. "
-                            f"Consider using string expression or function reference instead."
-                        )
-                        continue
-                else:
-                    # Non-lambda callable - try to serialize normally
-                    condition_data = serialize_callable(condition)
-                    if condition_data:
-                        # Function can be serialized (module function, method, builtin)
-                        serialized_routes.append((route_name, condition_data))
-                    else:
-                        # Other non-serializable callable
-                        warnings.warn(
-                            f"Condition for route '{route_name}' cannot be serialized. "
-                            f"Consider using string expression or function reference instead."
-                        )
-                        continue
+                # Use smart serialization with automatic fallback to expression extraction
+                try:
+                    condition_data = serialize_callable_with_fallback(condition, owner=self, fallback_to_expression=True)
+                    serialized_routes.append((route_name, condition_data))
+                except ValueError as e:
+                    # Re-raise with route name context
+                    raise ValueError(
+                        f"Condition for route '{route_name}' cannot be serialized: {str(e)}"
+                    ) from e
             else:
                 # Non-callable (dict, str, etc.) - serialize directly
                 serialized_routes.append((route_name, condition))
@@ -381,72 +326,57 @@ class ConditionalRouter(Routine):
 
         return data
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
         """Deserialize ConditionalRouter, restoring callable conditions from routes.
+
+        Callable conditions are automatically deserialized by the serialization module,
+        including support for lambda expressions.
 
         Args:
             data: Serialized dictionary.
+            registry: Optional ObjectRegistry for deserializing callables.
         """
-        super().deserialize(data)
+        super().deserialize(data, registry=registry)
 
         # Process routes configuration to restore callable conditions
+        # Most callables are already deserialized by super().deserialize(), but we need
+        # to handle lambda_expression format explicitly since it's stored in config
         routes = self.get_config("routes", [])
         deserialized_routes = []
 
         for route_name, condition_data in routes:
+            # If already deserialized by super().deserialize(), use directly
+            if callable(condition_data):
+                deserialized_routes.append((route_name, condition_data))
+                continue
+            
+            # Try to deserialize using the serialization module
             if isinstance(condition_data, dict) and "_type" in condition_data:
-                condition_type = condition_data.get("_type")
-
-                if condition_type == "lambda_expression":
-                    # Restore lambda expression
-                    expr = condition_data.get("expression")
-                    if expr:
-                        try:
-                            # Replace common lambda parameter names with 'data'
-                            # This handles cases where lambda uses 'x', 'item', etc.
-                            import re as re_module
-
-                            # Replace standalone variable names (not part of method calls)
-                            # Pattern: word boundary + common param names + word boundary
-                            expr = re_module.sub(r"\b(x|item|value|obj)\b", "data", expr)
-
-                            # Safe evaluation to restore lambda
-                            safe_globals = {
-                                "__builtins__": {
-                                    "isinstance": isinstance,
-                                    "dict": dict,
-                                    "list": list,
-                                    "str": str,
-                                    "int": int,
-                                    "float": float,
-                                    "bool": bool,
-                                }
-                            }
-                            condition = eval(f"lambda data: {expr}", safe_globals)
-                            deserialized_routes.append((route_name, condition))
-                        except Exception as e:
-                            warnings.warn(
-                                f"Failed to deserialize lambda condition for route '{route_name}': {e}"
-                            )
-                            continue
-                    else:
-                        warnings.warn(
-                            f"Missing expression in lambda condition for route '{route_name}'"
-                        )
-                        continue
-                elif condition_type in ["function", "method", "builtin"]:
-                    # Restore function reference
-                    condition = deserialize_callable(condition_data)
-                    if condition:
-                        deserialized_routes.append((route_name, condition))
-                    else:
-                        warnings.warn(
-                            f"Failed to deserialize function condition for route '{route_name}'"
-                        )
-                        continue
+                condition = deserialize_callable(condition_data, registry=registry)
+                if condition:
+                    deserialized_routes.append((route_name, condition))
                 else:
-                    # Other serialized type, use as-is
-                    deserialized_routes.append((route_name, condition_data))
+                    # If deserialization failed, check if it's a lambda_expression with error
+                    if condition_data.get("_type") == "lambda_expression":
+                        # deserialize_callable should have handled this, but if it failed,
+                        # extract more information for error message
+                        expr = condition_data.get("expression", "unknown")
+                        raise ValueError(
+                            f"Failed to deserialize lambda condition for route '{route_name}': "
+                            f"cannot restore lambda expression '{expr}'. "
+                            f"The expression may contain unsupported syntax or operations."
+                        )
+                    else:
+                        # Extract more information for error message
+                        callable_type = condition_data.get("callable_type") or condition_data.get("_type", "unknown")
+                        module_name = condition_data.get("module", "unknown")
+                        function_name = condition_data.get("name") or condition_data.get("method_name", "unknown")
+                        
+                        raise ValueError(
+                            f"Failed to deserialize {callable_type} condition for route '{route_name}': "
+                            f"cannot restore {callable_type} '{function_name}' from module '{module_name}'. "
+                            f"The function may not exist in the module or the module cannot be imported."
+                        )
             else:
                 # Non-serialized format (dict, str, etc.) - use directly
                 deserialized_routes.append((route_name, condition_data))
