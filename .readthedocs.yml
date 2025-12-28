@@ -1,10 +1,14 @@
 version: 2
 
+# Build documentation with Sphinx
 sphinx:
   configuration: docs/source/conf.py
+  builder: html
+  fail_on_warning: false
 
+# Python environment
 python:
-  version: 3.9
+  version: "3.11"
   install:
     - method: pip
       path: .

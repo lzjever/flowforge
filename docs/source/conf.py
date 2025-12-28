@@ -9,9 +9,11 @@
 import sys
 import os
 
-# Add the project root to the path
-sys.path.insert(0, os.path.abspath('../..'))
-sys.path.insert(0, os.path.abspath('../../..'))
+# Add the project root to the path for local development
+# In Read the Docs, the package is installed via pip, so this is mainly for local builds
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 project = 'FlowForge'
 copyright = '2024, FlowForge Team'

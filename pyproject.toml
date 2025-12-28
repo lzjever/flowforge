@@ -47,10 +47,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/flowforge/flowforge"
+Homepage = "https://github.com/lzjever/flowforge"
 Documentation = "https://flowforge.readthedocs.io"
-Repository = "https://github.com/flowforge/flowforge"
-Issues = "https://github.com/flowforge/flowforge/issues"
+Repository = "https://github.com/lzjever/flowforge"
+Issues = "https://github.com/lzjever/flowforge/issues"
 
 [tool.setuptools.packages.find]
 exclude = [
