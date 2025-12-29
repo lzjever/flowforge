@@ -11,6 +11,9 @@ The demo simulates a real-world scenario where data needs to be fetched from mul
 Key Features Demonstrated
 -------------------------
 
+* **Unified Event Queue**: Both sequential and concurrent modes use the same queue mechanism
+* **Automatic Flow Detection**: No need to pass flow parameter in ``emit()`` calls
+* **Non-blocking emit()**: Event emission returns immediately after enqueuing tasks
 * Concurrent execution strategy
 * Multiple parallel routines
 * Performance comparison (sequential vs concurrent)
@@ -18,6 +21,7 @@ Key Features Demonstrated
 * Error handling in concurrent execution
 * Serialization of concurrent flows
 * Dynamic strategy switching
+* **wait_for_completion()**: Proper waiting for async tasks
 
 Example Code
 ------------
@@ -80,6 +84,17 @@ When a flow is created with ``execution_strategy="concurrent"``, tasks are proce
 - Sequential mode: ``max_workers=1`` (one task at a time)
 - Concurrent mode: ``max_workers>1`` (multiple tasks in parallel)
 - Tasks are processed fairly in queue order
+
+**Automatic Flow Detection**:
+- ``emit()`` automatically detects flow from routine context
+- No need to pass ``flow`` parameter in most cases
+- Flow context is set automatically by ``Flow.execute()`` and ``Flow.resume()``
+
+.. code-block:: python
+
+   def process_data(self, data=None, **kwargs):
+       # Flow is automatically detected - no need to pass it!
+       self.emit("output", result=f"Processed: {data}")
 
 Thread Pool Management
 ~~~~~~~~~~~~~~~~~~~~~~

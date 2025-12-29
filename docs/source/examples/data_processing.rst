@@ -12,7 +12,15 @@ Example Code
 
 This example demonstrates:
 
-* Multi-stage data processing
+* Multi-stage data processing pipeline
+* Automatic flow detection in ``emit()`` calls
 * Error handling in validation
 * Statistics tracking across stages
+* Event queue-based execution
+
+**Key Features**:
+
+* **Event Queue Pattern**: Tasks are enqueued and processed asynchronously
+* **Automatic Flow Detection**: No need to pass flow parameter in ``emit()`` calls
+* **Non-blocking Execution**: Each stage processes independently via the event queue
 
