@@ -57,7 +57,7 @@ Let's create a simple routine that processes data:
            # Track operation statistics
            self._track_operation("processing", success=True)
            
-           # Emit the result
+           # Emit the result (flow is automatically detected)
            self.emit("output", result=result)
 
 Creating a Flow

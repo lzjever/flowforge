@@ -108,8 +108,10 @@ Flow manager responsible for:
 
 * Managing multiple Routine nodes
 * Managing connections between nodes
-* Executing workflows
-* Persistence and recovery
+* Executing workflows using event queue pattern
+* Event loop and task queue management
+* Thread pool management (unified for sequential and concurrent modes)
+* Persistence and recovery (including pending tasks serialization)
 
 JobState Class
 ^^^^^^^^^^^^^^
@@ -121,6 +123,27 @@ Job state that records:
 * Passed data
 * Execution history
 
+Architecture Pattern
+-------------------
+
+Event Queue Pattern
+~~~~~~~~~~~~~~~~~~~
+
+Routilux uses an **event queue pattern** for workflow execution:
+
+* **Non-blocking emit()**: Event emission creates tasks and enqueues them immediately, returning without waiting
+* **Event Loop**: Background thread continuously processes tasks from the queue
+* **Unified Execution**: Both sequential and concurrent modes use the same queue mechanism
+* **Fair Scheduling**: Tasks are processed in queue order, allowing fair progress
+* **Thread Pool**: Tasks are executed by a thread pool (size controlled by ``max_workers``)
+
+Key Components:
+
+* **Task Queue**: Stores ``SlotActivationTask`` objects waiting to be processed
+* **Event Loop**: Background thread that processes tasks from the queue
+* **Thread Pool**: Executes tasks (``ThreadPoolExecutor`` with configurable ``max_workers``)
+* **Active Tasks Tracking**: Set of futures tracking currently executing tasks
+
 Design Principles
 -----------------
 
@@ -129,10 +152,21 @@ Separation of Concerns
 
 * **Flow (Control Layer)**: Responsible for execution control
   * ``pause()``, ``resume()``, ``cancel()`` - Execution control methods
+  * Event loop and task queue management
+  * Thread pool management
   
 * **JobState (Data Layer)**: Responsible for state storage and queries
   * State query methods
   * Internal state update methods (called by Flow)
+  * Pending tasks serialization
 
 This separation ensures clear responsibilities and avoids interface duplication.
+
+Automatic Flow Detection
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **Routine Context**: Flow automatically sets ``routine._current_flow`` during execution
+* **Auto-detection**: ``emit()`` automatically retrieves flow from routine context
+* **Simplified API**: Users don't need to manually pass flow parameter in most cases
+* **Backward Compatible**: Explicit flow parameter still supported
 

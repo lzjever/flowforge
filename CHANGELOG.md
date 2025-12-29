@@ -7,78 +7,168 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.0] - 2025-01-XX
 
+### 🚀 Major Architecture Overhaul: Event Queue Pattern
+
+This is a **major version update** with significant architectural changes. The core execution model has been completely redesigned to use an event queue pattern, providing better performance, fairness, and unified execution logic.
+
 ### Changed
 
-- **Unified Slot-Based Invocation**: Entry routines now must use a "trigger" slot instead of direct `__call__` invocation
-  - Entry routines must define a "trigger" slot: `self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)`
-  - `Flow.execute()` now triggers the entry routine via its "trigger" slot instead of calling `__call__` directly
-  - This provides a unified invocation mechanism across all routines (entry and non-entry)
-  - Direct `__call__` invocation is deprecated for entry routines (marked in documentation)
+#### Breaking Changes
+
+- **Event Queue Architecture**: Complete redesign of execution model from call-stack-based to event-queue-based
+  - `emit()` is now **always non-blocking** - returns immediately after enqueuing tasks
+  - Both sequential and concurrent modes use the **same unified queue mechanism**
+  - Execution order is now **fair scheduling** (queue order) instead of depth-first
+  - Each `Flow.execute()` call is an **independent execution** - slot data is NOT shared between executions
+
+- **Automatic Flow Detection**: `emit()` now automatically detects flow from routine context
+  - No need to manually pass `flow` parameter in most cases
+  - Flow context is automatically set by `Flow.execute()` and `Flow.resume()`
+  - Explicit `flow` parameter still supported for backward compatibility
+
+- **Execution Behavior**: 
+  - Removed depth-first execution guarantee
+  - Tasks are processed in queue order (fair scheduling)
+  - Long chains no longer block shorter ones
+  - Multiple message chains can progress alternately
+
+#### Non-Breaking Changes
+
+- **Unified Execution Model**: Sequential and concurrent modes now use identical queue-based logic
+  - Sequential mode: `max_workers=1` (one task at a time)
+  - Concurrent mode: `max_workers>1` (multiple tasks in parallel)
+  - Same event loop, same task queue, same execution logic
 
 ### Added
 
-- **Slot.call_handler() method**: New method in `Slot` class for direct handler invocation with exception propagation control
-  - `call_handler(data, propagate_exceptions=False)`: Call handler with data, optionally propagating exceptions
-  - Used internally by Flow for entry routine trigger slots to allow proper error handling
-  - Supports all handler parameter matching patterns (kwargs, single param, multiple params)
-  - Includes data merging according to slot's merge_strategy
+- **Event Queue Infrastructure**:
+  - `SlotActivationTask` dataclass for representing slot activation tasks
+  - `TaskPriority` enum for task prioritization (HIGH, NORMAL, LOW)
+  - Task queue (`queue.Queue`) for storing pending tasks
+  - Event loop running in background thread
+
+- **Non-blocking emit()**:
+  - `emit()` creates tasks and enqueues them immediately
+  - Returns without waiting for downstream execution
+  - All slot activations happen asynchronously
+
+- **Enhanced pause/resume**:
+  - Pending tasks are serialized to `JobState.pending_tasks`
+  - Tasks can be precisely restored from serialized state
+  - Resume continues from exact pause point
+
+- **Fair Scheduling**:
+  - Tasks processed in queue order
+  - Multiple message chains progress alternately
+  - Prevents long chains from blocking shorter ones
+
+- **Task-level Error Handling**:
+  - Error handling applied at task level
+  - Retry logic works per task
+  - Errors don't stop the event loop
+
+- **Automatic Flow Detection**:
+  - `emit()` automatically retrieves flow from `routine._current_flow`
+  - Simplified API - no need to pass flow parameter
+  - Backward compatible - explicit flow parameter still works
 
 ### Improved
 
-- **Code Organization**: Eliminated ~70 lines of duplicate handler invocation code across Flow methods
-  - All handler invocation logic now centralized in `Slot.call_handler()` method
-  - Better separation of concerns: handler calling logic belongs to Slot class, not Flow class
-  - Improved maintainability: single source of truth for handler invocation
+- **Performance**:
+  - Non-blocking emit() eliminates blocking waits
+  - Fair scheduling improves overall throughput
+  - Unified execution model reduces code duplication
 
-- **Error Handling**: Entry routine exceptions now properly propagate to Flow's error handling strategies
-  - Entry routine trigger slots use `call_handler(propagate_exceptions=True)` to allow exception propagation
-  - Flow's error handling strategies (STOP, CONTINUE, RETRY, SKIP) now work correctly for entry routines
-  - Regular slot handlers continue to catch exceptions (maintains backward compatibility)
+- **Code Quality**:
+  - Eliminated duplicate execution logic between sequential and concurrent modes
+  - Centralized task execution in event loop
+  - Better separation of concerns
 
-- **Consistency**: All entry routine invocations now use the same mechanism
-  - `_execute_sequential()`: Uses `trigger_slot.call_handler()`
-  - Retry logic: Uses `trigger_slot.call_handler()`
-  - `resume()`: Uses `trigger_slot.call_handler()`
+- **User Experience**:
+  - Simpler API - automatic flow detection
+  - More predictable behavior - fair scheduling
+  - Better documentation of execution model
+
+- **Defensive Programming**:
+  - Warning when starting new execution while previous is running
+  - Clear documentation about independent executions
+  - Examples showing correct aggregation patterns
 
 ### Fixed
 
-- **Error Handling in Entry Routines**: Fixed issue where entry routine exceptions were not properly handled by Flow's error handling strategies
-  - Previously, exceptions in entry routine handlers were caught by slot.receive() and logged, preventing error handling strategies from working
-  - Now exceptions properly propagate, allowing STOP, CONTINUE, RETRY, and SKIP strategies to function correctly
+- **Execution Order**: Fixed issue where long chains could block shorter ones
+- **Concurrent Execution**: Unified logic eliminates inconsistencies between modes
+- **Pause/Resume**: Fixed serialization of pending tasks for proper resume
+- **Emit Blocking**: Fixed issue where second emit() had to wait for first to complete
 
 ### Documentation
 
-- Updated user guide to reflect unified slot-based invocation pattern
-- Added examples showing how to define trigger slots for entry routines
-- Updated API documentation for `Slot.call_handler()` method
-- Clarified differences between entry routine trigger slots and regular slots
+- **Complete Rewrite**: Updated all documentation to reflect new architecture
+  - Removed all historical content about old execution model
+  - Added comprehensive event queue pattern documentation
+  - Updated all examples to use automatic flow detection
+  - Added migration guide and best practices
+
+- **New Sections**:
+  - Event queue architecture overview
+  - Fair scheduling explanation
+  - Automatic flow detection guide
+  - Independent execution warnings
+  - Correct aggregation patterns
 
 ### Migration Guide
 
-**For Entry Routines:**
+**For emit() calls:**
 
-Before (deprecated):
+Before (still works, but verbose):
 ```python
-class MyEntryRoutine(Routine):
-    def __call__(self, **kwargs):
-        # Entry logic here
-        self.emit("output", data="result")
+def _handle_trigger(self, **kwargs):
+    flow = getattr(self, "_current_flow", None)
+    self.emit("output", flow=flow, data="value")
 ```
 
-After (required):
+After (recommended):
 ```python
-class MyEntryRoutine(Routine):
-    def __init__(self):
-        super().__init__()
-        self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-        self.output_event = self.define_event("output", ["data"])
-    
+def _handle_trigger(self, **kwargs):
+    # Flow automatically detected!
+    self.emit("output", data="value")
+```
+
+**For Aggregation Patterns:**
+
+Before (won't work - slot data not shared):
+```python
+# Bad: Multiple executes don't share state
+flow.execute(source1_id)  # Creates new JobState
+flow.execute(source2_id)  # Creates another new JobState
+# Aggregator won't see both messages!
+```
+
+After (correct way):
+```python
+# Good: Single execute with multiple emits
+class MultiSourceRoutine(Routine):
     def _handle_trigger(self, **kwargs):
-        # Entry logic here
-        self.emit("output", data="result")
+        for data in ["A", "B", "C"]:
+            self.emit("output", data=data)  # All share same execution
+flow.execute(multi_source_id)
 ```
 
-**Note**: This is a breaking change for entry routines. All entry routines must be updated to use trigger slots.
+**For Execution Order:**
+
+Before (depth-first guaranteed):
+- Downstream chains completed before next sibling
+- Deterministic depth-first order
+
+After (fair scheduling):
+- Tasks processed in queue order
+- Multiple chains progress alternately
+- No depth-first guarantee (but better overall throughput)
+
+**Note**: This is a **major version update**. Review your code for:
+1. Aggregation patterns using multiple `execute()` calls
+2. Code relying on depth-first execution order
+3. Code that expects `emit()` to wait for completion
 
 ## [0.8.1] - 2025-12-29
 

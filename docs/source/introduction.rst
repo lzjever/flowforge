@@ -79,15 +79,18 @@ Routilux comes with a rich set of built-in routines ready to use:
        ("normal", "data.get('priority') == 'normal'"),
    ])
 
-**⚡ Concurrent Execution**
+**⚡ Event Queue Architecture**
 
-For I/O-bound operations, Routilux supports concurrent execution with thread pools,
-automatically parallelizing independent routines.
+Routilux uses an event queue pattern for workflow execution:
+- Non-blocking ``emit()``: Returns immediately after enqueuing tasks
+- Unified execution model: Sequential and concurrent modes use the same queue mechanism
+- Fair scheduling: Tasks are processed fairly, preventing long chains from blocking shorter ones
+- Automatic flow detection: ``emit()`` automatically detects flow from routine context
 
 .. code-block:: python
 
    flow = Flow(execution_strategy="concurrent", max_workers=5)
-   # Routines execute in parallel automatically
+   # Tasks execute in parallel via event queue
 
 **🛡️ Robust Error Handling**
 
@@ -132,7 +135,8 @@ Key Features
 * **JobState Management**: Execution state recording and recovery functionality
 * **Error Handling**: Multiple error handling strategies (STOP, CONTINUE, RETRY, SKIP)
 * **Execution Tracking**: Comprehensive execution tracking and performance monitoring
-* **Concurrent Execution**: Thread pool-based parallel execution for I/O-bound operations
+* **Event Queue Architecture**: Non-blocking emit(), unified execution model, fair scheduling
+* **Concurrent Execution**: Thread pool-based parallel execution for I/O-bound operations (via event queue)
 * **Serialization Support**: Full serialization/deserialization support for persistence
 * **Built-in Routines**: Rich set of ready-to-use routines for common tasks
 
@@ -149,8 +153,9 @@ Routilux is built around a few core concepts:
    * **Stats**: A dictionary for tracking execution state
 
 **Flow**
-   Orchestrates multiple routines and their connections. Manages execution,
-   state, and error handling.
+   Orchestrates multiple routines and their connections. Manages execution
+   using an event queue pattern, state, and error handling. Provides unified
+   execution model for both sequential and concurrent modes.
 
 **Connection**
    Links events to slots with optional parameter mapping. Supports flexible
@@ -204,7 +209,8 @@ or dive into the :doc:`user_guide/index` for detailed documentation.
            self.input_slot = self.define_slot("input", handler=self.process)
            self.output_event = self.define_event("output")
        
-       def process(self, data):
+       def process(self, data=None, **kwargs):
+           # Flow is automatically detected from routine context
            self.emit("output", result=f"Processed: {data}")
    
    flow = Flow()

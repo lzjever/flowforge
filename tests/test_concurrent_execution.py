@@ -29,7 +29,7 @@ class TestConcurrentExecutionBasic:
         assert flow.execution_strategy == "concurrent"
         assert flow.max_workers == 5
         assert flow._execution_lock is not None
-        assert flow._concurrent_executor is None  # 延迟创建
+        assert flow._executor is None  # 延迟创建（现在使用统一的 _executor）
 
     def test_set_execution_strategy(self):
         """测试设置执行策略"""
@@ -91,7 +91,7 @@ class TestConcurrentRoutineExecution:
                 super().__init__()
                 self.input_slot = self.define_slot("input", handler=self.process)
 
-            def process(self, data):
+            def process(self, data=None, **kwargs):
                 time.sleep(0.2)  # 模拟处理时间
                 with execution_lock:
                     execution_order.append("routine1")
@@ -101,7 +101,7 @@ class TestConcurrentRoutineExecution:
                 super().__init__()
                 self.input_slot = self.define_slot("input", handler=self.process)
 
-            def process(self, data):
+            def process(self, data=None, **kwargs):
                 time.sleep(0.2)  # 模拟处理时间
                 with execution_lock:
                     execution_order.append("routine2")
@@ -111,7 +111,7 @@ class TestConcurrentRoutineExecution:
                 super().__init__()
                 self.input_slot = self.define_slot("input", handler=self.process)
 
-            def process(self, data):
+            def process(self, data=None, **kwargs):
                 time.sleep(0.2)  # 模拟处理时间
                 with execution_lock:
                     execution_order.append("routine3")
@@ -614,7 +614,7 @@ class TestConcurrentSerialization:
         assert new_flow.execution_strategy == "concurrent"
         assert new_flow.max_workers == 6
         assert new_flow._execution_lock is not None
-        assert new_flow._concurrent_executor is None  # 延迟创建
+        assert new_flow._executor is None  # 延迟创建（现在使用统一的 _executor）
 
     def test_serialize_deserialize_preserves_concurrency(self):
         """测试序列化/反序列化后并发功能仍然可用"""

@@ -18,7 +18,26 @@ class SourceRoutine(Routine):
 
     def _handle_trigger(self, **kwargs):
         data = kwargs.get("data", f"data_from_{self.source_id}")
-        self.emit("output", data=data, source_id=self.source_id)
+        # Get flow from routine context
+        flow = getattr(self, "_current_flow", None)
+        self.emit("output", flow=flow, data=data, source_id=self.source_id)
+
+
+class MultiSourceRoutine(Routine):
+    """Source routine that emits multiple messages."""
+
+    def __init__(self):
+        super().__init__()
+        # Define trigger slot for entry routine
+        self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
+        self.output_event = self.define_event("output", ["data", "source_id"])
+
+    def _handle_trigger(self, **kwargs):
+        # Get flow from routine context
+        flow = getattr(self, "_current_flow", None)
+        # Emit multiple messages
+        for i in range(3):
+            self.emit("output", flow=flow, data=f"data{i+1}", source_id=f"source{i+1}")
 
 
 class AggregatorRoutine(Routine):
@@ -55,7 +74,9 @@ class AggregatorRoutine(Routine):
             if "data" in kwargs and isinstance(kwargs["data"], list):
                 all_data = kwargs["data"]
 
-            self.emit("aggregated", all_data=all_data, count=len(all_data))
+            # Get flow from routine context
+            flow = getattr(self, "_current_flow", None)
+            self.emit("aggregated", flow=flow, all_data=all_data, count=len(all_data))
             # Reset for next aggregation
             self.input_slot._data = {}
 
@@ -79,10 +100,8 @@ class TestAggregatorPattern:
         """Test that aggregator waits for all expected messages."""
         flow = Flow(flow_id="test_aggregator")
 
-        # Create sources
-        source1 = SourceRoutine("source1")
-        source2 = SourceRoutine("source2")
-        source3 = SourceRoutine("source3")
+        # Create a single source that emits multiple messages
+        multi_source = MultiSourceRoutine()
 
         # Create aggregator
         aggregator = AggregatorRoutine(expected_count=3)
@@ -91,25 +110,20 @@ class TestAggregatorPattern:
         consumer = ConsumerRoutine()
 
         # Add to flow
-        id1 = flow.add_routine(source1, "source1")
-        id2 = flow.add_routine(source2, "source2")
-        id3 = flow.add_routine(source3, "source3")
+        source_id = flow.add_routine(multi_source, "multi_source")
         agg_id = flow.add_routine(aggregator, "aggregator")
         consumer_id = flow.add_routine(consumer, "consumer")
 
-        # Connect
-        flow.connect(id1, "output", agg_id, "input")
-        flow.connect(id2, "output", agg_id, "input")
-        flow.connect(id3, "output", agg_id, "input")
+        # Connect - single source to aggregator
+        flow.connect(source_id, "output", agg_id, "input")
         flow.connect(agg_id, "aggregated", consumer_id, "input")
 
-        # Execute sources
-        flow.execute(id1, entry_params={"data": "data1"})
-        flow.execute(id2, entry_params={"data": "data2"})
-        flow.execute(id3, entry_params={"data": "data3"})
+        # Execute - single execute that triggers multiple emits
+        job_state = flow.execute(source_id)
 
-        # Wait a bit
-        time.sleep(0.2)
+        # Wait for all tasks to complete
+        flow.wait_for_completion(timeout=2.0)
+        time.sleep(0.1)  # Additional wait for handler execution
 
         # Verify
         assert aggregator.processed, "Aggregator should have processed"
@@ -121,28 +135,39 @@ class TestAggregatorPattern:
         """Test that aggregator doesn't process with partial messages."""
         flow = Flow(flow_id="test_aggregator_partial")
 
-        # Create sources
-        source1 = SourceRoutine("source1")
-        source2 = SourceRoutine("source2")
+        class PartialSourceRoutine(Routine):
+            """Source routine that emits only 2 messages."""
+
+            def __init__(self):
+                super().__init__()
+                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
+                self.output_event = self.define_event("output", ["data", "source_id"])
+
+            def _handle_trigger(self, **kwargs):
+                flow = getattr(self, "_current_flow", None)
+                # Emit only 2 messages
+                for i in range(2):
+                    self.emit("output", flow=flow, data=f"data{i+1}", source_id=f"source{i+1}")
+
+        # Create a source that emits only 2 messages
+        partial_source = PartialSourceRoutine()
 
         # Create aggregator expecting 3 messages
         aggregator = AggregatorRoutine(expected_count=3)
 
         # Add to flow
-        id1 = flow.add_routine(source1, "source1")
-        id2 = flow.add_routine(source2, "source2")
+        source_id = flow.add_routine(partial_source, "partial_source")
         agg_id = flow.add_routine(aggregator, "aggregator")
 
         # Connect
-        flow.connect(id1, "output", agg_id, "input")
-        flow.connect(id2, "output", agg_id, "input")
+        flow.connect(source_id, "output", agg_id, "input")
 
-        # Execute only 2 sources
-        flow.execute(id1, entry_params={"data": "data1"})
-        flow.execute(id2, entry_params={"data": "data2"})
+        # Execute - only 2 messages will be emitted
+        job_state = flow.execute(source_id)
 
-        # Wait a bit
-        time.sleep(0.2)
+        # Wait for all tasks to complete
+        flow.wait_for_completion(timeout=2.0)
+        time.sleep(0.1)  # Additional wait for handler execution
 
         # Verify - should not have processed
         assert not aggregator.processed, "Aggregator should not process with partial messages"
@@ -152,10 +177,8 @@ class TestAggregatorPattern:
         """Test aggregator with concurrent execution."""
         flow = Flow(flow_id="test_aggregator_concurrent", execution_strategy="concurrent")
 
-        # Create sources
-        source1 = SourceRoutine("source1")
-        source2 = SourceRoutine("source2")
-        source3 = SourceRoutine("source3")
+        # Create a single source that emits multiple messages
+        multi_source = MultiSourceRoutine()
 
         # Create aggregator
         aggregator = AggregatorRoutine(expected_count=3)
@@ -164,26 +187,21 @@ class TestAggregatorPattern:
         consumer = ConsumerRoutine()
 
         # Add to flow
-        id1 = flow.add_routine(source1, "source1")
-        id2 = flow.add_routine(source2, "source2")
-        id3 = flow.add_routine(source3, "source3")
+        source_id = flow.add_routine(multi_source, "multi_source")
         agg_id = flow.add_routine(aggregator, "aggregator")
         consumer_id = flow.add_routine(consumer, "consumer")
 
-        # Connect
-        flow.connect(id1, "output", agg_id, "input")
-        flow.connect(id2, "output", agg_id, "input")
-        flow.connect(id3, "output", agg_id, "input")
+        # Connect - single source to aggregator
+        flow.connect(source_id, "output", agg_id, "input")
         flow.connect(agg_id, "aggregated", consumer_id, "input")
 
         try:
-            # Execute sources concurrently
-            flow.execute(id1, entry_params={"data": "data1"})
-            flow.execute(id2, entry_params={"data": "data2"})
-            flow.execute(id3, entry_params={"data": "data3"})
+            # Execute - single execute that triggers multiple emits
+            job_state = flow.execute(source_id)
 
             # Wait for completion
             flow.wait_for_completion(timeout=5.0)
+            time.sleep(0.1)  # Additional wait for handler execution
 
             # Verify
             assert aggregator.processed, "Aggregator should have processed"

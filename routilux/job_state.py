@@ -127,6 +127,7 @@ class JobState(Serializable):
         self.current_routine_id: Optional[str] = None
         self.routine_states: Dict[str, Dict[str, Any]] = {}
         self.execution_history: List[ExecutionRecord] = []
+        self.pending_tasks: List[Dict[str, Any]] = []  # Serialized pending tasks
         self.created_at: datetime = datetime.now()
         self.updated_at: datetime = datetime.now()
 
@@ -142,6 +143,7 @@ class JobState(Serializable):
                 "created_at",
                 "updated_at",
                 "pause_points",
+                "pending_tasks",
             ]
         )
 

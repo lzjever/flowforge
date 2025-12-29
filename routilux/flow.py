@@ -7,7 +7,12 @@ Flow manager responsible for managing multiple Routine nodes and execution flow.
 from __future__ import annotations
 import uuid
 import threading
+import queue
+import time
+import logging
 from datetime import datetime
+from dataclasses import dataclass
+from enum import Enum
 from typing import Dict, Optional, Any, List, Set, Tuple, TYPE_CHECKING
 from concurrent.futures import ThreadPoolExecutor, Future
 
@@ -21,6 +26,35 @@ if TYPE_CHECKING:
     from routilux.error_handler import ErrorHandler
 
 from serilux import register_serializable, Serializable
+
+
+class TaskPriority(Enum):
+    """Task priority for queue scheduling."""
+
+    HIGH = 1
+    NORMAL = 2
+    LOW = 3
+
+
+@dataclass
+class SlotActivationTask:
+    """Slot activation task for queue-based execution."""
+
+    slot: "Slot"
+    data: Dict[str, Any]
+    connection: Optional["Connection"] = None
+    priority: TaskPriority = TaskPriority.NORMAL
+    retry_count: int = 0
+    max_retries: int = 0
+    created_at: Optional[datetime] = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
+
+    def __lt__(self, other):
+        """For priority queue sorting."""
+        return self.priority.value < other.priority.value
 
 
 @register_serializable
@@ -100,13 +134,27 @@ class Flow(Serializable):
         self.error_handler: Optional["ErrorHandler"] = None
         self._paused: bool = False
 
-        # Concurrent execution related
+        # Execution strategy
         self.execution_strategy: str = execution_strategy
-        self.max_workers: int = max_workers
-        self._concurrent_executor: Optional[ThreadPoolExecutor] = None
+        self.max_workers: int = max_workers if execution_strategy == "concurrent" else 1
+
+        # Task queue and event loop
+        self._task_queue: queue.Queue = queue.Queue()
+        self._pending_tasks: List[SlotActivationTask] = []
+
+        # Execution control
+        self._execution_thread: Optional[threading.Thread] = None
         self._execution_lock: threading.Lock = threading.Lock()
+        self._running: bool = False
+
+        # Thread pool (unified for sequential and concurrent modes)
+        self._executor: Optional[ThreadPoolExecutor] = None
+
+        # Active task tracking
+        self._active_tasks: Set[Future] = set()
+
+        # Legacy fields (for backward compatibility during transition)
         self._dependency_graph: Optional[Dict[str, Set[str]]] = None
-        self._active_futures: Set[Future] = set()
 
         # Register serializable fields
         # routines and connections are included - base class will automatically serialize/deserialize them
@@ -145,12 +193,17 @@ class Flow(Serializable):
             )
 
         self.execution_strategy = strategy
-        if max_workers is not None:
+        if strategy == "sequential":
+            self.max_workers = 1
+        elif max_workers is not None:
             self.max_workers = max_workers
+        else:
+            self.max_workers = 5
 
-        # If switching to concurrent mode, ensure thread pool is created
-        if strategy == "concurrent" and self._concurrent_executor is None:
-            self._get_executor()
+        # Recreate thread pool with new max_workers
+        if self._executor:
+            self._executor.shutdown(wait=True)
+        self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
 
     def _get_executor(self) -> ThreadPoolExecutor:
         """Get or create thread pool executor.
@@ -158,9 +211,9 @@ class Flow(Serializable):
         Returns:
             ThreadPoolExecutor instance.
         """
-        if self._concurrent_executor is None:
-            self._concurrent_executor = ThreadPoolExecutor(max_workers=self.max_workers)
-        return self._concurrent_executor
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
+        return self._executor
 
     def _get_routine_id(self, routine: "Routine") -> Optional[str]:
         """Find the ID of a Routine object within this Flow.
@@ -232,6 +285,166 @@ class Flow(Serializable):
         """
         key = (event, slot)
         return self._event_slot_connections.get(key)
+
+    def _enqueue_task(self, task: SlotActivationTask) -> None:
+        """Enqueue a task for execution.
+
+        Args:
+            task: SlotActivationTask to enqueue.
+        """
+        if self._paused:
+            # Paused: add to pending tasks
+            self._pending_tasks.append(task)
+        else:
+            # Running: add to queue
+            self._task_queue.put(task)
+
+    def _start_event_loop(self) -> None:
+        """Start the event loop thread."""
+        if self._running:
+            return
+
+        self._running = True
+        self._execution_thread = threading.Thread(target=self._event_loop, daemon=True)
+        self._execution_thread.start()
+
+    def _event_loop(self) -> None:
+        """Event loop main logic."""
+        while self._running:
+            try:
+                # Check pause status
+                if self._paused:
+                    time.sleep(0.01)
+                    continue
+
+                # Get task from queue
+                try:
+                    task = self._task_queue.get(timeout=0.1)
+                except queue.Empty:
+                    # Check if all tasks complete (queue empty and no active tasks)
+                    # Wait a bit more to ensure tasks have time to start
+                    time.sleep(0.05)
+                    if self._is_all_tasks_complete():
+                        if self.job_state and self.job_state.status == "running":
+                            self.job_state.status = "completed"
+                        break
+                    continue
+
+                # Submit to thread pool
+                executor = self._get_executor()
+                future = executor.submit(self._execute_task, task)
+
+                # Track active tasks
+                with self._execution_lock:
+                    self._active_tasks.add(future)
+
+                # Task completion callback
+                def on_task_done(fut=future):
+                    with self._execution_lock:
+                        self._active_tasks.discard(fut)
+                    self._task_queue.task_done()
+
+                future.add_done_callback(on_task_done)
+
+            except Exception as e:
+                logging.exception(f"Error in event loop: {e}")
+
+    def _execute_task(self, task: SlotActivationTask) -> None:
+        """Execute a single task.
+
+        Args:
+            task: SlotActivationTask to execute.
+        """
+        try:
+            # Apply parameter mapping
+            if task.connection:
+                mapped_data = task.connection._apply_mapping(task.data)
+            else:
+                mapped_data = task.data
+
+            # Call slot.receive()
+            task.slot.receive(mapped_data)
+
+        except Exception as e:
+            # Error handling
+            self._handle_task_error(task, e)
+
+    def _handle_task_error(self, task: SlotActivationTask, error: Exception) -> None:
+        """Handle task execution error.
+
+        Args:
+            task: The task that failed.
+            error: The exception that occurred.
+        """
+        routine = task.slot.routine
+        routine_id = routine._id if routine else None
+
+        # Get error handler
+        error_handler = (
+            self._get_error_handler_for_routine(routine, routine_id)
+            if routine_id and routine
+            else None
+        )
+
+        if error_handler:
+            should_retry = error_handler.handle_error(error, routine, routine_id, self)
+
+            # Retry logic
+            if should_retry and error_handler.strategy.value == "retry":
+                max_retries = (
+                    error_handler.max_retries if error_handler.max_retries > 0 else task.max_retries
+                )
+                if task.retry_count < max_retries:
+                    # Create retry task
+                    retry_task = SlotActivationTask(
+                        slot=task.slot,
+                        data=task.data,
+                        connection=task.connection,
+                        priority=task.priority,
+                        retry_count=task.retry_count + 1,
+                        max_retries=max_retries,
+                    )
+                    # Re-enqueue (immediate retry for now)
+                    self._enqueue_task(retry_task)
+                    return
+
+            # Continue strategy
+            if error_handler.strategy.value == "continue":
+                # Record error, continue execution
+                if routine:
+                    routine._stats.setdefault("errors", []).append(
+                        {"slot": task.slot.name, "error": str(error)}
+                    )
+                return
+
+            # Skip strategy
+            if error_handler.strategy.value == "skip":
+                if self.job_state:
+                    self.job_state.update_routine_state(routine_id or "", {"status": "skipped"})
+                return
+
+        # Default error handling (STOP)
+        if self.job_state:
+            self.job_state.status = "failed"
+            self.job_state.update_routine_state(
+                routine_id or "", {"status": "failed", "error": str(error)}
+            )
+
+        # Stop event loop
+        self._running = False
+
+    def _is_all_tasks_complete(self) -> bool:
+        """Check if all tasks are complete.
+
+        Returns:
+            True if queue is empty and no active tasks.
+        """
+        if not self._task_queue.empty():
+            return False
+
+        with self._execution_lock:
+            active = [f for f in self._active_tasks if not f.done()]
+            return len(active) == 0
 
     def add_routine(self, routine: "Routine", routine_id: Optional[str] = None) -> str:
         """Add a routine to the flow.
@@ -446,8 +659,149 @@ class Flow(Serializable):
         if not self.job_state:
             raise ValueError("No active job_state to pause. Flow must be executing.")
 
-        self.job_state._set_paused(reason=reason, checkpoint=checkpoint)
+        # Set pause flag
         self._paused = True
+
+        # Wait for active tasks to complete
+        self._wait_for_active_tasks()
+
+        # Move queue tasks to pending
+        while not self._task_queue.empty():
+            task = self._task_queue.get()
+            self._pending_tasks.append(task)
+
+        # Record pause point
+        pause_point = {
+            "timestamp": datetime.now().isoformat(),
+            "reason": reason,
+            "checkpoint": checkpoint or {},
+            "pending_tasks_count": len(self._pending_tasks),
+            "active_tasks_count": len(self._active_tasks),
+            "queue_size": self._task_queue.qsize(),
+        }
+
+        self.job_state.pause_points.append(pause_point)
+        self.job_state._set_paused(reason=reason, checkpoint=checkpoint)
+
+        # Serialize pending tasks
+        self._serialize_pending_tasks()
+
+    def _wait_for_active_tasks(self) -> None:
+        """Wait for all active tasks to complete."""
+        import time as time_module
+
+        check_interval = 0.05
+        max_wait_time = 5.0  # Maximum wait time in seconds
+        start_time = time_module.time()
+
+        while True:
+            with self._execution_lock:
+                active = [f for f in self._active_tasks if not f.done()]
+                if not active:
+                    break
+
+            if time_module.time() - start_time > max_wait_time:
+                break
+
+            time_module.sleep(check_interval)
+
+    def _serialize_pending_tasks(self) -> None:
+        """Serialize pending tasks to JobState."""
+        if not self.job_state:
+            return
+
+        serialized_tasks = []
+        for task in self._pending_tasks:
+            serialized = {
+                "slot_routine_id": task.slot.routine._id if task.slot.routine else None,
+                "slot_name": task.slot.name,
+                "data": task.data,
+                "connection_source_routine_id": (
+                    task.connection.source_event.routine._id
+                    if task.connection and task.connection.source_event
+                    else None
+                ),
+                "connection_source_event_name": (
+                    task.connection.source_event.name
+                    if task.connection and task.connection.source_event
+                    else None
+                ),
+                "connection_target_routine_id": (
+                    task.connection.target_slot.routine._id
+                    if task.connection and task.connection.target_slot
+                    else None
+                ),
+                "connection_target_slot_name": (
+                    task.connection.target_slot.name
+                    if task.connection and task.connection.target_slot
+                    else None
+                ),
+                "param_mapping": task.connection.param_mapping if task.connection else {},
+                "priority": task.priority.value,
+                "retry_count": task.retry_count,
+                "max_retries": task.max_retries,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+            }
+            serialized_tasks.append(serialized)
+
+        self.job_state.pending_tasks = serialized_tasks
+
+    def _deserialize_pending_tasks(self) -> None:
+        """Deserialize pending tasks from JobState."""
+        if not self.job_state or not hasattr(self.job_state, "pending_tasks"):
+            return
+
+        self._pending_tasks = []
+        for serialized in self.job_state.pending_tasks:
+            # Restore routine and slot references
+            slot_routine_id = serialized.get("slot_routine_id")
+            slot_name = serialized.get("slot_name")
+
+            if not slot_routine_id or slot_routine_id not in self.routines:
+                continue
+
+            routine = self.routines[slot_routine_id]
+            slot = routine.get_slot(slot_name)
+            if not slot:
+                continue
+
+            # Restore connection reference
+            connection = None
+            if serialized.get("connection_source_routine_id"):
+                source_routine_id = serialized.get("connection_source_routine_id")
+                source_event_name = serialized.get("connection_source_event_name")
+                target_routine_id = serialized.get("connection_target_routine_id")
+                target_slot_name = serialized.get("connection_target_slot_name")
+
+                if source_routine_id in self.routines and target_routine_id in self.routines:
+                    source_routine = self.routines[source_routine_id]
+                    target_routine = self.routines[target_routine_id]
+                    source_event = (
+                        source_routine.get_event(source_event_name) if source_event_name else None
+                    )
+                    target_slot = (
+                        target_routine.get_slot(target_slot_name) if target_slot_name else None
+                    )
+
+                    if source_event and target_slot:
+                        connection = self._find_connection(source_event, target_slot)
+
+            # Create task
+            task = SlotActivationTask(
+                slot=slot,
+                data=serialized.get("data", {}),
+                connection=connection,
+                priority=TaskPriority(serialized.get("priority", TaskPriority.NORMAL.value)),
+                retry_count=serialized.get("retry_count", 0),
+                max_retries=serialized.get("max_retries", 0),
+                created_at=(
+                    datetime.fromisoformat(serialized["created_at"])
+                    if serialized.get("created_at")
+                    else None
+                ),
+            )
+
+            self._pending_tasks.append(task)
 
     def execute(
         self,
@@ -471,6 +825,16 @@ class Flow(Serializable):
             - At Flow initialization (execution_strategy parameter)
             - Via set_execution_strategy() method
             - Per-execution via this method's execution_strategy parameter (temporary override)
+
+        Important: Each execute() call is an independent execution:
+            - Each execute() creates a new JobState and starts a new event loop
+            - Slot data (_data) is NOT shared between different execute() calls
+            - If you need to share state between executions, use:
+              - Flow-level state (flow-level variables)
+              - Routine-level state (routine._config or routine._stats)
+              - External storage (database, cache, etc.)
+            - For aggregating data from multiple sources, use a single execute()
+              that triggers multiple emits, not multiple execute() calls
 
         Args:
             entry_routine_id: Identifier of the routine to start execution from.
@@ -520,9 +884,36 @@ class Flow(Serializable):
                 >>> if job_state.status == "completed":
                 ...     routine_state = job_state.get_routine_state(routine_id)
                 ...     print(f"Routine executed: {routine_state['status']}")
+
+            Aggregating data (correct way - single execute):
+                >>> # Good: Single execute with multiple emits
+                >>> class MultiSourceRoutine(Routine):
+                ...     def _handle_trigger(self, **kwargs):
+                ...         for data in ["A", "B", "C"]:
+                ...             self.emit("output", data=data)  # Auto-detects flow
+                >>> flow.execute(multi_source_id)  # All emits share same execution
+
+            Aggregating data (wrong way - multiple executes):
+                >>> # Bad: Multiple executes don't share slot state
+                >>> flow.execute(source1_id)  # Creates new JobState
+                >>> flow.execute(source2_id)  # Creates another new JobState
+                >>> # Aggregator won't see both messages!
         """
         if entry_routine_id not in self.routines:
             raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
+
+        # Warning: If there's an active job_state, warn about potential confusion
+        if self.job_state and self.job_state.status == "running":
+            import warnings
+
+            warnings.warn(
+                f"Starting new execution while previous execution (flow_id={self.job_state.flow_id}) "
+                f"is still running. Each execute() call is independent - slot data is NOT shared "
+                f"between executions. If you need to aggregate data, use a single execute() that "
+                f"triggers multiple emits.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         # Determine execution strategy to use
         strategy = execution_strategy or self.execution_strategy
@@ -536,7 +927,7 @@ class Flow(Serializable):
     def _execute_sequential(
         self, entry_routine_id: str, entry_params: Optional[Dict[str, Any]] = None
     ) -> "JobState":
-        """Execute Flow sequentially (original logic).
+        """Execute Flow using unified queue-based mechanism.
 
         Args:
             entry_routine_id: Entry routine identifier.
@@ -559,32 +950,52 @@ class Flow(Serializable):
 
         entry_params = entry_params or {}
 
-        try:
-            # Execute entry routine (pass flow so events can be transmitted via Connection)
-            entry_routine = self.routines[entry_routine_id]
+        # Get entry routine early for error handling
+        entry_routine = self.routines[entry_routine_id]
 
+        try:
             # Set flow context to all routines so emit can access it
             for routine in self.routines.values():
                 routine._current_flow = self
 
             # Record execution start
-            from datetime import datetime
-
             start_time = datetime.now()
             job_state.record_execution(entry_routine_id, "start", entry_params)
             self.execution_tracker.record_routine_start(entry_routine_id, entry_params)
 
+            # Start event loop
+            self._start_event_loop()
+
             # Execute entry routine through trigger slot
-            # Entry routine must have a "trigger" slot to be executed
             trigger_slot = entry_routine.get_slot("trigger")
             if trigger_slot is None:
                 raise ValueError(
                     f"Entry routine '{entry_routine_id}' must have a 'trigger' slot. "
                     f"Define it using: routine.define_slot('trigger', handler=your_handler)"
                 )
-            # For entry routine trigger slot, call handler with exception propagation
-            # This allows Flow's error handling strategies to work correctly
+
+            # Call handler with exception propagation
             trigger_slot.call_handler(entry_params or {}, propagate_exceptions=True)
+
+            # Wait for event loop to complete and all tasks to finish
+            if self._execution_thread:
+                self._execution_thread.join()
+
+            # Wait for all active tasks to complete
+            import time as time_module
+
+            max_wait = 10.0  # Maximum wait time
+            start_wait = time_module.time()
+            while True:
+                with self._execution_lock:
+                    active = [f for f in self._active_tasks if not f.done()]
+                    if not active:
+                        break
+
+                if time_module.time() - start_wait > max_wait:
+                    break
+
+                time_module.sleep(0.05)
 
             # Calculate execution time
             end_time = datetime.now()
@@ -698,8 +1109,6 @@ class Flow(Serializable):
                     # Retry failed, continue error handling (will execute default error handling below)
 
             # Default error handling (if no error handler or strategy is STOP)
-            from datetime import datetime
-
             error_time = datetime.now()
             job_state.status = "failed"
             job_state.update_routine_state(
@@ -721,10 +1130,10 @@ class Flow(Serializable):
     def _execute_concurrent(
         self, entry_routine_id: str, entry_params: Optional[Dict[str, Any]] = None
     ) -> "JobState":
-        """Execute Flow concurrently.
+        """Execute Flow concurrently using unified queue-based mechanism.
 
-        In concurrent mode, routines triggered by Event.emit execute concurrently.
-        Entry routine still executes synchronously to trigger event flow.
+        In concurrent mode, max_workers > 1, allowing parallel task execution.
+        The queue-based mechanism handles concurrency automatically.
 
         Args:
             entry_routine_id: Entry routine identifier.
@@ -733,12 +1142,7 @@ class Flow(Serializable):
         Returns:
             JobState object.
         """
-        # Concurrent execution is mainly implemented by modifying Event.emit behavior
-        # Here we just ensure Flow is in concurrent mode, then use sequential execution logic
-        # Actual concurrency is handled in Event.emit
-
-        # Temporarily use sequential execution but mark as concurrent mode
-        # Event.emit will check flow.execution_strategy to decide whether to execute concurrently
+        # Unified execution: same logic as sequential, but with max_workers > 1
         return self._execute_sequential(entry_routine_id, entry_params)
 
     def _execute_routine_safe(
@@ -821,47 +1225,21 @@ class Flow(Serializable):
                 if "stats" in routine_state:
                     routine._stats.update(routine_state["stats"])
 
-        # Continue execution from current routine
-        if job_state.current_routine_id:
-            try:
-                routine = self.routines[job_state.current_routine_id]
+        # Set flow context
+        for r in self.routines.values():
+            r._current_flow = self
 
-                # Set flow context
-                for r in self.routines.values():
-                    r._current_flow = self
+        # Deserialize pending tasks
+        self._deserialize_pending_tasks()
 
-                # Execute routine through trigger slot
-                trigger_slot = routine.get_slot("trigger")
-                if trigger_slot is None:
-                    raise ValueError(
-                        f"Routine '{job_state.current_routine_id}' must have a 'trigger' slot. "
-                        f"Define it using: routine.define_slot('trigger', handler=your_handler)"
-                    )
-                # Call handler with exception propagation for resume
-                trigger_slot.call_handler({}, propagate_exceptions=True)
+        # Put pending tasks back into queue
+        for task in self._pending_tasks:
+            self._task_queue.put(task)
+        self._pending_tasks.clear()
 
-                job_state.status = "completed"
-                job_state.update_routine_state(
-                    job_state.current_routine_id, {"status": "completed", "stats": routine.stats()}
-                )
-            except Exception as e:
-                # Use error handler
-                # Priority: routine-level > flow-level > default (STOP)
-                error_handler = self._get_error_handler_for_routine(
-                    routine, job_state.current_routine_id
-                )
-                if error_handler:
-                    should_continue = error_handler.handle_error(
-                        e, routine, job_state.current_routine_id, self
-                    )
-                    if not should_continue:
-                        job_state.status = "failed"
-                else:
-                    job_state.status = "failed"
-
-                job_state.update_routine_state(
-                    job_state.current_routine_id, {"status": "failed", "error": str(e)}
-                )
+        # Restart event loop
+        if not self._running:
+            self._start_event_loop()
 
         return job_state
 
@@ -883,18 +1261,18 @@ class Flow(Serializable):
         self.job_state._set_cancelled(reason=reason)
         self._paused = False  # Clear pause flag when canceling
 
-        # If in concurrent mode, cancel all running tasks
-        if self.execution_strategy == "concurrent":
-            with self._execution_lock:
-                for future in self._active_futures.copy():
-                    future.cancel()
-                self._active_futures.clear()
+        # Stop event loop and cancel all running tasks
+        self._running = False
+        with self._execution_lock:
+            for future in self._active_tasks.copy():
+                future.cancel()
+            self._active_tasks.clear()
 
     def wait_for_completion(self, timeout: Optional[float] = None) -> bool:
-        """Wait for all concurrent tasks to complete.
+        """Wait for all tasks to complete.
 
-        In concurrent execution mode, this method waits for all active futures to complete.
-        This is useful for ensuring all asynchronous tasks complete before program exit.
+        This method waits for the event loop to finish processing all tasks.
+        Useful for ensuring all asynchronous tasks complete before program exit.
 
         Args:
             timeout: Timeout in seconds (infinite wait if None).
@@ -902,88 +1280,35 @@ class Flow(Serializable):
         Returns:
             True if all tasks completed before timeout, False otherwise.
         """
-        if self.execution_strategy != "concurrent":
-            return True  # Sequential execution mode doesn't need to wait
-
-        import time as time_module
-
-        start_time = time_module.time() if timeout else None
-        check_interval = 0.05  # Check interval in seconds
-        max_empty_checks = 5  # Consecutive empty checks before considering complete
-        empty_check_count = 0
-
-        # Loop until all futures complete
-        while True:
-            # Check timeout
-            if start_time and timeout:
-                elapsed = time_module.time() - start_time
-                if elapsed >= timeout:
-                    # Timeout, check if any remain incomplete
-                    with self._execution_lock:
-                        remaining = [f for f in self._active_futures if not f.done()]
-                    return len(remaining) == 0
-
-            # Get all currently active futures and check completion status
-            with self._execution_lock:
-                futures_to_wait = list(self._active_futures)
-
-            if not futures_to_wait:
-                # No active futures
-                empty_check_count += 1
-                if empty_check_count >= max_empty_checks:
-                    # Multiple consecutive empty checks, all tasks completed
-                    return True
-                # Brief wait in case new futures are being added
-                time_module.sleep(check_interval)
-                continue
-
-            # Active futures exist, reset empty check count
-            empty_check_count = 0
-
-            # Check if all futures are completed
-            all_done = True
-            for future in futures_to_wait:
-                if not future.done():
-                    all_done = False
-                    break
-
-            if all_done:
-                # All futures completed, but new ones might be added
-                # Wait a bit longer to ensure no new futures
-                time_module.sleep(check_interval)
-                # Check again
-                with self._execution_lock:
-                    futures_to_wait = list(self._active_futures)
-                    if not futures_to_wait:
-                        return True
-            else:
-                # Still have incomplete futures, wait and check again
-                time_module.sleep(check_interval)
+        if self._execution_thread:
+            self._execution_thread.join(timeout=timeout)
+            return not self._execution_thread.is_alive()
+        return True
 
     def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
-        """Shutdown Flow's concurrent executor.
+        """Shutdown Flow's executor and event loop.
 
-        In concurrent mode, this method waits for all tasks to complete (if wait=True),
-        then shuts down the thread pool. This is important for proper resource cleanup
-        before program exit.
+        This method stops the event loop and shuts down the thread pool.
+        Important for proper resource cleanup before program exit.
 
         Args:
             wait: Whether to wait for all tasks to complete.
             timeout: Wait timeout in seconds (only effective when wait=True).
         """
-        if self.execution_strategy != "concurrent" or self._concurrent_executor is None:
-            return
+        # Stop event loop
+        self._running = False
 
         if wait:
             self.wait_for_completion(timeout=timeout)
 
         # Shutdown thread pool
-        self._concurrent_executor.shutdown(wait=wait)
-        self._concurrent_executor = None
+        if self._executor:
+            self._executor.shutdown(wait=wait)
+            self._executor = None
 
-        # Clear futures set
+        # Clear active tasks
         with self._execution_lock:
-            self._active_futures.clear()
+            self._active_tasks.clear()
 
     def serialize(self) -> Dict[str, Any]:
         """Serialize Flow, including all routines and connections.

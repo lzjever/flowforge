@@ -5,6 +5,7 @@ Output events for sending data to other routines.
 """
 
 from __future__ import annotations
+from datetime import datetime
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -136,103 +137,84 @@ class Event(Serializable):
     def emit(self, flow: Optional["Flow"] = None, **kwargs) -> None:
         """Emit the event and send data to all connected slots.
 
-        This method transmits data to all slots connected to this event.
-        The data is sent according to the connection's parameter mapping,
-        then merged with each slot's existing data according to the slot's
-        merge_strategy, and finally passed to the slot's handler.
+        This method transmits data to all slots connected to this event using
+        a queue-based mechanism. Tasks are enqueued and executed asynchronously,
+        allowing emit() to return immediately without waiting for downstream
+        execution.
 
         Execution Mode:
-            - Sequential mode: Handlers are called synchronously, one after another.
-              Execution order follows the order of connections.
-            - Concurrent mode: Handlers may execute in parallel threads if the
-              flow's execution_strategy is "concurrent". This allows independent
-              routines to process data simultaneously.
+            - All execution uses a unified queue-based mechanism
+            - Sequential mode: max_workers=1, tasks execute one at a time
+            - Concurrent mode: max_workers>1, tasks execute in parallel
+            - emit() is always non-blocking and returns immediately
 
         Parameter Mapping:
             If a Connection has param_mapping defined (via Flow.connect()),
             parameter names are transformed before being sent to the slot.
             Unmapped parameters are passed with their original names.
 
+        Flow Context Auto-Detection:
+            If flow parameter is None, this method automatically attempts to
+            get the flow from the routine's context (routine._current_flow).
+            This allows simpler usage: event.emit(data="value") instead of
+            event.emit(flow=my_flow, data="value").
+
+            The flow context is automatically set by Flow.execute() and Flow.resume().
+
         Args:
-            flow: Optional Flow object. Required for:
+            flow: Optional Flow object. If None, automatically attempts to get
+                from routine._current_flow (set by Flow.execute()).
+                Required for:
                 - Finding Connection objects to apply parameter mappings
                 - Recording execution history in JobState
-                - Enabling concurrent execution mode
-                If None, parameter mapping won't work and execution history
-                won't be recorded. Should be provided when emitting from
-                within a Flow execution context.
+                - Queue-based task execution
+                If no flow is available, falls back to direct slot.receive() call (legacy mode).
             ``**kwargs``: Data to transmit. These keyword arguments form the
                 data dictionary sent to connected slots. All values must be
                 serializable if the flow uses persistence.
-                Example: emit(flow=my_flow, result="success", count=42)
+                Example: emit(result="success", count=42)
 
         Examples:
-            Basic emission:
+            Basic emission (automatic flow detection):
                 >>> event = routine.define_event("output", ["result"])
+                >>> # Inside a routine handler called by Flow.execute():
+                >>> event.emit(result="data", status="ok")
+                >>> # Automatically uses routine._current_flow
+
+            Explicit flow parameter:
                 >>> event.emit(flow=my_flow, result="data", status="ok")
-                >>> # Sends data to all connected slots
+                >>> # Explicitly specify flow (useful for testing or edge cases)
 
-            Without flow (limited functionality):
-                >>> event.emit(result="data")  # No parameter mapping, no history
-                >>> # Still works, but parameter mapping won't be applied
+            Without flow (legacy mode):
+                >>> event.emit(result="data")  # Direct call, no queue
+                >>> # Only works if no flow context available
         """
-        if flow is None or flow.execution_strategy != "concurrent":
-            # Sequential execution mode
+        # Auto-detect flow from routine context if not provided
+        if flow is None and self.routine:
+            flow = getattr(self.routine, "_current_flow", None)
+
+        # If no flow context, use legacy direct call
+        if flow is None:
             for slot in self.connected_slots:
-                if flow is not None:
-                    connection = flow._find_connection(self, slot)
-                    if connection is not None:
-                        connection.activate(kwargs)
-                    else:
-                        slot.receive(kwargs)
-                else:
-                    slot.receive(kwargs)
-        else:
-            # Concurrent execution mode
-            executor = flow._get_executor()
+                slot.receive(kwargs)
+            return
 
-            # Submit task for each connected slot (asynchronous execution, non-blocking)
-            for slot in self.connected_slots:
+        # Queue-based execution: create tasks and enqueue
+        from routilux.flow import SlotActivationTask, TaskPriority
 
-                def activate_slot(s=slot, f=flow, k=kwargs.copy()):
-                    """Thread-safe slot activation function."""
-                    try:
-                        if f is not None:
-                            connection = f._find_connection(self, s)
-                            if connection is not None:
-                                connection.activate(k)
-                            else:
-                                s.receive(k)
-                        else:
-                            s.receive(k)
-                    except Exception as e:
-                        import logging
+        for slot in self.connected_slots:
+            connection = flow._find_connection(self, slot)
 
-                        logging.exception(f"Error in concurrent slot activation: {e}")
-                        # Record error to routine stats
-                        if s.routine:
-                            s.routine._stats.setdefault("errors", []).append(
-                                {"slot": s.name, "error": str(e)}
-                            )
+            # Create task
+            task = SlotActivationTask(
+                slot=slot,
+                data=kwargs.copy(),
+                connection=connection,
+                priority=TaskPriority.NORMAL,
+                created_at=datetime.now(),
+            )
 
-                # Submit task to thread pool without waiting (avoid nested waits causing deadlock)
-                future = executor.submit(activate_slot)
+            # Enqueue (non-blocking)
+            flow._enqueue_task(task)
 
-                # Add future to Flow's tracking set (add immediately after submission to avoid race conditions)
-                if flow is not None and hasattr(flow, "_active_futures"):
-                    with flow._execution_lock:
-                        flow._active_futures.add(future)
-
-                    # Add callback to automatically remove when task completes (add callback outside lock to avoid deadlock)
-                    def remove_future(fut=future, f=flow):
-                        """Remove from tracking set when task completes."""
-                        if f is not None and hasattr(f, "_active_futures"):
-                            with f._execution_lock:
-                                f._active_futures.discard(fut)
-
-                    # Note: If future is already done, callback executes immediately
-                    future.add_done_callback(remove_future)
-
-            # Note: Do not wait for futures to complete, let them execute asynchronously
-            # This avoids deadlock issues with nested concurrent execution
-            # If waiting is needed, call Flow.wait_for_completion() or Flow.shutdown()
+        # Return immediately, no waiting

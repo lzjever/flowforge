@@ -66,7 +66,7 @@ Key Concepts
 Concurrent Execution Strategy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When a flow is created with ``execution_strategy="concurrent"``, routines that can run in parallel are automatically executed concurrently:
+When a flow is created with ``execution_strategy="concurrent"``, tasks are processed concurrently using a thread pool:
 
 .. code-block:: python
 
@@ -74,6 +74,12 @@ When a flow is created with ``execution_strategy="concurrent"``, routines that c
        execution_strategy="concurrent",
        max_workers=5
    )
+
+**Unified Queue Mechanism**:
+- Both sequential and concurrent modes use the same event queue
+- Sequential mode: ``max_workers=1`` (one task at a time)
+- Concurrent mode: ``max_workers>1`` (multiple tasks in parallel)
+- Tasks are processed fairly in queue order
 
 Thread Pool Management
 ~~~~~~~~~~~~~~~~~~~~~~

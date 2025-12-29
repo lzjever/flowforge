@@ -146,8 +146,11 @@ Pause and Resume
 Concurrent Execution
 --------------------
 
-* ✅ **Concurrent Execution Strategy**: Support for parallel execution using thread pools
-* ✅ **Automatic Parallelization**: Routines that can run in parallel are automatically executed concurrently
+* ✅ **Unified Event Queue**: Both sequential and concurrent modes use the same queue-based mechanism
+* ✅ **Non-blocking emit()**: Event emission returns immediately, tasks execute asynchronously
+* ✅ **Fair Scheduling**: Tasks are processed fairly, preventing long chains from blocking shorter ones
+* ✅ **Concurrent Execution Strategy**: Support for parallel execution using thread pools (controlled by max_workers)
+* ✅ **Event Loop**: Background thread processes tasks from the queue
 * ✅ **Thread Pool Management**: Configurable thread pool size (max_workers)
 * ✅ **Dependency Handling**: Automatic dependency detection and waiting
 * ✅ **Thread Safety**: All state updates are thread-safe
