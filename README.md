@@ -9,13 +9,14 @@
 
 ## ✨ Why Routilux?
 
-- 🚀 **Event-Driven Architecture**: Build reactive workflows that respond to events naturally
+- 🚀 **Event Queue Architecture**: Non-blocking event emission with unified execution model for both sequential and concurrent modes
 - 🔗 **Flexible Connections**: Many-to-many relationships between routines with intelligent data routing
 - 📊 **Built-in State Management**: Track execution state, performance metrics, and history out of the box
 - 🛡️ **Robust Error Handling**: Multiple strategies (STOP, CONTINUE, RETRY, SKIP) with automatic recovery
-- ⚡ **Concurrent Execution**: Automatic parallelization for I/O-bound operations
-- 💾 **Persistence & Recovery**: Save and resume workflows from any point
+- ⚡ **Concurrent Execution**: Automatic parallelization for I/O-bound operations via unified event queue
+- 💾 **Persistence & Recovery**: Save and resume workflows from any point with pending task serialization
 - 🎯 **Production Ready**: Comprehensive error handling, execution tracking, and monitoring
+- 🎨 **Simplified API**: Automatic flow detection - no need to pass flow parameter in most cases
 
 ## 🎯 Perfect For
 
@@ -63,10 +64,11 @@ class DataProcessor(Routine):
         # Define output event
         self.output_event = self.define_event("output", ["result"])
     
-    def process_data(self, data: str):
+    def process_data(self, data=None, **kwargs):
+        # Flow is automatically detected from routine context
         result = f"Processed: {data}"
         self._stats["processed_count"] = self._stats.get("processed_count", 0) + 1
-        self.emit("output", result=result)
+        self.emit("output", result=result)  # No need to pass flow!
 ```
 
 **Step 2: Create and Connect a Flow**
@@ -98,9 +100,9 @@ print(processor1.stats())  # {"processed_count": 1}
 
 ## 💡 Key Features
 
-### 🔄 Event-Driven Execution
+### 🔄 Event Queue Architecture
 
-Routines communicate through events and slots, creating a natural, reactive flow:
+Routines communicate through events and slots using a unified event queue pattern:
 
 ```python
 # Multiple routines can listen to the same event
@@ -110,6 +112,10 @@ flow.connect(processor1, "output", processor3, "input")  # Fan-out
 # Multiple events can feed into the same slot
 flow.connect(processor1, "output", aggregator, "input")
 flow.connect(processor2, "output", aggregator, "input")  # Fan-in
+
+# emit() is non-blocking - returns immediately after enqueuing tasks
+# Flow is automatically detected from routine context
+self.emit("output", data="value")  # No flow parameter needed!
 ```
 
 ### 🎛️ Flexible State Management
@@ -149,16 +155,21 @@ flow.set_error_handler(ErrorHandler(
 ))
 ```
 
-### ⚡ Concurrent Execution
+### ⚡ Unified Execution Model
 
-Automatic parallelization for better performance:
+Both sequential and concurrent modes use the same event queue mechanism:
 
 ```python
-# Enable concurrent execution
+# Sequential mode (default): max_workers=1
+flow = Flow()  # Sequential by default
+
+# Concurrent mode: max_workers>1
 flow.set_execution_strategy("concurrent", max_workers=4)
 
-# Routines that can run in parallel are automatically executed concurrently
+# Tasks are processed fairly in queue order
+# Long chains don't block shorter ones
 job_state = flow.execute(entry_routine_id)
+flow.wait_for_completion()  # Wait for async tasks
 ```
 
 ### 💾 Persistence & Recovery
