@@ -4,6 +4,8 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE)
 [![Documentation](https://readthedocs.org/projects/routilux/badge/?version=latest)](https://routilux.readthedocs.io)
+[![CI](https://github.com/lzjever/routilux/workflows/CI/badge.svg)](https://github.com/lzjever/routilux/actions)
+[![codecov](https://codecov.io/gh/lzjever/routilux/branch/main/graph/badge.svg)](https://codecov.io/gh/lzjever/routilux)
 
 **Routilux** is a powerful, event-driven workflow orchestration framework that makes building complex data pipelines and workflows effortless. With its intuitive API and flexible architecture, you can create sophisticated workflows in minutes, not hours.
 

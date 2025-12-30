@@ -105,6 +105,8 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+# Minimum coverage threshold (optional, can be enabled later)
+# fail_under = 80
 
 [tool.flake8]
 max-line-length = 100
