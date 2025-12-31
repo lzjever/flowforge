@@ -266,42 +266,25 @@ When an event is emitted:
 
 **Event Loop**
 
-The event loop runs in a background thread:
+The event loop runs in a background thread and is automatically started by ``Flow.execute()``.
+It continuously processes tasks from the queue:
 
-.. code-block:: python
+1. Gets tasks from the queue (with timeout to allow checking completion)
+2. Submits tasks to the thread pool executor
+3. Tracks active tasks for completion monitoring
+4. Handles pause/resume and error conditions
 
-   # Automatically started by Flow.execute()
-   def _event_loop(self):
-       while self._running:
-           if self._paused:
-               time.sleep(0.01)
-               continue
-           
-           # Get task from queue
-           task = self._task_queue.get(timeout=0.1)
-           
-           # Submit to thread pool
-           future = self._executor.submit(self._execute_task, task)
-           
-           # Track active tasks
-           with self._execution_lock:
-               self._active_tasks.add(future)
+The event loop implementation is in the ``routilux.flow.event_loop`` module, but you don't need to interact with it directly.
 
 **Task Execution**
 
-Tasks are executed by the thread pool:
+Tasks are executed by the thread pool executor:
 
-.. code-block:: python
+1. Parameter mapping is applied if a connection exists
+2. The slot's ``receive()`` method is called with the mapped data
+3. Errors are handled according to the configured error handler strategy
 
-   def _execute_task(self, task: SlotActivationTask):
-       # Apply parameter mapping if connection exists
-       if task.connection:
-           mapped_data = task.connection._apply_mapping(task.data)
-       else:
-           mapped_data = task.data
-       
-       # Call slot handler
-       task.slot.receive(mapped_data)
+The task execution implementation is in the ``routilux.flow.event_loop`` module.
 
 Execution Order
 ---------------

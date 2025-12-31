@@ -78,11 +78,24 @@ This is a **major version update** with significant architectural changes. The c
   - Non-blocking emit() eliminates blocking waits
   - Fair scheduling improves overall throughput
   - Unified execution model reduces code duplication
+  - Improved event loop task completion detection with consecutive empty checks
 
 - **Code Quality**:
   - Eliminated duplicate execution logic between sequential and concurrent modes
   - Centralized task execution in event loop
   - Better separation of concerns
+  - **Flow Module Refactoring**: Refactored `flow.py` (1403 lines) into modular structure:
+    - `flow/flow.py` - Main Flow class (459 lines)
+    - `flow/task.py` - TaskPriority enum and SlotActivationTask dataclass
+    - `flow/execution.py` - Execution logic (sequential/concurrent)
+    - `flow/event_loop.py` - Event loop and task queue management
+    - `flow/error_handling.py` - Error handling logic
+    - `flow/state_management.py` - State management (pause/resume/cancel)
+    - `flow/dependency.py` - Dependency graph building
+    - `flow/serialization.py` - Serialization logic
+    - Improved maintainability, testability, and code organization
+    - Removed redundant code and backward compatibility wrappers
+    - Fixed bugs in error handling retry logic and event loop
 
 - **User Experience**:
   - Simpler API - automatic flow detection
@@ -98,6 +111,11 @@ This is a **major version update** with significant architectural changes. The c
 
 - **Execution Order**: Fixed issue where long chains could block shorter ones
 - **Concurrent Execution**: Unified logic eliminates inconsistencies between modes
+- **Event Loop Task Completion**: Fixed issue where event loop could exit before tasks were enqueued
+  - Added consecutive empty checks to ensure tasks are truly complete
+  - Improved task completion detection logic
+- **Error Handling Retry Logic**: Fixed retry strategy to properly handle max retries reached
+- **Task Serialization**: Improved null safety in task serialization/deserialization
 - **Pause/Resume**: Fixed serialization of pending tasks for proper resume
 - **Emit Blocking**: Fixed issue where second emit() had to wait for first to complete
 
