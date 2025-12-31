@@ -99,9 +99,9 @@ def execute_task(task: "SlotActivationTask", flow: "Flow") -> None:
         handle_task_error(task, e, flow)
     finally:
         # Clear thread-local storage after task execution
-        # Note: This is per-task, not per-execution, so we don't clear it here
-        # The execution-level cleanup happens in execute_sequential()
-        pass
+        # This ensures that if the same worker thread executes a task from a different
+        # execution, it won't accidentally access the previous execution's JobState
+        flow._current_execution_job_state.value = None
 
 
 def enqueue_task(task: "SlotActivationTask", flow: "Flow") -> None:
