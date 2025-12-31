@@ -15,4 +15,5 @@ Complete API documentation for all modules and classes.
    job_state
    error_handler
    execution_tracker
+   completion
 

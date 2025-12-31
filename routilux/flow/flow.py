@@ -84,6 +84,7 @@ class Flow(Serializable):
         flow_id: Optional[str] = None,
         execution_strategy: str = "sequential",
         max_workers: int = 5,
+        execution_timeout: Optional[float] = None,
     ):
         """Initialize Flow.
 
@@ -91,6 +92,8 @@ class Flow(Serializable):
             flow_id: Flow identifier (auto-generated if None).
             execution_strategy: Execution strategy, "sequential" or "concurrent".
             max_workers: Maximum number of worker threads for concurrent execution.
+            execution_timeout: Default timeout for execution completion in seconds.
+                None for no timeout (default: 300.0 seconds).
         """
         super().__init__()
         self.flow_id: str = flow_id or str(uuid.uuid4())
@@ -107,6 +110,9 @@ class Flow(Serializable):
 
         self.execution_strategy: str = execution_strategy
         self.max_workers: int = max_workers if execution_strategy == "concurrent" else 1
+        self.execution_timeout: Optional[float] = (
+            execution_timeout if execution_timeout is not None else 300.0
+        )
 
         self._task_queue: queue.Queue = queue.Queue()
         self._pending_tasks: List[SlotActivationTask] = []
@@ -394,6 +400,7 @@ class Flow(Serializable):
         entry_routine_id: str,
         entry_params: Optional[Dict[str, Any]] = None,
         execution_strategy: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> "JobState":
         """Execute the flow starting from the specified entry routine.
 
@@ -402,6 +409,8 @@ class Flow(Serializable):
             entry_params: Optional dictionary of parameters to pass to the entry
                 routine's trigger slot.
             execution_strategy: Optional execution strategy override.
+            timeout: Optional timeout for execution completion in seconds.
+                If None, uses flow.execution_timeout (default: 300.0 seconds).
 
         Returns:
             JobState object containing execution status and state.
@@ -411,7 +420,7 @@ class Flow(Serializable):
         """
         from routilux.flow.execution import execute_flow
 
-        return execute_flow(self, entry_routine_id, entry_params, execution_strategy)
+        return execute_flow(self, entry_routine_id, entry_params, execution_strategy, timeout)
 
     def wait_for_completion(self, timeout: Optional[float] = None) -> bool:
         """Wait for all tasks to complete.

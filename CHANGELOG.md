@@ -91,6 +91,14 @@ This is a **major version update** with significant architectural changes. The c
   - Unified execution model reduces code duplication
   - Improved event loop task completion detection with consecutive empty checks
 
+- **Execution Completion Detection**:
+  - **Systematic completion mechanism**: New `routilux.flow.completion` module provides robust completion detection
+  - **Multiple stability checks**: Avoids race conditions where tasks are enqueued after initial check
+  - **Configurable timeout**: Default timeout increased from 10 seconds to 300 seconds (5 minutes) for long-running tasks
+  - **Event loop management**: Automatic detection and restart of stopped event loops when tasks are pending
+  - **Better error handling**: Proper handling of executor shutdown scenarios
+  - **Progress monitoring**: Optional progress callback for monitoring execution status
+
 - **Code Quality**:
   - Eliminated duplicate execution logic between sequential and concurrent modes
   - Centralized task execution in event loop

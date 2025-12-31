@@ -41,6 +41,10 @@ The Flow functionality is organized into the following submodules:
 **flow.serialization**
     Flow serialization and deserialization logic.
 
+**flow.completion**
+    Execution completion detection and waiting mechanism. Provides systematic
+    completion checking to avoid race conditions and handle long-running tasks.
+
 For most use cases, you only need to import from the main ``routilux.flow`` module:
 
 .. code-block:: python

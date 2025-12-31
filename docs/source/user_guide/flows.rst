@@ -57,7 +57,7 @@ For details on how to use ``flow_id``, see :doc:`identifiers`.
 Creating a Flow
 ---------------
 
-Create a flow with an optional flow ID:
+Create a flow with an optional flow ID and execution timeout:
 
 .. code-block:: python
 
@@ -66,6 +66,9 @@ Create a flow with an optional flow ID:
    flow = Flow(flow_id="my_flow")
    # Or let it auto-generate an ID
    flow = Flow()
+   
+   # Create flow with custom execution timeout (default: 300.0 seconds)
+   flow = Flow(execution_timeout=600.0)  # 10 minutes
 
 Adding Routines
 ---------------
@@ -120,6 +123,101 @@ Execute a flow starting from an entry routine:
 **Important**: The entry routine must have a "trigger" slot defined. ``Flow.execute()``
 will call this slot with the provided entry_params. If the entry routine doesn't have
 a "trigger" slot, a ``ValueError`` will be raised.
+
+Execution Timeout
+-----------------
+
+By default, Flow execution has a timeout of 300 seconds (5 minutes) to accommodate
+long-running tasks such as LLM calls. You can customize this timeout in two ways:
+
+**1. Set default timeout when creating Flow:**
+
+.. code-block:: python
+
+   # Create Flow with custom default timeout (10 minutes)
+   flow = Flow(execution_timeout=600.0)
+   
+   # All execute() calls will use this timeout
+   job_state = flow.execute(entry_routine_id="routine1")
+
+**2. Override timeout per execution:**
+
+.. code-block:: python
+
+   flow = Flow()  # Uses default 300.0 seconds
+   
+   # Override timeout for this specific execution
+   job_state = flow.execute(
+       entry_routine_id="routine1",
+       timeout=600.0  # 10 minutes for this execution
+   )
+
+**Timeout Behavior:**
+
+- **Primary completion detection**: Execution completes when the task queue is empty and
+  there are no active tasks. This happens automatically and is the normal completion path.
+- **Timeout as safety mechanism**: The timeout serves as a safety limit to prevent infinite
+  waiting. If execution doesn't complete within the timeout period:
+  - The event loop is forcefully stopped
+  - ``job_state.status`` is set to ``"failed"``
+  - A timeout error is recorded in the job state
+- The timeout applies to the entire execution, including all downstream routines
+- For very long-running tasks (e.g., LLM calls), increase the timeout accordingly
+- **Note**: In normal operation, execution completes as soon as all tasks are done, without
+  waiting for the timeout. The timeout only triggers if something goes wrong.
+
+Execution Completion Detection
+------------------------------
+
+Routilux uses a systematic completion detection mechanism to ensure all tasks are
+processed before ``execute()`` returns. This mechanism:
+
+- **Completion criteria**: Execution is considered complete when:
+  - The task queue is empty (no pending tasks)
+  - There are no active tasks (all running tasks have finished)
+  - This check is performed even if ``job_state.status`` is still ``"running"``
+- **Multiple stability checks**: Verifies completion multiple times to avoid race conditions
+  where tasks might be enqueued between checks
+- **Queue monitoring**: Continuously monitors the task queue size
+- **Active task tracking**: Tracks all active tasks in the thread pool executor
+- **Event loop management**: Automatically restarts event loop if it stops prematurely
+  while tasks are still pending
+
+**Completion Flow:**
+
+1. When ``execute()`` is called, it starts the event loop and triggers the entry routine
+2. The completion detection mechanism continuously checks if the queue is empty and
+   there are no active tasks
+3. Once both conditions are met (verified multiple times for stability), execution is
+   considered complete
+4. The event loop is stopped (``flow._running = False``)
+5. The event loop thread is joined and cleaned up
+6. ``job_state.status`` is updated to ``"completed"``
+
+The completion detection is automatic and transparent - you don't need to do anything
+special. However, for advanced use cases, you can use the completion detection API:
+
+.. code-block:: python
+
+   from routilux.flow.completion import wait_for_execution_completion
+   
+   job_state = flow.execute(entry_routine_id="routine1")
+   
+   # Manually wait for completion with progress callback
+   def progress_callback(queue_size, active_count, status):
+       print(f"Queue: {queue_size}, Active: {active_count}, Status: {status}")
+   
+   completed = wait_for_execution_completion(
+       flow=flow,
+       job_state=job_state,
+       timeout=300.0,
+       progress_callback=progress_callback
+   )
+   
+   if completed:
+       print("Execution completed successfully")
+   else:
+       print("Execution timed out")
 
 Example entry routine:
 
@@ -365,9 +463,14 @@ wait for completion when needed:
 2. Checks that all active tasks are complete
 3. Returns when all tasks are done (or timeout occurs)
 
+**Note**: The ``execute()`` method automatically uses a systematic completion detection
+mechanism that waits for all tasks to complete. For most use cases, you don't need to
+call ``wait_for_completion()`` manually. However, for concurrent execution or when you
+need explicit control, you can use it.
+
 **Best Practice**:
 
-Always call ``wait_for_completion()`` before accessing results or shutting down:
+For concurrent execution, always call ``wait_for_completion()`` before accessing results or shutting down:
 
 .. code-block:: python
 

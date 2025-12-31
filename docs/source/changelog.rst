@@ -42,6 +42,12 @@ Improvements
   * Better separation of concerns
 * ✅ **Code Quality**: Removed redundant code and fixed bugs in error handling and event loop
 * ✅ **Test Coverage**: Improved test coverage from 84% to 86%, with error_handling.py reaching 100% coverage
+* ✅ **Execution Completion Detection**: Systematic completion mechanism with multiple stability checks
+  * New `routilux.flow.completion` module for robust completion detection
+  * Default timeout increased from 10 seconds to 300 seconds for long-running tasks
+  * Automatic event loop management and restart when needed
+  * Configurable timeout per Flow and per execution
+  * Progress monitoring support via callback
 
 Fixed
 ~~~~~

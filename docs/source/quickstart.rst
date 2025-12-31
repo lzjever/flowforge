@@ -90,11 +90,18 @@ Execute the flow with entry parameters:
 
 .. code-block:: python
 
-   # Execute the flow
+   # Execute the flow (automatically waits for completion)
    job_state = flow.execute(id1, entry_params={"data": "test"})
    
    # Check the status
    print(job_state.status)  # "completed"
+   
+   # For long-running tasks, you can specify a custom timeout
+   job_state = flow.execute(
+       id1,
+       entry_params={"data": "test"},
+       timeout=600.0  # 10 minutes
+   )
    
    # Check statistics
    print(processor1.stats())  # {"processing": {"success": 1, "total": 1}}
