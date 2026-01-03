@@ -19,12 +19,12 @@ from routilux.output_handler import (
     NullOutputHandler,
 )
 
-# Import analyzers
-from routilux.routine_analyzer import RoutineAnalyzer, analyze_routine_file
-from routilux.workflow_analyzer import WorkflowAnalyzer, analyze_workflow
-
-# Import formatters
-from routilux.analysis_formatters import (
+# Import analysis tools
+from routilux.analysis import (
+    RoutineAnalyzer,
+    WorkflowAnalyzer,
+    analyze_routine_file,
+    analyze_workflow,
     BaseFormatter,
     RoutineMarkdownFormatter,
     WorkflowD2Formatter,
@@ -76,12 +76,11 @@ __all__ = [
     "DataValidator",
     # Built-in routines - Control flow
     "ConditionalRouter",
-    # Analyzers
+    # Analysis tools
     "RoutineAnalyzer",
     "analyze_routine_file",
     "WorkflowAnalyzer",
     "analyze_workflow",
-    # Formatters
     "BaseFormatter",
     "RoutineMarkdownFormatter",
     "WorkflowD2Formatter",

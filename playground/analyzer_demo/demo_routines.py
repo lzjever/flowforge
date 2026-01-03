@@ -283,3 +283,207 @@ class DataSink(Routine):
         # Emit completion
         self.emit("completed", saved_count=1, timestamp="2024-01-01T00:00:00")
 
+
+class TaskDispatcher(Routine):
+    """Dispatches tasks to multiple workers for parallel processing.
+    
+    This routine demonstrates:
+    - Task distribution
+    - Multiple output events for parallel processing
+    - Load balancing
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Configuration
+        self.set_config(
+            num_workers=3,
+            distribution_strategy="round_robin",
+            batch_size=5
+        )
+        
+        # Input slot
+        self.input_slot = self.define_slot("input", handler=self.dispatch)
+        
+        # Multiple output events for different workers
+        self.worker1_event = self.define_event("worker1", ["task", "task_id", "worker_id"])
+        self.worker2_event = self.define_event("worker2", ["task", "task_id", "worker_id"])
+        self.worker3_event = self.define_event("worker3", ["task", "task_id", "worker_id"])
+        self.all_done_event = self.define_event("all_done", ["total_tasks", "timestamp"])
+    
+    def dispatch(self, data=None, **kwargs):
+        """Dispatch tasks to workers."""
+        # Extract data
+        if isinstance(data, dict):
+            tasks = data.get("processed_data", data.get("collected_data", []))
+        else:
+            tasks = data if isinstance(data, list) else [data]
+        
+        num_workers = self.get_config("num_workers", 3)
+        strategy = self.get_config("distribution_strategy", "round_robin")
+        
+        # Distribute tasks
+        for i, task in enumerate(tasks):
+            worker_id = (i % num_workers) + 1
+            task_id = f"task_{i}"
+            
+            if worker_id == 1:
+                self.emit("worker1", task=task, task_id=task_id, worker_id=1)
+            elif worker_id == 2:
+                self.emit("worker2", task=task, task_id=task_id, worker_id=2)
+            else:
+                self.emit("worker3", task=task, task_id=task_id, worker_id=3)
+        
+        # Emit completion
+        self.emit("all_done", total_tasks=len(tasks), timestamp="2024-01-01T00:00:00")
+
+
+class WorkerProcessor(Routine):
+    """Processes tasks assigned by dispatcher.
+    
+    This routine demonstrates:
+    - Worker role in distributed processing
+    - Task processing
+    - Result reporting
+    """
+    
+    def __init__(self, worker_id: int = 1):
+        super().__init__()
+        self.worker_id = worker_id
+        
+        # Configuration
+        self.set_config(
+            processing_timeout=10,
+            retry_on_failure=True
+        )
+        
+        # Input slot
+        self.input_slot = self.define_slot("input", handler=self.process_task)
+        
+        # Output event
+        self.result_event = self.define_event("result", ["result", "task_id", "worker_id", "status"])
+    
+    def process_task(self, task=None, task_id=None, worker_id=None, **kwargs):
+        """Process a single task."""
+        # Extract task
+        if isinstance(task, dict):
+            task_value = task.get("task", task)
+        else:
+            task_value = task
+        
+        # Simulate processing
+        result = f"processed_by_worker_{self.worker_id}: {task_value}"
+        
+        self.emit("result", 
+                 result=result,
+                 task_id=task_id or "unknown",
+                 worker_id=self.worker_id,
+                 status="success")
+
+
+class ResultAggregator(Routine):
+    """Aggregates results from multiple workers.
+    
+    This routine demonstrates:
+    - Result collection from multiple sources
+    - Aggregation logic
+    - Completion detection
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Configuration
+        self.set_config(
+            aggregation_mode="collect",
+            wait_for_all=True
+        )
+        
+        # Track accumulated results
+        self._results = []
+        
+        # Multiple input slots for different workers
+        self.worker1_input = self.define_slot("worker1_input", handler=self.collect_result, merge_strategy="append")
+        self.worker2_input = self.define_slot("worker2_input", handler=self.collect_result, merge_strategy="append")
+        self.worker3_input = self.define_slot("worker3_input", handler=self.collect_result, merge_strategy="append")
+        
+        # Output event
+        self.aggregated_event = self.define_event("aggregated", ["results", "total_count", "workers_used"])
+    
+    def collect_result(self, result=None, task_id=None, worker_id=None, **kwargs):
+        """Collect result from a worker."""
+        # Extract result data
+        if isinstance(result, dict):
+            result_value = result.get("result", result)
+        else:
+            result_value = result
+        
+        # Store result
+        if result_value:
+            self._results.append({
+                "result": result_value,
+                "task_id": task_id,
+                "worker_id": worker_id
+            })
+        
+        # Emit aggregated results
+        workers_used = list(set(r.get("worker_id") for r in self._results if r.get("worker_id")))
+        self.emit("aggregated", 
+                 results=self._results.copy(),
+                 total_count=len(self._results),
+                 workers_used=workers_used)
+
+
+class LoopController(Routine):
+    """Controls loop execution and retry logic.
+    
+    This routine demonstrates:
+    - Loop control
+    - Retry logic
+    - Conditional routing
+    """
+    
+    def __init__(self):
+        super().__init__()
+        # Configuration
+        self.set_config(
+            max_iterations=3,
+            retry_on_failure=True,
+            loop_condition="validation_failed"
+        )
+        
+        # Input slots
+        self.validation_input = self.define_slot("validation_input", handler=self.control_loop)
+        self.retry_input = self.define_slot("retry_input", handler=self.control_loop)
+        
+        # Output events
+        self.continue_loop_event = self.define_event("continue_loop", ["iteration", "data", "reason"])
+        self.exit_loop_event = self.define_event("exit_loop", ["final_data", "iterations", "reason"])
+    
+    def control_loop(self, data=None, iteration=None, **kwargs):
+        """Control loop execution."""
+        current_iteration = iteration or 0
+        max_iterations = self.get_config("max_iterations", 3)
+        
+        # Check if validation passed
+        if isinstance(data, dict):
+            is_valid = data.get("score", 0) > 0.8 if "score" in data else True
+            errors = data.get("errors", [])
+        else:
+            is_valid = data is not None
+            errors = []
+        
+        # Decide whether to continue or exit
+        if not is_valid and current_iteration < max_iterations:
+            # Continue loop
+            self.emit("continue_loop", 
+                     iteration=current_iteration + 1,
+                     data=data,
+                     reason="validation_failed")
+        else:
+            # Exit loop
+            reason = "validation_passed" if is_valid else "max_iterations_reached"
+            self.emit("exit_loop",
+                     final_data=data,
+                     iterations=current_iteration + 1,
+                     reason=reason)
+

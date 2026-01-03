@@ -218,6 +218,9 @@ htmlcov/
 docs/build/
 docs/_build/
 
+# Demo outputs
+exports/
+
 # Type checking
 .mypy_cache/
 .pytype/

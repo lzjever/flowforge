@@ -4,6 +4,28 @@ This directory contains various demonstration systems showcasing routilux capabi
 
 ## Available Demos
 
+### Routine and Workflow Analyzer
+
+**Location**: `analyzer_demo/`
+
+A comprehensive analysis and export tool for routilux routines and workflows.
+
+**Features**:
+- AST-based routine file analysis
+- Dynamic workflow analysis
+- JSON and D2 format export
+- Workflow visualization generation
+- Dependency graph extraction
+
+**Documentation**: See `analyzer_demo/README.md` for complete documentation.
+
+**Run Demo**:
+```bash
+cd /home/percy/works/mygithub/routilux
+conda activate mbos
+python -m playground.analyzer_demo.analyzer_demo
+```
+
 ### LLM Agent Cross-Host Interrupt and Recovery
 
 **Location**: `llm_agent_cross_host/`
@@ -31,6 +53,11 @@ python -m playground.llm_agent_cross_host.cross_host_demo
 playground/
 ├── __init__.py                    # Package initialization
 ├── README.md                      # This file
+├── analyzer_demo/                 # Analyzer demo
+│   ├── __init__.py
+│   ├── README.md                  # Complete documentation
+│   ├── analyzer_demo.py           # Main demo script
+│   └── demo_routines.py           # Example routines
 └── llm_agent_cross_host/          # LLM Agent demo
     ├── __init__.py
     ├── README.md                  # Complete documentation
