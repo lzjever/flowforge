@@ -64,9 +64,9 @@ class TestSlotErrorToFailedStatus:
 
         # 验证状态被正确设置为 "failed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), f"Status should be 'failed', but got '{job_state.status}'"
+        assert job_state.status == "failed", (
+            f"Status should be 'failed', but got '{job_state.status}'"
+        )
 
         # 验证执行历史中有错误记录
         all_history = job_state.get_execution_history()
@@ -103,9 +103,9 @@ class TestSlotErrorToFailedStatus:
         # 验证有多个错误记录
         history = job_state.get_execution_history(flow_routine_id)
         error_records = [r for r in history if r.event_name == "error"]
-        assert (
-            len(error_records) >= 3
-        ), f"Should have at least 3 error records, got {len(error_records)}"
+        assert len(error_records) >= 3, (
+            f"Should have at least 3 error records, got {len(error_records)}"
+        )
 
         # 模拟重试用尽后，routine 状态被设置为 failed
         # 这是实际场景：当所有重试都用完后，handle_task_error 会设置 routine 状态为 failed
@@ -125,6 +125,6 @@ class TestSlotErrorToFailedStatus:
 
         # 验证状态被正确设置为 "failed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), f"Status should be 'failed', but got '{job_state.status}'"
+        assert job_state.status == "failed", (
+            f"Status should be 'failed', but got '{job_state.status}'"
+        )

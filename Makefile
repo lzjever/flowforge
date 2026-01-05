@@ -29,8 +29,8 @@ help:
 	@echo "  test-integration - Run all integration tests (requires external services)"
 	@echo ""
 	@echo "Code Quality:"
-	@echo "  lint          - Run linting checks (flake8)"
-	@echo "  format        - Format code with black"
+	@echo "  lint          - Run linting checks (ruff)"
+	@echo "  format        - Format code with ruff"
 	@echo "  format-check  - Check code formatting"
 	@echo "  check         - Run all checks (lint + format check + tests)"
 	@echo ""
@@ -107,13 +107,13 @@ test-integration:
 	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v -m integration
 
 lint:
-	$(PYTHON_CMD) -m flake8 routilux/ tests/ examples/ --max-line-length=100 --extend-ignore=E203,W503,E501
+	$(PYTHON_CMD) -m ruff check routilux/ tests/ examples/ --output-format=concise
 
 format:
-	$(PYTHON_CMD) -m black routilux/ tests/ examples/
+	$(PYTHON_CMD) -m ruff format routilux/ tests/ examples/
 
 format-check:
-	$(PYTHON_CMD) -m black --check routilux/ tests/ examples/
+	$(PYTHON_CMD) -m ruff format --check routilux/ tests/ examples/
 
 check: lint format-check test
 	@echo "All checks passed!"

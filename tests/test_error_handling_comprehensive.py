@@ -755,9 +755,9 @@ class TestComplexScenarios:
         # 这是正确的行为：critical routine必须成功，否则flow失败
         critical_state = job_state.get_routine_state("critical")
         assert critical_state is not None
-        assert (
-            critical_state.get("status") == "failed"
-        ), "Critical routine should fail after retries exhausted"
+        assert critical_state.get("status") == "failed", (
+            "Critical routine should fail after retries exhausted"
+        )
         assert job_state.status == "failed", "Flow should fail when critical routine fails"
 
 

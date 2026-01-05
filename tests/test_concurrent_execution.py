@@ -145,9 +145,9 @@ class TestConcurrentRoutineExecution:
         assert execution_time < 0.6, f"执行时间 {execution_time} 应该小于 0.6 秒（并发）"
 
         # 验证所有 routines 都执行了
-        assert (
-            len(execution_order) == 3
-        ), f"Expected 3 routines to execute, got {len(execution_order)}"
+        assert len(execution_order) == 3, (
+            f"Expected 3 routines to execute, got {len(execution_order)}"
+        )
         assert "routine1" in execution_order
         assert "routine2" in execution_order
         assert "routine3" in execution_order
@@ -272,9 +272,9 @@ class TestConcurrentRoutineExecution:
         sequential_time = execution_times["sequential"]
         concurrent_time = execution_times["concurrent"]
 
-        assert (
-            concurrent_time < sequential_time
-        ), f"并发执行 ({concurrent_time:.3f}s) 应该快于顺序执行 ({sequential_time:.3f}s)"
+        assert concurrent_time < sequential_time, (
+            f"并发执行 ({concurrent_time:.3f}s) 应该快于顺序执行 ({sequential_time:.3f}s)"
+        )
 
         # 并发执行时间应该接近单个 routine 的时间（0.1s）
         # 放宽阈值，因为 wait_for_completion 和系统负载可能影响
@@ -515,9 +515,9 @@ class TestConcurrentErrorHandling:
         JobState.wait_for_completion(flow, job_state, timeout=2.0)
 
         # 验证：即使有错误，其他消息也应该被处理
-        assert (
-            len(results) >= 4
-        ), f"Expected at least 4 results, got {len(results)}"  # 至少处理了 4 个（除了失败的）
+        assert len(results) >= 4, (
+            f"Expected at least 4 results, got {len(results)}"
+        )  # 至少处理了 4 个（除了失败的）
         assert job_state.status == "completed"
 
     def test_concurrent_error_stop_strategy(self):
@@ -906,10 +906,10 @@ class TestConcurrentIntegration:
 
         # 验证并发执行
         assert execution_time < 0.3  # 并发执行应该快
-        assert (
-            len(results) == 3
-        ), f"Expected 3 worker results, got {len(results)}"  # 三个 worker 都应该执行
-        assert (
-            len(aggregator.final_result) == 3
-        ), f"Expected 3 aggregated results, got {len(aggregator.final_result)}"  # 聚合器应该收到所有结果
+        assert len(results) == 3, (
+            f"Expected 3 worker results, got {len(results)}"
+        )  # 三个 worker 都应该执行
+        assert len(aggregator.final_result) == 3, (
+            f"Expected 3 aggregated results, got {len(aggregator.final_result)}"
+        )  # 聚合器应该收到所有结果
         assert job_state.status == "completed"

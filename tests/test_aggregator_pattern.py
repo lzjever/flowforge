@@ -37,7 +37,7 @@ class MultiSourceRoutine(Routine):
         flow = getattr(self, "_current_flow", None)
         # Emit multiple messages
         for i in range(3):
-            self.emit("output", flow=flow, data=f"data{i+1}", source_id=f"source{i+1}")
+            self.emit("output", flow=flow, data=f"data{i + 1}", source_id=f"source{i + 1}")
 
 
 class AggregatorRoutine(Routine):
@@ -149,7 +149,7 @@ class TestAggregatorPattern:
                 flow = getattr(self, "_current_flow", None)
                 # Emit only 2 messages
                 for i in range(2):
-                    self.emit("output", flow=flow, data=f"data{i+1}", source_id=f"source{i+1}")
+                    self.emit("output", flow=flow, data=f"data{i + 1}", source_id=f"source{i + 1}")
 
         # Create a source that emits only 2 messages
         partial_source = PartialSourceRoutine()

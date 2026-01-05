@@ -1,7 +1,8 @@
 Changelog
 =========
 
-Version 0.9.0
+.. literalinclude:: ../../CHANGELOG.md
+   :language: markdown
 -------------
 
 Released: 2025-01-XX

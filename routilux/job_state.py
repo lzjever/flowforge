@@ -782,8 +782,7 @@ class JobState(Serializable):
             # Check if execution completed (condition might never be met)
             if job_state.status in ["completed", "failed", "cancelled"]:
                 logger.debug(
-                    f"Execution completed with status '{job_state.status}' "
-                    f"before condition was met"
+                    f"Execution completed with status '{job_state.status}' before condition was met"
                 )
                 # Check condition one more time before returning
                 try:

@@ -51,9 +51,9 @@ class TestFlowWaitForCompletionDeprecation:
 
         # 应该检测到错误并设置状态为 failed
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should be 'failed' when routine state is 'failed'"
+        assert job_state.status == "failed", (
+            "Status should be 'failed' when routine state is 'failed'"
+        )
 
     def test_flow_wait_for_completion_without_job_state_legacy_behavior(self):
         """测试 Flow.wait_for_completion() 没有 job_state 时的旧行为"""
@@ -96,6 +96,6 @@ class TestFlowWaitForCompletionDeprecation:
 
         # 应该检测到错误并设置状态为 failed
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should be 'failed' when routine state is 'failed'"
+        assert job_state.status == "failed", (
+            "Status should be 'failed' when routine state is 'failed'"
+        )

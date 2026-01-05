@@ -7,6 +7,7 @@ This example demonstrates:
 - Error handler configuration
 - Error recovery
 """
+
 from routilux import Flow, Routine, ErrorHandler, ErrorStrategy
 
 

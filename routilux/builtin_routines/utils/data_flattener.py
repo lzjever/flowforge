@@ -38,7 +38,9 @@ class DataFlattener(Routine):
 
         # Set default configuration
         self.set_config(
-            separator=".", preserve_lists=True, max_depth=100  # Prevent infinite recursion
+            separator=".",
+            preserve_lists=True,
+            max_depth=100,  # Prevent infinite recursion
         )
 
         # Define input slot

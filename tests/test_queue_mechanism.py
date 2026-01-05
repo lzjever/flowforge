@@ -217,7 +217,9 @@ class TestEventLoop:
         value = (
             processed[0]
             if isinstance(processed[0], str)
-            else processed[0].get("data") if isinstance(processed[0], dict) else str(processed[0])
+            else processed[0].get("data")
+            if isinstance(processed[0], dict)
+            else str(processed[0])
         )
         assert value == "test"
 

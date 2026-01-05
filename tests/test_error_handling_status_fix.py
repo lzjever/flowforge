@@ -223,9 +223,9 @@ class TestWaitForCompletionErrorDetectionFix:
 
         # 验证状态被正确设置为 "failed" 而不是 "completed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should be 'failed' when routine state is 'failed'"
+        assert job_state.status == "failed", (
+            "Status should be 'failed' when routine state is 'failed'"
+        )
 
     def test_wait_for_completion_detects_error_in_routine_states(self):
         """测试 wait_for_completion 检测 routine_states 中的失败状态"""
@@ -256,9 +256,9 @@ class TestWaitForCompletionErrorDetectionFix:
 
         # 验证状态被正确设置为 "failed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should be 'failed' when routine states have failures"
+        assert job_state.status == "failed", (
+            "Status should be 'failed' when routine states have failures"
+        )
 
     def test_wait_for_completion_sets_completed_when_no_errors(self):
         """测试 wait_for_completion 在没有错误时正确设置为 "completed" """
@@ -324,9 +324,9 @@ class TestWaitForCompletionErrorDetectionFix:
 
         # 验证状态被正确设置为 "failed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should be 'failed' when routine state is 'failed'"
+        assert job_state.status == "failed", (
+            "Status should be 'failed' when routine state is 'failed'"
+        )
 
     def test_wait_for_completion_detects_error_status_in_routine_states(self):
         """测试 wait_for_completion 检测 routine_states 中的 "error" 状态"""
@@ -356,9 +356,9 @@ class TestWaitForCompletionErrorDetectionFix:
 
         # 验证状态被正确设置为 "failed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should be 'failed' when 'error' status detected"
+        assert job_state.status == "failed", (
+            "Status should be 'failed' when 'error' status detected"
+        )
 
     def test_wait_for_completion_integration_with_retry_exhaustion(self):
         """集成测试：重试用尽后，wait_for_completion 正确检测失败"""
@@ -430,9 +430,9 @@ class TestWaitForCompletionErrorDetectionFix:
 
         # 验证状态被正确检测并设置为 "failed"
         assert completed, "Should complete successfully"
-        assert (
-            job_state.status == "failed"
-        ), "Status should remain 'failed' after wait_for_completion"
+        assert job_state.status == "failed", (
+            "Status should remain 'failed' after wait_for_completion"
+        )
 
     def test_wait_for_completion_preserves_existing_failed_status(self):
         """测试 wait_for_completion 不会覆盖已有的 "failed" 状态"""
