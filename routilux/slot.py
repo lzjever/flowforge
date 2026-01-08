@@ -223,6 +223,50 @@ class Slot(Serializable):
         try:
             # Call handler with merged data if handler is defined
             if self.handler is not None:
+                # Monitoring hook: Slot call (before handler execution)
+                from routilux.monitoring.hooks import execution_hooks
+                routine_id = None
+                if flow and self.routine:
+                    routine_id = flow._get_routine_id(self.routine)
+                
+                if routine_id and job_state and self.routine:
+                    # Monitoring hook: Routine start
+                    execution_hooks.on_routine_start(self.routine, routine_id, job_state)
+                    
+                    # Check if should pause at routine start (breakpoint check)
+                    if execution_hooks.should_pause_routine(routine_id, job_state, None, merged_data):
+                        from routilux.monitoring.registry import MonitoringRegistry
+                        if MonitoringRegistry.is_enabled():
+                            registry = MonitoringRegistry.get_instance()
+                            debug_store = registry.debug_session_store
+                            if debug_store:
+                                session = debug_store.get_or_create(job_state.job_id)
+                                context = self.routine.get_execution_context()
+                                session.pause(context, reason=f"Breakpoint at routine {routine_id}")
+                                # Wait for resume
+                                import time
+                                while session.status == "paused":
+                                    time.sleep(0.1)
+                    
+                    # Check if should pause at slot call (breakpoint check)
+                    if not execution_hooks.on_slot_call(self, routine_id, job_state, merged_data):
+                        # Execution paused by breakpoint - wait for resume
+                        from routilux.monitoring.registry import MonitoringRegistry
+                        if MonitoringRegistry.is_enabled():
+                            registry = MonitoringRegistry.get_instance()
+                            debug_store = registry.debug_session_store
+                            if debug_store:
+                                session = debug_store.get(job_state.job_id)
+                                if session and session.status == "paused":
+                                    # Wait for resume
+                                    import time
+                                    while session.status == "paused":
+                                        time.sleep(0.1)
+                
+                # Initialize error tracking (must be in outer scope)
+                error_occurred = False
+                error_exception = None
+                
                 try:
                     # Check for timeout
                     timeout = None
@@ -302,6 +346,8 @@ class Slot(Serializable):
                                 # If no match, pass entire dictionary as first parameter
                                 self.handler(merged_data)
                 except Exception as e:
+                    error_occurred = True
+                    error_exception = e
                     # Record exception but don't interrupt flow
                     import logging
                     
@@ -394,6 +440,14 @@ class Slot(Serializable):
                                     job_state.update_routine_state(
                                         routine_id, {"status": "failed", "error": str(e)}
                                     )
+                
+                # Monitoring hook: Routine end (after handler execution)
+                if routine_id and job_state and self.routine:
+                    from routilux.monitoring.hooks import execution_hooks
+                    status = "failed" if error_occurred else "completed"
+                    execution_hooks.on_routine_end(
+                        self.routine, routine_id, job_state, status, error_exception
+                    )
         finally:
             # Restore previous job_state in context variable
             from routilux.routine import _current_job_state
@@ -538,6 +592,10 @@ class Slot(Serializable):
 
         # Call handler with merged data if handler is defined
         if self.handler is not None:
+            # Initialize error tracking
+            error_occurred = False
+            error_exception = None
+            
             try:
                 import inspect
 
@@ -571,6 +629,8 @@ class Slot(Serializable):
                         # If no match, pass entire dictionary as first parameter
                         self.handler(merged_data)
             except Exception as e:
+                error_occurred = True
+                error_exception = e
                 # Build enhanced error context for all errors
                 import logging
                 
@@ -625,10 +685,25 @@ class Slot(Serializable):
                             # Find routine_id in flow using flow._get_routine_id()
                             if routine_id is None:
                                 routine_id = flow._get_routine_id(self.routine)
-                            if routine_id:
-                                job_state.record_execution(
-                                    routine_id, "error", {"slot": self.name, "error": str(e)}
-                                )
+                                if routine_id:
+                                    job_state.record_execution(
+                                        routine_id, "error", {"slot": self.name, "error": str(e)}
+                                    )
+            
+            # Monitoring hook: Routine end (after handler execution in call_handler)
+            if self.routine:
+                from routilux.routine import _current_job_state
+                job_state = _current_job_state.get(None)
+                if job_state:
+                    flow = getattr(self.routine, "_current_flow", None)
+                    if flow:
+                        routine_id = flow._get_routine_id(self.routine)
+                        if routine_id:
+                            from routilux.monitoring.hooks import execution_hooks
+                            status = "failed" if error_occurred else "completed"
+                            execution_hooks.on_routine_end(
+                                self.routine, routine_id, job_state, status, error_exception
+                            )
 
     @staticmethod
     def _is_kwargs_handler(handler: Callable) -> bool:

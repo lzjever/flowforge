@@ -87,6 +87,10 @@ def execute_sequential(
         job_state.record_execution(entry_routine_id, "start", entry_params)
         flow.execution_tracker.record_routine_start(entry_routine_id, entry_params)
 
+        # Monitoring hook: Flow start
+        from routilux.monitoring.hooks import execution_hooks
+        execution_hooks.on_flow_start(flow, job_state)
+
         start_event_loop(flow)
 
         trigger_slot = entry_routine.get_slot("trigger")
@@ -122,6 +126,12 @@ def execute_sequential(
                 "status": "completed",
             },
         )
+        
+        # Set job state to completed
+        job_state.status = ExecutionStatus.COMPLETED
+
+        # Monitoring hook: Flow end
+        execution_hooks.on_flow_end(flow, job_state, "completed")
 
         return job_state
 
@@ -206,6 +216,10 @@ def execute_sequential(
             flow.execution_tracker.record_routine_end(entry_routine_id, "failed", error=str(e))
 
         logging.exception(f"Error executing flow: {e}")
+
+        # Monitoring hook: Flow end (failed)
+        from routilux.monitoring.hooks import execution_hooks
+        execution_hooks.on_flow_end(flow, job_state, "failed")
 
     return job_state
 

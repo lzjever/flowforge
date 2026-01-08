@@ -209,6 +209,26 @@ class Event(Serializable):
 
             job_state = _current_job_state.get(None)
 
+        # Monitoring hook: Event emit (before propagation)
+        if job_state and self.routine:
+            from routilux.monitoring.hooks import execution_hooks
+            routine_id = flow._get_routine_id(self.routine) if flow else None
+            if routine_id:
+                # Check if should pause (breakpoint check)
+                if not execution_hooks.on_event_emit(self, routine_id, job_state, kwargs):
+                    # Execution paused by breakpoint - wait for resume
+                    from routilux.monitoring.registry import MonitoringRegistry
+                    if MonitoringRegistry.is_enabled():
+                        registry = MonitoringRegistry.get_instance()
+                        debug_store = registry.debug_session_store
+                        if debug_store:
+                            session = debug_store.get(job_state.job_id)
+                            if session and session.status == "paused":
+                                # Wait for resume
+                                import time
+                                while session.status == "paused":
+                                    time.sleep(0.1)
+
         for slot in self.connected_slots:
             connection = flow._find_connection(self, slot)
 
