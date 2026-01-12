@@ -5,7 +5,9 @@ Renders objects (dicts, lists) into formatted text with XML-like tags.
 """
 
 from __future__ import annotations
-from typing import Any, Optional
+
+from typing import Any
+
 from routilux.routine import Routine
 
 
@@ -69,7 +71,7 @@ class TextRenderer(Routine):
         self.emit("output", rendered_text=rendered_text, original_type=original_type)
 
     def _render_object(
-        self, data: Any, indent_level: int = 0, visited: Optional[set] = None
+        self, data: Any, indent_level: int = 0, visited: set | None = None
     ) -> str:
         """Recursively render an object.
 
