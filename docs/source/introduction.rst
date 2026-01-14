@@ -57,28 +57,6 @@ Routilux handles the complexity while you focus on your business logic.
    flow.connect(source1_id, "output", aggregator_id, "input")
    flow.connect(source2_id, "output", aggregator_id, "input")
 
-**📊 Built-in Routines**
-
-Routilux comes with a rich set of built-in routines ready to use:
-
-* **Text Processing**: ``TextClipper``, ``TextRenderer``, ``ResultExtractor``
-* **Data Processing**: ``DataTransformer``, ``DataValidator``, ``DataFlattener``
-* **Control Flow**: ``ConditionalRouter`` for dynamic routing
-* **Utilities**: ``TimeProvider`` for time-based operations
-
-.. code-block:: python
-
-   from routilux.builtin_routines import TextClipper, ConditionalRouter
-   
-   clipper = TextClipper()
-   clipper.set_config(max_length=1000)
-   
-   router = ConditionalRouter()
-   router.set_config(routes=[
-       ("high_priority", "data.get('priority') == 'high'"),
-       ("normal", "data.get('priority') == 'normal'"),
-   ])
-
 **⚡ Event Queue Architecture**
 
 Routilux uses an event queue pattern for workflow execution:

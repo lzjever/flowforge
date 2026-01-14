@@ -718,15 +718,12 @@ class TestDSLSupport:
 
     def test_from_dict_with_string_class_path(self):
         """Test that Flow.from_dict() can load class from string path."""
-        # This test assumes TestRoutine is importable
-        # We'll use a built-in routine for this test
-        from routilux.builtin_routines import TimeProvider
-
+        # Define a simple test routine at module level for import
         spec = {
             "flow_id": "test_flow",
             "routines": {
-                "time": {
-                    "class": "routilux.builtin_routines.utils.time_provider.TimeProvider",
+                "simple": {
+                    "class": "tests.test_new_features.SimpleTestRoutine",
                 }
             },
             "connections": [],
@@ -735,8 +732,8 @@ class TestDSLSupport:
         flow = Flow.from_dict(spec)
 
         assert isinstance(flow, Flow)
-        assert "time" in flow.routines
-        assert isinstance(flow.routines["time"], TimeProvider)
+        assert "simple" in flow.routines
+        assert isinstance(flow.routines["simple"], SimpleTestRoutine)
 
     def test_from_dict_with_connections(self):
         """Test that Flow.from_dict() handles connections."""
@@ -812,7 +809,7 @@ class TestDSLSupport:
 flow_id: test_flow
 routines:
   r1:
-    class: routilux.builtin_routines.utils.time_provider.TimeProvider
+    class: tests.test_new_features.SimpleTestRoutine
     config:
       timeout: 30
 connections: []
@@ -850,14 +847,14 @@ connections: []
 flow_id: complex_flow
 routines:
   reader:
-    class: routilux.builtin_routines.utils.time_provider.TimeProvider
+    class: tests.test_new_features.SimpleTestRoutine
     config:
       timeout: 30
       nested:
         key1: value1
         key2: [1, 2, 3]
   processor:
-    class: routilux.builtin_routines.utils.time_provider.TimeProvider
+    class: tests.test_new_features.SimpleTestRoutine
     config:
       retries: 3
 connections: []
@@ -1504,3 +1501,20 @@ class TestEdgeCases:
         unconnected_issues = [i for i in issues if "unconnected" in i.lower()]
         assert len(cycle_issues) > 0
         assert len(unconnected_issues) > 0
+
+
+# ============================================================================
+# Test Routine Classes for DSL Testing
+# ============================================================================
+
+
+class SimpleTestRoutine(Routine):
+    """Simple test routine for DSL import tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.trigger_slot = self.define_slot("trigger", handler=self._handle)
+        self.output_event = self.define_event("output", ["data"])
+
+    def _handle(self, **kwargs):
+        self.emit("output", data="test")

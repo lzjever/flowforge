@@ -6,18 +6,8 @@ This document provides comprehensive testing information for routilux.
 Test Organization
 -----------------
 
-Routilux tests are organized into two separate categories:
-
-1. **Core Tests**: Located in ``tests/`` directory, testing only the core
-   Routilux framework functionality.
-
-2. **Builtin Routines Tests**: Located in ``routilux/builtin_routines/*/tests/``
-   directories, testing built-in routine implementations.
-
-This separation ensures that:
-* Core framework tests are independent of built-in routines
-* Built-in routines can be tested and maintained independently
-* Each built-in routine package is self-contained and portable
+Routilux tests are located in the ``tests/`` directory, testing the core
+Routilux framework functionality.
 
 Core Test Structure
 --------------------
@@ -50,27 +40,6 @@ Core tests are located in the ``tests/`` directory:
    ├── test_concurrent_execution.py        # Concurrent execution tests
    └── test_utils.py                        # Utility function tests
 
-Builtin Routines Test Structure
---------------------------------
-
-Built-in routines tests are located in their respective sub-packages:
-
-.. code-block:: text
-
-   routilux/builtin_routines/
-   ├── text_processing/
-   │   └── tests/
-   │       └── test_text_processing.py      # Text processing routines tests
-   ├── utils/
-   │   └── tests/
-   │       └── test_utils.py                # Utility routines tests
-   ├── data_processing/
-   │   └── tests/
-   │       └── test_data_processing.py      # Data processing routines tests
-   └── control_flow/
-       └── tests/
-           └── test_control_flow.py         # Control flow routines tests
-
 Running Tests
 -------------
 
@@ -81,16 +50,16 @@ Install Dependencies
 
    pip install pytest pytest-cov pytest-mock
 
-Run Core Tests Only
-~~~~~~~~~~~~~~~~~~~~
+Run Tests
+~~~~~~~~~
 
-Run all core framework tests (excluding builtin_routines):
+Run all tests:
 
 .. code-block:: bash
 
    pytest tests/
 
-Run a specific core test file:
+Run a specific test file:
 
 .. code-block:: bash
 
@@ -102,59 +71,14 @@ Run a specific test case:
 
    pytest tests/test_routine.py::TestRoutineBasic::test_create_routine
 
-Run Builtin Routines Tests
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Run all builtin_routines tests using pytest:
-
-.. code-block:: bash
-
-   pytest routilux/builtin_routines/ -v
-
-Run tests for a specific builtin routine package:
-
-.. code-block:: bash
-
-   pytest routilux/builtin_routines/text_processing/tests/ -v
-   pytest routilux/builtin_routines/utils/tests/ -v
-   pytest routilux/builtin_routines/data_processing/tests/ -v
-   pytest routilux/builtin_routines/control_flow/tests/ -v
-
-Run a specific test file:
-
-.. code-block:: bash
-
-   pytest routilux/builtin_routines/text_processing/tests/test_text_processing.py -v
-
-Run All Tests
-~~~~~~~~~~~~~
-
-Run both core and builtin_routines tests:
-
-.. code-block:: bash
-
-   pytest tests/ routilux/builtin_routines/ -v
-
 Generate Coverage Report
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-Core tests coverage:
+Generate coverage report:
 
 .. code-block:: bash
 
    pytest --cov=routilux --cov-report=html tests/
-
-Builtin routines coverage:
-
-.. code-block:: bash
-
-   pytest routilux/builtin_routines/ --cov=routilux.builtin_routines --cov-report=html
-
-All tests coverage:
-
-.. code-block:: bash
-
-   pytest --cov=routilux --cov-report=html tests/ routilux/builtin_routines/
 
 Test Coverage
 -------------
@@ -196,71 +120,45 @@ Core Framework Tests
 * ✅ Resume from error state
 * ✅ State consistency verification
 
-Builtin Routines Tests
-~~~~~~~~~~~~~~~~~~~~~~~
-
-All built-in routines have comprehensive test coverage with **50 test cases**:
-
-* **Text Processing Routines**: 23 tests
-  * TextClipper: 6 tests
-  * TextRenderer: 6 tests
-  * ResultExtractor: 11 tests
-
-* **Utility Routines**: 9 tests
-  * TimeProvider: 4 tests
-  * DataFlattener: 5 tests
-
-* **Data Processing Routines**: 9 tests
-  * DataTransformer: 4 tests
-  * DataValidator: 5 tests
-
-* **Control Flow Routines**: 10 tests
-  * ConditionalRouter: 10 tests
-
-All tests pass with 100% success rate. Each routine package includes its own
-test directory for easy maintenance and standalone usage.
-
 Test Coverage Statistics
 ------------------------
 
 * **Core Tests**: 193 test cases
-* **Builtin Routines Tests**: 50 test cases
-* **Total Test Cases**: 243+
+* **Total Test Cases**: 193+
 * **Function Coverage**: Comprehensive
 * **Boundary Cases**: Complete
 * **Error Handling**: Complete
 
-All core functionality and built-in routines have been tested and verified.
+All core functionality has been tested and verified.
 
 Test Configuration
 ------------------
 
 The ``pytest.ini`` configuration file:
 
-* Excludes ``builtin_routines`` from core test runs
 * Configures coverage reporting
 * Sets up test markers (unit, integration, slow, persistence, resume)
+* Excludes integration tests by default (use ``-m integration`` to run them)
 
 Quick Reference
 ---------------
-
-**Run Core Tests Only**:
-
-.. code-block:: bash
-
-   pytest tests/
-
-**Run Builtin Routines Tests Only**:
-
-.. code-block:: bash
-
-   pytest routilux/builtin_routines/ -v
 
 **Run All Tests**:
 
 .. code-block:: bash
 
-   pytest tests/ routilux/builtin_routines/ -v
+   pytest tests/
+
+**Run Integration Tests**:
+
+.. code-block:: bash
+
+   pytest tests/ -m integration
+
+**Run with Coverage**:
+
+.. code-block:: bash
+
+   pytest tests/ --cov=routilux --cov-report=html
 
 For more details, see ``tests/README.md`` in the project root.
-

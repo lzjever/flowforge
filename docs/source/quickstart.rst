@@ -110,73 +110,6 @@ Execute the flow with entry parameters:
    # Check statistics
    print(processor1.stats())  # {"processing": {"success": 1, "total": 1}}
 
-Using Built-in Routines
------------------------
-
-Routilux comes with many built-in routines ready to use. Let's use ``TextClipper`` to clip text:
-
-.. code-block:: python
-
-   from routilux import Flow
-   from routilux.builtin_routines import TextClipper, TextRenderer
-
-   flow = Flow()
-   
-   # Create and configure built-in routines
-   renderer = TextRenderer()
-   renderer.set_config(tag_format="xml")
-   
-   clipper = TextClipper()
-   clipper.set_config(max_length=100)
-   
-   # Add to flow
-   renderer_id = flow.add_routine(renderer, "renderer")
-   clipper_id = flow.add_routine(clipper, "clipper")
-   
-   # Connect: renderer -> clipper
-   flow.connect(renderer_id, "output", clipper_id, "input")
-   
-   # Execute
-   data = {"name": "Alice", "age": 30, "city": "New York"}
-   renderer.input_slot.receive({"data": data})
-   
-   # Get clipped result
-   print(clipper.get_stat("clipped_text"))
-
-Using Conditional Router
-------------------------
-
-``ConditionalRouter`` lets you route data based on conditions:
-
-.. code-block:: python
-
-   from routilux import Flow
-   from routilux.builtin_routines import ConditionalRouter
-
-   flow = Flow()
-   
-   router = ConditionalRouter()
-   router.set_config(
-       routes=[
-           ("high", "data.get('priority', 0) > 10"),
-           ("normal", "data.get('priority', 0) <= 10"),
-       ],
-       default_route="normal"
-   )
-   
-   router_id = flow.add_routine(router, "router")
-   
-   # Define output events
-   router.define_event("high")
-   router.define_event("normal")
-   
-   # Connect to different handlers
-   # flow.connect(router_id, "high", high_handler_id, "input")
-   # flow.connect(router_id, "normal", normal_handler_id, "input")
-   
-   # Route data
-   router.input_slot.receive({"data": {"priority": 15}})  # Routes to "high"
-
 Merge Strategies
 ----------------
 
@@ -400,7 +333,6 @@ Here's a complete example combining multiple features:
 .. code-block:: python
 
    from routilux import Flow, Routine
-   from routilux.builtin_routines import TextRenderer, ConditionalRouter
    from routilux import ErrorHandler, ErrorStrategy
 
    # Define custom routine
@@ -452,7 +384,6 @@ Next Steps
 ----------
 
 * :doc:`user_guide/index` - Comprehensive user guide with detailed explanations
-* :doc:`user_guide/builtin_routines` - Explore all built-in routines
 * :doc:`user_guide/flows` - Deep dive into flow execution and strategies
 * :doc:`user_guide/connections` - Learn about merge strategies and parameter mapping
 * :doc:`api_reference/index` - Complete API documentation
@@ -462,7 +393,6 @@ Tips for Success
 ----------------
 
 * **Start Simple**: Begin with basic routines and flows, then add complexity
-* **Use Built-ins**: Leverage built-in routines before creating custom ones
 * **Track Operations**: Use ``_track_operation()`` for consistent statistics
 * **Handle Errors**: Always configure error handling for production workflows
 * **Test Serialization**: Verify your flows can be serialized/deserialized

@@ -252,29 +252,11 @@ Check out the `examples/` directory for practical examples:
 - **`concurrent_flow_demo.py`** - Parallel execution
 - **`error_handling_example.py`** - Error handling strategies
 - **`state_management_example.py`** - State tracking and recovery
-- **`builtin_routines_demo.py`** - Using built-in routines
 
 Run examples:
 
 ```bash
 python examples/basic_example.py
-```
-
-## 🧩 Built-in Routines
-
-Routilux comes with a rich set of built-in routines ready to use:
-
-- **Text Processing**: `TextClipper`, `TextRenderer`, `ResultExtractor`
-- **Data Processing**: `DataTransformer`, `DataValidator`, `DataFlattener`
-- **Control Flow**: `ConditionalRouter` for dynamic routing
-- **Utilities**: `TimeProvider` for timestamps
-
-```python
-from routilux.builtin_routines import ConditionalRouter, DataTransformer
-
-# Use built-in routines directly
-router = ConditionalRouter()
-transformer = DataTransformer()
 ```
 
 ## 🏗️ Project Structure
@@ -283,7 +265,7 @@ transformer = DataTransformer()
 routilux/
 ├── routilux/              # Main package
 │   ├── routine.py         # Routine base class
-│   ├── flow.py            # Flow manager
+│   ├── flow/              # Flow manager
 │   ├── job_state.py       # State management
 │   ├── connection.py      # Connection management
 │   ├── event.py           # Event class
@@ -301,14 +283,13 @@ Routilux comes with comprehensive tests:
 
 ```bash
 # Run all tests
-make test-all
+make test
 
 # Run with coverage
 make test-cov
 
 # Run specific test suite
-pytest tests/                    # Core tests
-pytest routilux/builtin_routines/  # Built-in routines tests
+pytest tests/
 ```
 
 ## 🤝 Contributing

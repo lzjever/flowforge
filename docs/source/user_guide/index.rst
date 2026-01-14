@@ -7,7 +7,6 @@ This section provides detailed guidance on using routilux.
    :maxdepth: 2
 
    routines
-   builtin_routines
    flows
    connections
    aggregation_pattern

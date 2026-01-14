@@ -30,7 +30,7 @@ jobs:
       
       - name: Run tests
         run: |
-          uv run pytest tests/ routilux/builtin_routines/ \
+          uv run pytest tests/ \
             --cov=routilux \
             --cov-report=xml \
             --cov-report=term-missing \

@@ -33,7 +33,7 @@ For active development where you need to import and use routilux:
 
 ```bash
 make dev-install  # Installs package + all dependencies
-make test         # Run all tests (main + builtin)
+make test         # Run all tests
 make lint         # Check code quality
 make format       # Format code
 ```
@@ -84,13 +84,7 @@ All checks must pass before submitting a PR.
 
 ### Run all tests:
 ```bash
-make test  # Runs both main tests and builtin routine tests
-```
-
-### Run specific test suites:
-```bash
-make test-core     # Run main tests only
-make test-builtin  # Run built-in routines tests only
+make test  # Runs all tests
 ```
 
 ### Run with coverage:
@@ -115,7 +109,6 @@ Documentation is built using Sphinx. See `docs/` directory for source files.
 ## Project Structure
 
 - `routilux/` - Main package code
-- `routilux/builtin_routines/` - Built-in routine implementations
 - `tests/` - Test files for main package
 - `docs/` - Documentation source
 - `examples/` - Example code

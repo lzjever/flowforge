@@ -127,103 +127,7 @@ The example extracts the latest value from each list for display purposes.
 **Important**: Don't use multiple ``execute()`` calls for aggregation - each
 creates an independent execution with separate JobState.
 
-Step 2: Conditional Routing
------------------------------
-
-Use conditional routing to dynamically route data based on conditions. Routilux
-provides ``ConditionalRouter`` built-in routine:
-
-.. code-block:: python
-   :linenos:
-
-   from routilux import Flow, Routine
-   from routilux.builtin_routines import ConditionalRouter
-
-   class DataSource(Routine):
-       def __init__(self):
-           super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.send)
-           self.output_event = self.define_event("output", ["data"])
-       
-       def send(self, value=None, **kwargs):
-           value = value or kwargs.get("value", 0)
-           self.emit("output", data={"value": value, "priority": "high" if value > 10 else "low"})
-
-   class HighPriorityHandler(Routine):
-       def __init__(self):
-           super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.handle)
-       
-       def handle(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", {})
-           print(f"High priority handler: {data_value}")
-
-   class LowPriorityHandler(Routine):
-       def __init__(self):
-           super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.handle)
-       
-       def handle(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", {})
-           print(f"Low priority handler: {data_value}")
-
-   flow = Flow(flow_id="routing_flow")
-   
-   source = DataSource()
-   router = ConditionalRouter()
-   high_handler = HighPriorityHandler()
-   low_handler = LowPriorityHandler()
-   
-   source_id = flow.add_routine(source, "source")
-   router_id = flow.add_routine(router, "router")
-   high_id = flow.add_routine(high_handler, "high_handler")
-   low_id = flow.add_routine(low_handler, "low_handler")
-   
-   # Configure router
-   router.set_config(
-       routes=[
-           ("high", "data.get('value', 0) > 10"),
-           ("low", "data.get('value', 0) <= 10"),
-       ],
-       default_route="low"
-   )
-   
-   # Define router events
-   router.define_event("high")
-   router.define_event("low")
-   
-   # Connect: source -> router -> handlers
-   flow.connect(source_id, "output", router_id, "input")
-   flow.connect(router_id, "high", high_id, "input")
-   flow.connect(router_id, "low", low_id, "input")
-   
-   # Test with high value
-   print("=== High value (15) ===")
-   job_state1 = flow.execute(source_id, entry_params={"value": 15})
-   print(f"Status: {job_state1.status}")
-   
-   # Test with low value
-   print("=== Low value (5) ===")
-   job_state2 = flow.execute(source_id, entry_params={"value": 5})
-   print(f"Status: {job_state2.status}")
-
-**Expected Output**:
-
-.. code-block:: text
-
-   === High value (15) ===
-   High priority handler: {'value': 15, 'priority': 'high'}
-   === Low value (5) ===
-   Low priority handler: {'value': 5, 'priority': 'low'}
-
-**Key Points**:
-
-- Use ``ConditionalRouter`` for dynamic routing
-- Routes are evaluated in order (first match wins)
-- Use Python expressions for conditions
-- Define events for each route
-
-Step 3: Fan-Out and Fan-In Pattern
+Step 2: Fan-Out and Fan-In Pattern
 -----------------------------------
 
 Combine fan-out (one-to-many) and fan-in (many-to-one) patterns:
@@ -425,7 +329,6 @@ Here's a complete example combining multiple advanced patterns:
    :linenos:
 
    from routilux import Flow, Routine, ErrorHandler, ErrorStrategy
-   from routilux.builtin_routines import ConditionalRouter
 
    class DataSource(Routine):
        def __init__(self):

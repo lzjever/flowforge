@@ -20,8 +20,9 @@ import signal
 import subprocess
 import time
 
-import httpx
 import pytest
+
+from routilux import Routine
 
 # Try to import websockets, skip WebSocket tests if not available
 try:
@@ -34,13 +35,14 @@ except ImportError:
 # Check if API dependencies are available
 try:
     import fastapi
+    import httpx
     import uvicorn
 
     API_AVAILABLE = True
 except ImportError:
     API_AVAILABLE = False
     pytest.skip(
-        "API dependencies not available. Install with: uv sync --extra api", allow_module_level=True
+        "API dependencies not available. Install with: uv sync --all-extras", allow_module_level=True
     )
 
 
@@ -353,7 +355,7 @@ class TestFlowAPI:
             "flow_id": "dsl_flow_1",
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -481,7 +483,7 @@ class TestFlowAPI:
             "flow_id": "routines_test_flow",
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -520,7 +522,7 @@ class TestFlowAPI:
             "/api/flows/add_routine_flow/routines",
             params={
                 "routine_id": "r1",
-                "class_path": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                "class_path": "tests.test_api.SimpleAPITestRoutine",
             },
         )
         assert response.status_code == 200
@@ -555,10 +557,10 @@ class TestFlowAPI:
             "flow_id": "add_connection_flow",
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 },
                 "r2": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 },
             },
             "connections": [],
@@ -593,7 +595,7 @@ class TestFlowAPI:
             "flow_id": "remove_routine_flow",
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -634,7 +636,7 @@ class TestJobAPI:
             "flow_id": flow_id,
             "routines": {
                 routine_id: {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -859,7 +861,7 @@ class TestBreakpointAPI:
             "flow_id": flow_id,
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -1082,7 +1084,7 @@ class TestDebugAPI:
             "flow_id": flow_id,
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -1177,7 +1179,7 @@ class TestMonitorAPI:
             "flow_id": flow_id,
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -1315,7 +1317,7 @@ class TestWebSocketAPI:
             "flow_id": flow_id,
             "routines": {
                 "r1": {
-                    "class": "routilux.builtin_routines.data_processing.data_transformer.DataTransformer",
+                    "class": "tests.test_api.SimpleAPITestRoutine",
                 }
             },
             "connections": [],
@@ -1428,3 +1430,21 @@ class TestWebSocketAPI:
         except Exception:
             # Other errors acceptable
             pass
+
+
+# ============================================================================
+# Test Routine Classes for API Testing
+# ============================================================================
+
+
+class SimpleAPITestRoutine(Routine):
+    """Simple test routine for API DSL import tests."""
+
+    def __init__(self):
+        super().__init__()
+        self.trigger_slot = self.define_slot("trigger", handler=self._handle)
+        self.output_event = self.define_event("output", ["data"])
+
+    def _handle(self, **kwargs):
+        self.emit("output", data="test")
+

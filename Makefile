@@ -1,4 +1,4 @@
-.PHONY: help clean install dev-install test test-core test-builtin test-cov test-integration lint format format-check check build sdist wheel docs html clean-docs upload upload-test check-package setup-venv
+.PHONY: help clean install dev-install test test-cov test-integration lint format format-check check build sdist wheel docs html clean-docs upload upload-test check-package setup-venv
 
 # Use uv if available, otherwise fall back to pip
 UV := $(shell command -v uv 2>/dev/null)
@@ -22,9 +22,7 @@ help:
 	@echo "  install       - Install the package (after setup-venv or standalone)"
 	@echo ""
 	@echo "Testing:"
-	@echo "  test          - Run all tests (main + builtin)"
-	@echo "  test-core     - Run main tests only"
-	@echo "  test-builtin  - Run built-in routines tests only"
+	@echo "  test          - Run all tests"
 	@echo "  test-cov      - Run tests with coverage report"
 	@echo "  test-integration - Run all integration tests (requires external services)"
 	@echo ""
@@ -91,20 +89,14 @@ dev-install:
 	@echo "✅ Package and dependencies installed! Ready for development."
 
 test:
-	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v
-
-test-core:
 	$(PYTHON_CMD) -m pytest tests/ -v
 
-test-builtin:
-	$(PYTHON_CMD) -m pytest routilux/builtin_routines/ -v
-
 test-cov:
-	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ --cov=routilux --cov-report=html --cov-report=term
+	$(PYTHON_CMD) -m pytest tests/ --cov=routilux --cov-report=html --cov-report=term
 
 test-integration:
 	@echo "Running integration tests (requires external services)..."
-	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v -m integration
+	$(PYTHON_CMD) -m pytest tests/ -v -m integration
 
 lint:
 	$(PYTHON_CMD) -m ruff check routilux/ tests/ examples/ --output-format=concise
