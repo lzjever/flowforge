@@ -4,10 +4,10 @@ Breakpoint manager for debugging workflow execution.
 Manages breakpoints at routine, slot, and event levels with optional conditions.
 """
 
-import uuid
 import threading
-from typing import Dict, List, Optional, Literal, TYPE_CHECKING
+import uuid
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Dict, List, Literal, Optional
 
 if TYPE_CHECKING:
     from routilux.routine import ExecutionContext
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 @dataclass
 class Breakpoint:
     """Breakpoint definition.
-    
+
     Attributes:
         breakpoint_id: Unique identifier for this breakpoint.
         job_id: Job ID this breakpoint applies to.
@@ -28,6 +28,7 @@ class Breakpoint:
         enabled: Whether this breakpoint is active.
         hit_count: Number of times this breakpoint has been hit.
     """
+
     breakpoint_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     job_id: str = ""
     type: Literal["routine", "slot", "event"] = "routine"
@@ -37,7 +38,7 @@ class Breakpoint:
     condition: Optional[str] = None
     enabled: bool = True
     hit_count: int = 0
-    
+
     def __post_init__(self):
         """Validate breakpoint configuration."""
         if self.type == "slot" and not self.slot_name:
@@ -50,35 +51,37 @@ class Breakpoint:
 
 class BreakpointManager:
     """Manages breakpoints for workflow debugging.
-    
+
     Thread-safe breakpoint manager that stores breakpoints by job_id
     and provides efficient lookup for breakpoint checking during execution.
     """
-    
+
     def __init__(self):
         """Initialize breakpoint manager."""
-        self._breakpoints: Dict[str, Dict[str, Breakpoint]] = {}  # job_id -> {breakpoint_id -> Breakpoint}
+        self._breakpoints: Dict[
+            str, Dict[str, Breakpoint]
+        ] = {}  # job_id -> {breakpoint_id -> Breakpoint}
         self._lock = threading.RLock()
-    
+
     def add_breakpoint(self, breakpoint: Breakpoint) -> str:
         """Add a breakpoint.
-        
+
         Args:
             breakpoint: Breakpoint to add.
-            
+
         Returns:
             breakpoint_id of the added breakpoint.
         """
         with self._lock:
             if breakpoint.job_id not in self._breakpoints:
                 self._breakpoints[breakpoint.job_id] = {}
-            
+
             self._breakpoints[breakpoint.job_id][breakpoint.breakpoint_id] = breakpoint
             return breakpoint.breakpoint_id
-    
+
     def remove_breakpoint(self, breakpoint_id: str, job_id: str) -> None:
         """Remove a breakpoint.
-        
+
         Args:
             breakpoint_id: ID of breakpoint to remove.
             job_id: Job ID the breakpoint belongs to.
@@ -88,29 +91,29 @@ class BreakpointManager:
                 self._breakpoints[job_id].pop(breakpoint_id, None)
                 if not self._breakpoints[job_id]:
                     del self._breakpoints[job_id]
-    
+
     def get_breakpoints(self, job_id: str) -> List[Breakpoint]:
         """Get all breakpoints for a job.
-        
+
         Args:
             job_id: Job ID to get breakpoints for.
-            
+
         Returns:
             List of breakpoints for the job.
         """
         with self._lock:
             return list(self._breakpoints.get(job_id, {}).values())
-    
+
     def clear_breakpoints(self, job_id: str) -> None:
         """Clear all breakpoints for a job.
-        
+
         Args:
             job_id: Job ID to clear breakpoints for.
         """
         with self._lock:
             if job_id in self._breakpoints:
                 del self._breakpoints[job_id]
-    
+
     def check_breakpoint(
         self,
         job_id: str,
@@ -118,11 +121,11 @@ class BreakpointManager:
         breakpoint_type: Literal["routine", "slot", "event"],
         slot_name: Optional[str] = None,
         event_name: Optional[str] = None,
-        context: Optional['ExecutionContext'] = None,
+        context: Optional["ExecutionContext"] = None,
         variables: Optional[Dict] = None,
     ) -> Optional[Breakpoint]:
         """Check if a breakpoint should trigger.
-        
+
         Args:
             job_id: Job ID being executed.
             routine_id: Routine ID being executed.
@@ -131,83 +134,128 @@ class BreakpointManager:
             event_name: Event name (for event breakpoints).
             context: Execution context (for condition evaluation).
             variables: Local variables (for condition evaluation).
-            
+
         Returns:
             Breakpoint that should trigger, or None if no breakpoint should trigger.
         """
         with self._lock:
             job_breakpoints = self._breakpoints.get(job_id, {})
-            
+
             for breakpoint in job_breakpoints.values():
                 if not breakpoint.enabled:
                     continue
-                
+
                 if breakpoint.type != breakpoint_type:
                     continue
-                
+
                 if breakpoint.routine_id != routine_id:
                     continue
-                
+
                 # Check type-specific matching
                 if breakpoint_type == "slot" and breakpoint.slot_name != slot_name:
                     continue
-                
+
                 if breakpoint_type == "event" and breakpoint.event_name != event_name:
                     continue
-                
+
                 # Evaluate condition if present
                 if breakpoint.condition:
                     from routilux.monitoring.breakpoint_condition import evaluate_condition
+
                     if not evaluate_condition(breakpoint.condition, context, variables or {}):
                         continue
-                
+
                 # Breakpoint matches - increment hit count and return
                 breakpoint.hit_count += 1
                 return breakpoint
-            
+
             return None
-    
-    def should_pause_routine(self, job_id: str, routine_id: str, context: Optional['ExecutionContext'] = None, variables: Optional[Dict] = None) -> bool:
+
+    def should_pause_routine(
+        self,
+        job_id: str,
+        routine_id: str,
+        context: Optional["ExecutionContext"] = None,
+        variables: Optional[Dict] = None,
+    ) -> bool:
         """Check if execution should pause at routine start.
-        
+
         Args:
             job_id: Job ID being executed.
             routine_id: Routine ID being executed.
             context: Execution context.
             variables: Local variables.
-            
+
         Returns:
             True if execution should pause.
         """
-        return self.check_breakpoint(job_id, routine_id, "routine", context=context, variables=variables) is not None
-    
-    def should_pause_slot(self, job_id: str, routine_id: str, slot_name: str, context: Optional['ExecutionContext'] = None, variables: Optional[Dict] = None) -> bool:
+        return (
+            self.check_breakpoint(
+                job_id, routine_id, "routine", context=context, variables=variables
+            )
+            is not None
+        )
+
+    def should_pause_slot(
+        self,
+        job_id: str,
+        routine_id: str,
+        slot_name: str,
+        context: Optional["ExecutionContext"] = None,
+        variables: Optional[Dict] = None,
+    ) -> bool:
         """Check if execution should pause at slot call.
-        
+
         Args:
             job_id: Job ID being executed.
             routine_id: Routine ID being executed.
             slot_name: Slot name being called.
             context: Execution context.
             variables: Local variables.
-            
+
         Returns:
             True if execution should pause.
         """
-        return self.check_breakpoint(job_id, routine_id, "slot", slot_name=slot_name, context=context, variables=variables) is not None
-    
-    def should_pause_event(self, job_id: str, routine_id: str, event_name: str, context: Optional['ExecutionContext'] = None, variables: Optional[Dict] = None) -> bool:
+        return (
+            self.check_breakpoint(
+                job_id,
+                routine_id,
+                "slot",
+                slot_name=slot_name,
+                context=context,
+                variables=variables,
+            )
+            is not None
+        )
+
+    def should_pause_event(
+        self,
+        job_id: str,
+        routine_id: str,
+        event_name: str,
+        context: Optional["ExecutionContext"] = None,
+        variables: Optional[Dict] = None,
+    ) -> bool:
         """Check if execution should pause at event emit.
-        
+
         Args:
             job_id: Job ID being executed.
             routine_id: Routine ID being executed.
             event_name: Event name being emitted.
             context: Execution context.
             variables: Local variables.
-            
+
         Returns:
             True if execution should pause.
         """
-        return self.check_breakpoint(job_id, routine_id, "event", event_name=event_name, context=context, variables=variables) is not None
-
+        return (
+            self.check_breakpoint(
+                job_id,
+                routine_id,
+                "event",
+                event_name=event_name,
+                context=context,
+                variables=variables,
+            )
+            is not None
+        )

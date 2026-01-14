@@ -5,23 +5,24 @@ Improved Routine mechanism supporting slots (input slots) and events (output eve
 """
 
 from __future__ import annotations
-from typing import Dict, Any, Callable, Optional, List, TYPE_CHECKING, NamedTuple, TypeVar
 
-T = TypeVar('T')
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
+
+T = TypeVar("T")
 from contextvars import ContextVar
 
 if TYPE_CHECKING:
-    from routilux.slot import Slot
+    from routilux.error_handler import ErrorHandler, ErrorStrategy
     from routilux.event import Event
     from routilux.flow import Flow
-    from routilux.error_handler import ErrorHandler, ErrorStrategy
     from routilux.job_state import JobState
+    from routilux.slot import Slot
 
-from serilux import register_serializable, Serializable
+from serilux import Serializable, register_serializable
 
 # Context variable for thread-safe job_state access
 # Each execution context has its own value, even in the same thread
-_current_job_state: ContextVar[Optional["JobState"]] = ContextVar(
+_current_job_state: ContextVar[JobState | None] = ContextVar(
     "_current_job_state", default=None
 )
 
@@ -38,8 +39,8 @@ class ExecutionContext(NamedTuple):
         routine_id: The string ID of this routine in the flow.
     """
 
-    flow: "Flow"
-    job_state: "JobState"
+    flow: Flow
+    job_state: JobState
     routine_id: str
 
 
@@ -127,17 +128,17 @@ class Routine(Serializable):
         """
         super().__init__()
         self._id: str = hex(id(self))
-        self._slots: Dict[str, "Slot"] = {}
-        self._events: Dict[str, "Event"] = {}
+        self._slots: dict[str, Slot] = {}
+        self._events: dict[str, Event] = {}
 
         # Configuration dictionary for storing routine-specific settings
         # All configuration values are automatically serialized/deserialized
         # Use set_config() and get_config() methods for convenient access
-        self._config: Dict[str, Any] = {}
+        self._config: dict[str, Any] = {}
 
         # Error handler for this routine (optional)
         # Priority: routine-level error handler > flow-level error handler > default (STOP)
-        self._error_handler: Optional["ErrorHandler"] = None
+        self._error_handler: ErrorHandler | None = None
 
         # Register serializable fields
         # _slots and _events are included - base class automatically serializes/deserializes them
@@ -148,8 +149,8 @@ class Routine(Serializable):
         return f"{self.__class__.__name__}[{self._id}]"
 
     def define_slot(
-        self, name: str, handler: Optional[Callable] = None, merge_strategy: str = "override"
-    ) -> "Slot":
+        self, name: str, handler: Callable | None = None, merge_strategy: str = "override"
+    ) -> Slot:
         """Define an input slot for receiving data from other routines.
 
         This method creates a new slot that can be connected to events from
@@ -222,7 +223,7 @@ class Routine(Serializable):
         self._slots[name] = slot
         return slot
 
-    def define_event(self, name: str, output_params: Optional[List[str]] = None) -> "Event":
+    def define_event(self, name: str, output_params: list[str] | None = None) -> Event:
         """Define an output event for transmitting data to other routines.
 
         This method creates a new event that can be connected to slots in
@@ -280,7 +281,7 @@ class Routine(Serializable):
         self._events[name] = event
         return event
 
-    def emit(self, event_name: str, flow: Optional["Flow"] = None, **kwargs) -> None:
+    def emit(self, event_name: str, flow: Flow | None = None, **kwargs) -> None:
         """Emit an event and send data to all connected slots.
 
         This method triggers the specified event and transmits the provided
@@ -381,7 +382,7 @@ class Routine(Serializable):
                 target_routine_id = target_routine_ids[0] if target_routine_ids else None
                 flow.execution_tracker.record_event(self._id, event_name, target_routine_id, kwargs)
 
-    def _prepare_execution_data(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    def _prepare_execution_data(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Prepare data for execution history recording.
 
         Removes job_state and converts Serializable objects to strings
@@ -504,7 +505,7 @@ class Routine(Serializable):
         # Execution state should be tracked in JobState, not routine._stats
         pass
 
-    def get_slot(self, name: str) -> Optional["Slot"]:
+    def get_slot(self, name: str) -> Slot | None:
         """Get specified slot.
 
         Args:
@@ -515,7 +516,7 @@ class Routine(Serializable):
         """
         return self._slots.get(name)
 
-    def get_event(self, name: str) -> Optional["Event"]:
+    def get_event(self, name: str) -> Event | None:
         """Get specified event.
 
         Args:
@@ -563,26 +564,25 @@ class Routine(Serializable):
                 "Cannot modify _config during execution. "
                 "Use JobState.shared_data for execution-specific state."
             )
-        
+
         # Validate serializability
         for key, value in kwargs.items():
             if not self._is_serializable(value):
                 raise ValueError(
-                    f"Config value for '{key}' must be serializable. "
-                    f"Got {type(value).__name__}"
+                    f"Config value for '{key}' must be serializable. Got {type(value).__name__}"
                 )
-        
+
         self._config.update(kwargs)
-    
+
     def _is_serializable(self, value: Any) -> bool:
         """Check if value is serializable.
-        
+
         Args:
             value: Value to check.
-            
+
         Returns:
             True if value is serializable, False otherwise.
-            
+
         Note:
             Lists and dicts are always considered serializable, even if they
             contain functions, because serilux can handle serialization of
@@ -590,28 +590,29 @@ class Routine(Serializable):
         """
         import json
         import types
+
         from serilux import Serializable
-        
+
         # Basic types that are always serializable
         if isinstance(value, (str, int, float, bool, type(None))):
             return True
-        
+
         # Lists and dicts are always serializable containers
         # (functions within them are handled by serilux during serialization)
         if isinstance(value, (list, tuple, dict)):
             return True
-        
+
         # Functions, methods, and callables at top level are NOT serializable
         # (but they can be inside lists/dicts, which are handled by serilux)
         if isinstance(value, (types.FunctionType, types.MethodType, types.BuiltinFunctionType)):
             return False
         if callable(value) and not isinstance(value, type):
             return False
-        
+
         # Serializable objects
         if isinstance(value, Serializable):
             return True
-        
+
         # Try to serialize to JSON as a test (without default=str to catch real issues)
         try:
             json.dumps(value)
@@ -644,7 +645,7 @@ class Routine(Serializable):
         """
         return self._config.get(key, default)
 
-    def config(self) -> Dict[str, Any]:
+    def config(self) -> dict[str, Any]:
         """Get a copy of the configuration dictionary.
 
         Returns:
@@ -658,21 +659,21 @@ class Routine(Serializable):
             >>> print(config)  # {"name": "test", "timeout": 30}
         """
         return self._config.copy()
-    
+
     def set_timeout(self, timeout: float) -> None:
         """Set execution timeout for this routine.
-        
+
         Args:
             timeout: Timeout in seconds. If a slot handler takes longer than
                 this time, a TimeoutError will be raised.
-                
+
         Examples:
             >>> routine = MyRoutine()
             >>> routine.set_timeout(30.0)  # 30 second timeout
         """
         self.set_config(timeout=timeout)
 
-    def set_error_handler(self, error_handler: "ErrorHandler") -> None:
+    def set_error_handler(self, error_handler: ErrorHandler) -> None:
         """Set error handler for this routine.
 
         When an error occurs in this routine, the routine-level error handler
@@ -689,7 +690,7 @@ class Routine(Serializable):
         """
         self._error_handler = error_handler
 
-    def get_error_handler(self) -> Optional["ErrorHandler"]:
+    def get_error_handler(self) -> ErrorHandler | None:
         """Get error handler for this routine.
 
         Returns:
@@ -697,7 +698,7 @@ class Routine(Serializable):
         """
         return self._error_handler
 
-    def set_as_optional(self, strategy: "ErrorStrategy" = None) -> None:
+    def set_as_optional(self, strategy: ErrorStrategy = None) -> None:
         """Mark this routine as optional (failures are tolerated).
 
         This is a convenience method that sets up an error handler with CONTINUE
@@ -713,7 +714,8 @@ class Routine(Serializable):
             >>> optional_routine.set_as_optional()  # Uses CONTINUE by default
             >>> optional_routine.set_as_optional(ErrorStrategy.SKIP)  # Use SKIP instead
         """
-        from routilux.error_handler import ErrorHandler, ErrorStrategy as ES
+        from routilux.error_handler import ErrorHandler
+        from routilux.error_handler import ErrorStrategy as ES
 
         if strategy is None:
             strategy = ES.CONTINUE
@@ -748,7 +750,7 @@ class Routine(Serializable):
             )
         )
 
-    def get_execution_context(self) -> Optional[ExecutionContext]:
+    def get_execution_context(self) -> ExecutionContext | None:
         """Get execution context (flow, job_state, routine_id).
 
         This method provides convenient access to execution-related handles
@@ -782,8 +784,9 @@ class Routine(Serializable):
             context. For standalone usage or testing, it will return None.
         """
         import logging
+
         logger = logging.getLogger(__name__)
-        
+
         # Get flow from routine context
         flow = getattr(self, "_current_flow", None)
         if flow is None:
@@ -815,15 +818,15 @@ class Routine(Serializable):
         return ExecutionContext(flow=flow, job_state=job_state, routine_id=routine_id)
 
     @property
-    def job_state(self) -> Optional["JobState"]:
+    def job_state(self) -> JobState | None:
         """Get current job_state, or None if not in execution context.
-        
+
         This is a convenience property that provides direct access to the
         current job_state without needing to call get_execution_context().
-        
+
         Returns:
             JobState object if in execution context, None otherwise.
-            
+
         Examples:
             >>> job_state = self.job_state
             >>> if job_state:
@@ -832,17 +835,17 @@ class Routine(Serializable):
         """
         ctx = self.get_execution_context()
         return ctx.job_state if ctx else None
-    
+
     @property
-    def job_id(self) -> Optional[str]:
+    def job_id(self) -> str | None:
         """Get current job_id, or None if not in execution context.
-        
+
         This is a convenience property that provides direct access to the
         current job_id without needing to call get_execution_context().
-        
+
         Returns:
             Job ID string if in execution context, None otherwise.
-            
+
         Examples:
             >>> job_id = self.job_id
             >>> if not job_id:
@@ -850,17 +853,17 @@ class Routine(Serializable):
         """
         ctx = self.get_execution_context()
         return ctx.job_state.job_id if ctx and ctx.job_state else None
-    
+
     @property
-    def flow(self) -> Optional["Flow"]:
+    def flow(self) -> Flow | None:
         """Get current flow, or None if not in execution context.
-        
+
         This is a convenience property that provides direct access to the
         current flow without needing to call get_execution_context().
-        
+
         Returns:
             Flow object if in execution context, None otherwise.
-            
+
         Examples:
             >>> flow = self.flow
             >>> if flow:
@@ -964,7 +967,7 @@ class Routine(Serializable):
 
         ctx.job_state.send_output(ctx.routine_id, output_type, data)
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """Serialize Routine, including class information and state.
 
         Returns:
@@ -976,7 +979,7 @@ class Routine(Serializable):
 
         return data
 
-    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
+    def deserialize(self, data: dict[str, Any], registry: Any | None = None) -> None:
         """Deserialize Routine.
 
         Args:

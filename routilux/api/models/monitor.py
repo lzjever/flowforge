@@ -3,12 +3,14 @@ Pydantic models for Monitoring API.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 
 class RoutineMetricsResponse(BaseModel):
     """Response model for routine metrics."""
+
     routine_id: str
     execution_count: int
     total_duration: float
@@ -21,6 +23,7 @@ class RoutineMetricsResponse(BaseModel):
 
 class ExecutionMetricsResponse(BaseModel):
     """Response model for execution metrics."""
+
     job_id: str
     flow_id: str
     start_time: datetime
@@ -35,6 +38,7 @@ class ExecutionMetricsResponse(BaseModel):
 
 class ExecutionEventResponse(BaseModel):
     """Response model for execution event."""
+
     event_id: str
     job_id: str
     routine_id: str
@@ -47,6 +51,6 @@ class ExecutionEventResponse(BaseModel):
 
 class ExecutionTraceResponse(BaseModel):
     """Response model for execution trace."""
+
     events: List[ExecutionEventResponse]
     total: int
-

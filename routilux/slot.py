@@ -5,13 +5,14 @@ Input slot for receiving data from other routines.
 """
 
 from __future__ import annotations
-from typing import Callable, Optional, List, Dict, Any, TYPE_CHECKING
+
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from routilux.routine import Routine
     from routilux.event import Event
+    from routilux.routine import Routine
 
-from serilux import register_serializable, Serializable
+from serilux import Serializable, register_serializable
 
 
 @register_serializable
@@ -87,8 +88,8 @@ class Slot(Serializable):
     def __init__(
         self,
         name: str = "",
-        routine: Optional["Routine"] = None,
-        handler: Optional[Callable] = None,
+        routine: Routine | None = None,
+        handler: Callable | None = None,
         merge_strategy: str = "override",
     ):
         """Initialize Slot.
@@ -127,11 +128,11 @@ class Slot(Serializable):
         """
         super().__init__()
         self.name: str = name
-        self.routine: "Routine" = routine
-        self.handler: Optional[Callable] = handler
+        self.routine: Routine = routine
+        self.handler: Callable | None = handler
         self.merge_strategy: Any = merge_strategy
-        self.connected_events: List["Event"] = []
-        self._data: Dict[str, Any] = {}
+        self.connected_events: list[Event] = []
+        self._data: dict[str, Any] = {}
 
         # Register serializable fields
         # handler and merge_strategy are automatically serialized if they're callables
@@ -144,7 +145,7 @@ class Slot(Serializable):
         else:
             return f"Slot[{self.name}]"
 
-    def connect(self, event: "Event", param_mapping: Optional[Dict[str, str]] = None) -> None:
+    def connect(self, event: Event, param_mapping: dict[str, str] | None = None) -> None:
         """Connect to an event.
 
         Args:
@@ -157,7 +158,7 @@ class Slot(Serializable):
             if self not in event.connected_slots:
                 event.connected_slots.append(self)
 
-    def disconnect(self, event: "Event") -> None:
+    def disconnect(self, event: Event) -> None:
         """Disconnect from an event.
 
         Args:
@@ -169,7 +170,7 @@ class Slot(Serializable):
             if self in event.connected_slots:
                 event.connected_slots.remove(self)
 
-    def receive(self, data: Dict[str, Any], job_state=None, flow=None) -> None:
+    def receive(self, data: dict[str, Any], job_state=None, flow=None) -> None:
         """Receive data, merge with existing data, and call handler.
 
         This method is called automatically when a connected event is emitted.
@@ -225,17 +226,21 @@ class Slot(Serializable):
             if self.handler is not None:
                 # Monitoring hook: Slot call (before handler execution)
                 from routilux.monitoring.hooks import execution_hooks
+
                 routine_id = None
                 if flow and self.routine:
                     routine_id = flow._get_routine_id(self.routine)
-                
+
                 if routine_id and job_state and self.routine:
                     # Monitoring hook: Routine start
                     execution_hooks.on_routine_start(self.routine, routine_id, job_state)
-                    
+
                     # Check if should pause at routine start (breakpoint check)
-                    if execution_hooks.should_pause_routine(routine_id, job_state, None, merged_data):
+                    if execution_hooks.should_pause_routine(
+                        routine_id, job_state, None, merged_data
+                    ):
                         from routilux.monitoring.registry import MonitoringRegistry
+
                         if MonitoringRegistry.is_enabled():
                             registry = MonitoringRegistry.get_instance()
                             debug_store = registry.debug_session_store
@@ -245,13 +250,15 @@ class Slot(Serializable):
                                 session.pause(context, reason=f"Breakpoint at routine {routine_id}")
                                 # Wait for resume
                                 import time
+
                                 while session.status == "paused":
                                     time.sleep(0.1)
-                    
+
                     # Check if should pause at slot call (breakpoint check)
                     if not execution_hooks.on_slot_call(self, routine_id, job_state, merged_data):
                         # Execution paused by breakpoint - wait for resume
                         from routilux.monitoring.registry import MonitoringRegistry
+
                         if MonitoringRegistry.is_enabled():
                             registry = MonitoringRegistry.get_instance()
                             debug_store = registry.debug_session_store
@@ -260,28 +267,35 @@ class Slot(Serializable):
                                 if session and session.status == "paused":
                                     # Wait for resume
                                     import time
+
                                     while session.status == "paused":
                                         time.sleep(0.1)
-                
+
                 # Initialize error tracking (must be in outer scope)
                 error_occurred = False
                 error_exception = None
-                
+
                 try:
                     # Check for timeout
                     timeout = None
                     if self.routine:
                         timeout = self.routine.get_config("timeout")
-                    
+
                     # Execute handler with timeout if configured
                     if timeout:
-                        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-                        
+                        from concurrent.futures import (
+                            ThreadPoolExecutor,
+                        )
+                        from concurrent.futures import (
+                            TimeoutError as FuturesTimeoutError,
+                        )
+
                         def execute_handler():
                             import inspect
+
                             sig = inspect.signature(self.handler)
                             params = list(sig.parameters.keys())
-                            
+
                             if self._is_kwargs_handler(self.handler):
                                 return self.handler(**merged_data)
                             elif len(params) == 1 and params[0] == "data":
@@ -297,12 +311,12 @@ class Slot(Serializable):
                                 for param_name in params:
                                     if param_name in merged_data:
                                         matched_params[param_name] = merged_data[param_name]
-                                
+
                                 if matched_params:
                                     return self.handler(**matched_params)
                                 else:
                                     return self.handler(merged_data)
-                        
+
                         with ThreadPoolExecutor(max_workers=1) as executor:
                             future = executor.submit(execute_handler)
                             try:
@@ -350,16 +364,18 @@ class Slot(Serializable):
                     error_exception = e
                     # Record exception but don't interrupt flow
                     import logging
-                    
+
                     # Build enhanced error context
                     error_context = {
                         "routine": self.routine.__class__.__name__ if self.routine else "Unknown",
                         "slot": self.name,
                         "routine_id": None,
                         "job_id": job_state.job_id if job_state else None,
-                        "data_keys": list(merged_data.keys()) if isinstance(merged_data, dict) else str(type(merged_data)),
+                        "data_keys": list(merged_data.keys())
+                        if isinstance(merged_data, dict)
+                        else str(type(merged_data)),
                     }
-                    
+
                     # Try to get routine_id from flow
                     if flow and self.routine:
                         error_context["routine_id"] = flow._get_routine_id(self.routine)
@@ -368,7 +384,7 @@ class Slot(Serializable):
                         routine_flow = getattr(self.routine, "_current_flow", None)
                         if routine_flow:
                             error_context["routine_id"] = routine_flow._get_routine_id(self.routine)
-                    
+
                     error_msg = (
                         f"Error in slot handler: {error_context['routine']}.{error_context['slot']}\n"
                         f"  Routine ID: {error_context['routine_id']}\n"
@@ -376,7 +392,7 @@ class Slot(Serializable):
                         f"  Data keys: {error_context['data_keys']}\n"
                         f"  Error: {type(e).__name__}: {str(e)}"
                     )
-                    
+
                     logging.exception(error_msg)
                     # Errors are tracked in JobState execution history, not routine._stats
                     if job_state and self.routine:
@@ -399,8 +415,8 @@ class Slot(Serializable):
                                 ):
                                     # For RETRY strategy in task context, create a temporary task
                                     # and call handle_task_error to trigger retry logic
-                                    from routilux.flow.task import SlotActivationTask, TaskPriority
                                     from routilux.flow.error_handling import handle_task_error
+                                    from routilux.flow.task import SlotActivationTask, TaskPriority
 
                                     # Record error in execution history first (for tracking and testing)
                                     job_state.record_execution(
@@ -440,10 +456,11 @@ class Slot(Serializable):
                                     job_state.update_routine_state(
                                         routine_id, {"status": "failed", "error": str(e)}
                                     )
-                
+
                 # Monitoring hook: Routine end (after handler execution)
                 if routine_id and job_state and self.routine:
                     from routilux.monitoring.hooks import execution_hooks
+
                     status = "failed" if error_occurred else "completed"
                     execution_hooks.on_routine_end(
                         self.routine, routine_id, job_state, status, error_exception
@@ -457,7 +474,7 @@ class Slot(Serializable):
             else:
                 _current_job_state.set(None)
 
-    def _merge_data(self, new_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _merge_data(self, new_data: dict[str, Any]) -> dict[str, Any]:
         """Merge new data into existing data according to merge_strategy.
 
         This method implements the core merge logic based on the configured
@@ -559,7 +576,7 @@ class Slot(Serializable):
             self._data = new_data.copy()
             return self._data
 
-    def call_handler(self, data: Dict[str, Any], propagate_exceptions: bool = False) -> None:
+    def call_handler(self, data: dict[str, Any], propagate_exceptions: bool = False) -> None:
         """Call handler with data, optionally propagating exceptions.
 
         This method is used for entry routine trigger slots where exceptions
@@ -595,7 +612,7 @@ class Slot(Serializable):
             # Initialize error tracking
             error_occurred = False
             error_exception = None
-            
+
             try:
                 import inspect
 
@@ -633,31 +650,34 @@ class Slot(Serializable):
                 error_exception = e
                 # Build enhanced error context for all errors
                 import logging
-                
+
                 # Get context for error message
                 job_state = None
                 flow = None
                 routine_id = None
-                
+
                 # Try to get job_state from context variable
                 from routilux.routine import _current_job_state
+
                 job_state = _current_job_state.get(None)
-                
+
                 # Try to get flow from routine
                 if self.routine:
                     flow = getattr(self.routine, "_current_flow", None)
                     if flow:
                         routine_id = flow._get_routine_id(self.routine)
-                
+
                 # Build error context
                 error_context = {
                     "routine": self.routine.__class__.__name__ if self.routine else "Unknown",
                     "slot": self.name,
                     "routine_id": routine_id,
                     "job_id": job_state.job_id if job_state else None,
-                    "data_keys": list(merged_data.keys()) if isinstance(merged_data, dict) else str(type(merged_data)),
+                    "data_keys": list(merged_data.keys())
+                    if isinstance(merged_data, dict)
+                    else str(type(merged_data)),
                 }
-                
+
                 error_msg = (
                     f"Error in slot handler: {error_context['routine']}.{error_context['slot']}\n"
                     f"  Routine ID: {error_context['routine_id']}\n"
@@ -665,9 +685,9 @@ class Slot(Serializable):
                     f"  Data keys: {error_context['data_keys']}\n"
                     f"  Error: {type(e).__name__}: {str(e)}"
                 )
-                
+
                 logging.exception(error_msg)
-                
+
                 if propagate_exceptions:
                     # Re-raise exception for entry routine trigger slots
                     # This allows Flow's error handling strategies to work
@@ -689,10 +709,11 @@ class Slot(Serializable):
                                     job_state.record_execution(
                                         routine_id, "error", {"slot": self.name, "error": str(e)}
                                     )
-            
+
             # Monitoring hook: Routine end (after handler execution in call_handler)
             if self.routine:
                 from routilux.routine import _current_job_state
+
                 job_state = _current_job_state.get(None)
                 if job_state:
                     flow = getattr(self.routine, "_current_flow", None)
@@ -700,6 +721,7 @@ class Slot(Serializable):
                         routine_id = flow._get_routine_id(self.routine)
                         if routine_id:
                             from routilux.monitoring.hooks import execution_hooks
+
                             status = "failed" if error_occurred else "completed"
                             execution_hooks.on_routine_end(
                                 self.routine, routine_id, job_state, status, error_exception
@@ -723,7 +745,7 @@ class Slot(Serializable):
                 return True
         return False
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """Serialize Slot.
 
         Callables (handler, merge_strategy) are automatically handled by Serializable base class.
@@ -740,7 +762,7 @@ class Slot(Serializable):
 
         return data
 
-    def deserialize(self, data: Dict[str, Any], registry: Optional[Any] = None) -> None:
+    def deserialize(self, data: dict[str, Any], registry: Any | None = None) -> None:
         """Deserialize Slot.
 
         Callables (handler, merge_strategy) are automatically handled by Serializable base class.

@@ -3,12 +3,14 @@ Pydantic models for Job API.
 """
 
 from datetime import datetime
-from typing import Dict, Optional, Any, List
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 
 class JobStartRequest(BaseModel):
     """Request model for starting a job."""
+
     flow_id: str
     entry_routine_id: str
     entry_params: Optional[Dict[str, Any]] = None
@@ -17,6 +19,7 @@ class JobStartRequest(BaseModel):
 
 class JobResponse(BaseModel):
     """Response model for job details."""
+
     job_id: str
     flow_id: str
     status: str
@@ -28,6 +31,6 @@ class JobResponse(BaseModel):
 
 class JobListResponse(BaseModel):
     """Response model for job list."""
+
     jobs: List[JobResponse]
     total: int
-

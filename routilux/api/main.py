@@ -7,7 +7,7 @@ This is the entry point for the Routilux monitoring and flow builder API.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routilux.api.routes import flows, jobs, breakpoints, debug, monitor, websocket
+from routilux.api.routes import breakpoints, debug, flows, jobs, monitor, websocket
 
 app = FastAPI(
     title="Routilux API",
@@ -50,17 +50,17 @@ async def health():
 
 
 if __name__ == "__main__":
-    import uvicorn
     import os
-    
+
+    import uvicorn
+
     # Default configuration
     # Disable reload in test environment
     reload = os.getenv("ROUTILUX_API_RELOAD", "true").lower() == "true"
-    
+
     uvicorn.run(
         "routilux.api.main:app",
         host="0.0.0.0",
         port=20555,
         reload=reload,  # Enable auto-reload in development
     )
-

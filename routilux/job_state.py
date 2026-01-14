@@ -4,19 +4,20 @@ JobState and ExecutionRecord classes.
 Used for recording flow execution state.
 """
 
-import uuid
-import time
+import json
 import logging
 import threading
+import time
+import uuid
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Callable, TYPE_CHECKING, Union
-from serilux import register_serializable, Serializable
-import json
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+
+from serilux import Serializable, register_serializable
 
 if TYPE_CHECKING:
     from routilux.flow.flow import Flow
 
-from routilux.status import ExecutionStatus, RoutineStatus
+from routilux.status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ class JobState(Serializable):
         super().__init__()
         self.flow_id: str = flow_id
         self.job_id: str = str(uuid.uuid4())
-        self.status: Union[str, "ExecutionStatus"] = ExecutionStatus.PENDING
+        self.status: Union[str, ExecutionStatus] = ExecutionStatus.PENDING
         self.pause_points: List[Dict[str, Any]] = []
         self.current_routine_id: Optional[str] = None
         self.routine_states: Dict[str, Dict[str, Any]] = {}
@@ -223,21 +224,21 @@ class JobState(Serializable):
 
     def update_shared_data(self, key: str, value: Any) -> None:
         """Thread-safe update of shared data.
-        
+
         Args:
             key: Key to update.
             value: Value to set.
         """
         with self._shared_data_lock:
             self.shared_data[key] = value
-    
+
     def get_shared_data(self, key: str, default: Any = None) -> Any:
         """Thread-safe get of shared data.
-        
+
         Args:
             key: Key to retrieve.
             default: Default value if key doesn't exist.
-            
+
         Returns:
             Value for key, or default if key doesn't exist.
         """
@@ -451,7 +452,7 @@ class JobState(Serializable):
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"JobState file not found: {filepath}")
 
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
 
         # Validate data format

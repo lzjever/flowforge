@@ -3,16 +3,17 @@ Monitoring API routes.
 """
 
 from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query
 
-from routilux.monitoring.registry import MonitoringRegistry
-from routilux.monitoring.storage import job_store, flow_store
 from routilux.api.models.monitor import (
-    ExecutionMetricsResponse,
-    RoutineMetricsResponse,
-    ExecutionTraceResponse,
     ExecutionEventResponse,
+    ExecutionMetricsResponse,
+    ExecutionTraceResponse,
+    RoutineMetricsResponse,
 )
+from routilux.monitoring.registry import MonitoringRegistry
+from routilux.monitoring.storage import flow_store, job_store
 
 router = APIRouter()
 
@@ -24,18 +25,18 @@ async def get_job_metrics(job_id: str):
     job_state = job_store.get(job_id)
     if not job_state:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    
+
     MonitoringRegistry.enable()
     registry = MonitoringRegistry.get_instance()
     collector = registry.monitor_collector
-    
+
     if not collector:
         raise HTTPException(status_code=500, detail="Monitor collector not available")
-    
+
     metrics = collector.get_metrics(job_id)
     if not metrics:
         raise HTTPException(status_code=404, detail=f"No metrics found for job '{job_id}'")
-    
+
     # Convert to response model
     routine_metrics = {
         rid: RoutineMetricsResponse(
@@ -50,7 +51,7 @@ async def get_job_metrics(job_id: str):
         )
         for rid, rm in metrics.routine_metrics.items()
     }
-    
+
     errors = [
         {
             "error_id": err.error_id,
@@ -61,7 +62,7 @@ async def get_job_metrics(job_id: str):
         }
         for err in metrics.errors
     ]
-    
+
     return ExecutionMetricsResponse(
         job_id=metrics.job_id,
         flow_id=metrics.flow_id,
@@ -83,16 +84,16 @@ async def get_job_trace(job_id: str, limit: Optional[int] = Query(None, ge=1, le
     job_state = job_store.get(job_id)
     if not job_state:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    
+
     MonitoringRegistry.enable()
     registry = MonitoringRegistry.get_instance()
     collector = registry.monitor_collector
-    
+
     if not collector:
         raise HTTPException(status_code=500, detail="Monitor collector not available")
-    
+
     events = collector.get_execution_trace(job_id, limit)
-    
+
     event_responses = [
         ExecutionEventResponse(
             event_id=event.event_id,
@@ -106,7 +107,7 @@ async def get_job_trace(job_id: str, limit: Optional[int] = Query(None, ge=1, le
         )
         for event in events
     ]
-    
+
     return ExecutionTraceResponse(
         events=event_responses,
         total=len(event_responses),
@@ -120,10 +121,10 @@ async def get_job_logs(job_id: str):
     job_state = job_store.get(job_id)
     if not job_state:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    
+
     # Get logs from job state
-    logs = job_state.shared_log if hasattr(job_state, 'shared_log') else []
-    
+    logs = job_state.shared_log if hasattr(job_state, "shared_log") else []
+
     return {
         "job_id": job_id,
         "logs": logs,
@@ -138,33 +139,35 @@ async def get_flow_metrics(flow_id: str):
     flow = flow_store.get(flow_id)
     if not flow:
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
-    
+
     MonitoringRegistry.enable()
     registry = MonitoringRegistry.get_instance()
     collector = registry.monitor_collector
-    
+
     if not collector:
         raise HTTPException(status_code=500, detail="Monitor collector not available")
-    
+
     # Get all jobs for this flow
     jobs = job_store.get_by_flow(flow_id)
-    
+
     # Aggregate metrics
     total_jobs = len(jobs)
     completed_jobs = sum(1 for job in jobs if str(job.status) in ("completed", "COMPLETED"))
     failed_jobs = sum(1 for job in jobs if str(job.status) in ("failed", "FAILED"))
-    
+
     # Get metrics for each job
     job_metrics = []
     for job in jobs:
         metrics = collector.get_metrics(job.job_id)
         if metrics:
-            job_metrics.append({
-                "job_id": job.job_id,
-                "duration": metrics.duration,
-                "status": str(job.status),
-            })
-    
+            job_metrics.append(
+                {
+                    "job_id": job.job_id,
+                    "duration": metrics.duration,
+                    "status": str(job.status),
+                }
+            )
+
     return {
         "flow_id": flow_id,
         "total_jobs": total_jobs,
@@ -172,4 +175,3 @@ async def get_flow_metrics(flow_id: str):
         "failed_jobs": failed_jobs,
         "job_metrics": job_metrics,
     }
-

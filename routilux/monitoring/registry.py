@@ -7,35 +7,35 @@ with zero overhead.
 """
 
 import threading
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from routilux.monitoring.breakpoint_manager import BreakpointManager
-    from routilux.monitoring.monitor_collector import MonitorCollector
     from routilux.monitoring.debug_session import DebugSessionStore
+    from routilux.monitoring.monitor_collector import MonitorCollector
 
 
 class MonitoringRegistry:
     """Global registry for monitoring services.
-    
+
     This is a singleton that manages monitoring services. When disabled,
     all monitoring operations are no-ops with minimal overhead.
     """
-    
-    _instance: Optional['MonitoringRegistry'] = None
+
+    _instance: Optional["MonitoringRegistry"] = None
     _lock = threading.Lock()
     _enabled: bool = False
-    
+
     def __init__(self):
         """Initialize registry (private - use get_instance())."""
-        self._breakpoint_manager: Optional['BreakpointManager'] = None
-        self._monitor_collector: Optional['MonitorCollector'] = None
-        self._debug_session_store: Optional['DebugSessionStore'] = None
-    
+        self._breakpoint_manager: Optional[BreakpointManager] = None
+        self._monitor_collector: Optional[MonitorCollector] = None
+        self._debug_session_store: Optional[DebugSessionStore] = None
+
     @classmethod
-    def get_instance(cls) -> 'MonitoringRegistry':
+    def get_instance(cls) -> "MonitoringRegistry":
         """Get singleton instance.
-        
+
         Returns:
             MonitoringRegistry instance.
         """
@@ -44,68 +44,70 @@ class MonitoringRegistry:
                 if cls._instance is None:
                     cls._instance = cls()
         return cls._instance
-    
+
     @classmethod
     def enable(cls) -> None:
         """Enable monitoring globally.
-        
+
         This initializes all monitoring services. Once enabled, monitoring
         hooks will collect data and check breakpoints.
         """
         with cls._lock:
             cls._enabled = True
             instance = cls.get_instance()
-            
+
             # Lazy initialization of services
             if instance._breakpoint_manager is None:
                 from routilux.monitoring.breakpoint_manager import BreakpointManager
+
                 instance._breakpoint_manager = BreakpointManager()
-            
+
             if instance._monitor_collector is None:
                 from routilux.monitoring.monitor_collector import MonitorCollector
+
                 instance._monitor_collector = MonitorCollector()
-            
+
             if instance._debug_session_store is None:
                 from routilux.monitoring.debug_session import DebugSessionStore
+
                 instance._debug_session_store = DebugSessionStore()
-    
+
     @classmethod
     def disable(cls) -> None:
         """Disable monitoring globally.
-        
+
         This stops all monitoring operations. Hooks will return immediately
         without doing any work.
         """
         with cls._lock:
             cls._enabled = False
-    
+
     @classmethod
     def is_enabled(cls) -> bool:
         """Check if monitoring is enabled.
-        
+
         Returns:
             True if monitoring is enabled, False otherwise.
         """
         return cls._enabled
-    
+
     @property
-    def breakpoint_manager(self) -> Optional['BreakpointManager']:
+    def breakpoint_manager(self) -> Optional["BreakpointManager"]:
         """Get breakpoint manager (None if monitoring disabled)."""
         if not self.is_enabled():
             return None
         return self._breakpoint_manager
-    
+
     @property
-    def monitor_collector(self) -> Optional['MonitorCollector']:
+    def monitor_collector(self) -> Optional["MonitorCollector"]:
         """Get monitor collector (None if monitoring disabled)."""
         if not self.is_enabled():
             return None
         return self._monitor_collector
-    
+
     @property
-    def debug_session_store(self) -> Optional['DebugSessionStore']:
+    def debug_session_store(self) -> Optional["DebugSessionStore"]:
         """Get debug session store (None if monitoring disabled)."""
         if not self.is_enabled():
             return None
         return self._debug_session_store
-

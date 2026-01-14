@@ -17,7 +17,5 @@ try:
     from routilux.api.main import app
 except ImportError as e:
     raise ImportError(
-        "FastAPI dependencies are not installed. "
-        "Install them with: pip install routilux[api]"
+        "FastAPI dependencies are not installed. Install them with: pip install routilux[api]"
     ) from e
-

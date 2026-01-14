@@ -3,12 +3,14 @@ Pydantic models for Flow API.
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 
 class FlowCreateRequest(BaseModel):
     """Request model for creating a flow."""
+
     flow_id: Optional[str] = None
     dsl: Optional[str] = None  # YAML string
     dsl_dict: Optional[Dict[str, Any]] = None  # JSON dict
@@ -18,6 +20,7 @@ class FlowCreateRequest(BaseModel):
 
 class RoutineInfo(BaseModel):
     """Information about a routine."""
+
     routine_id: str
     class_name: str
     slots: List[str]
@@ -27,6 +30,7 @@ class RoutineInfo(BaseModel):
 
 class ConnectionInfo(BaseModel):
     """Information about a connection."""
+
     connection_id: str
     source_routine: str
     source_event: str
@@ -37,6 +41,7 @@ class ConnectionInfo(BaseModel):
 
 class FlowResponse(BaseModel):
     """Response model for flow details."""
+
     flow_id: str
     routines: Dict[str, RoutineInfo]
     connections: List[ConnectionInfo]
@@ -48,6 +53,6 @@ class FlowResponse(BaseModel):
 
 class FlowListResponse(BaseModel):
     """Response model for flow list."""
+
     flows: List[FlowResponse]
     total: int
-

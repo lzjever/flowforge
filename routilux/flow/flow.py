@@ -5,22 +5,23 @@ Flow manager responsible for managing multiple Routine nodes and execution flow.
 """
 
 from __future__ import annotations
-import uuid
-import threading
+
 import queue
-from typing import Dict, Optional, Any, List, Set, Tuple, TYPE_CHECKING
-from concurrent.futures import ThreadPoolExecutor, Future
+import threading
+import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from routilux.routine import Routine
     from routilux.connection import Connection
-    from routilux.job_state import JobState
-    from routilux.event import Event
-    from routilux.slot import Slot
-    from routilux.execution_tracker import ExecutionTracker
     from routilux.error_handler import ErrorHandler
+    from routilux.event import Event
+    from routilux.execution_tracker import ExecutionTracker
+    from routilux.job_state import JobState
+    from routilux.routine import Routine
+    from routilux.slot import Slot
 
-from serilux import register_serializable, Serializable
+from serilux import Serializable, register_serializable
 
 from routilux.flow.task import SlotActivationTask
 
@@ -81,10 +82,10 @@ class Flow(Serializable):
 
     def __init__(
         self,
-        flow_id: Optional[str] = None,
+        flow_id: str | None = None,
         execution_strategy: str = "sequential",
         max_workers: int = 5,
-        execution_timeout: Optional[float] = None,
+        execution_timeout: float | None = None,
     ):
         """Initialize Flow.
 
@@ -97,28 +98,28 @@ class Flow(Serializable):
         """
         super().__init__()
         self.flow_id: str = flow_id or str(uuid.uuid4())
-        self.routines: Dict[str, "Routine"] = {}
-        self.connections: List["Connection"] = []
-        self._current_flow: Optional["Flow"] = None
-        self.execution_tracker: Optional["ExecutionTracker"] = None
-        self.error_handler: Optional["ErrorHandler"] = None
+        self.routines: dict[str, Routine] = {}
+        self.connections: list[Connection] = []
+        self._current_flow: Flow | None = None
+        self.execution_tracker: ExecutionTracker | None = None
+        self.error_handler: ErrorHandler | None = None
         self._paused: bool = False
 
         self.execution_strategy: str = execution_strategy
         self.max_workers: int = max_workers if execution_strategy == "concurrent" else 1
-        self.execution_timeout: Optional[float] = (
+        self.execution_timeout: float | None = (
             execution_timeout if execution_timeout is not None else 300.0
         )
 
         self._task_queue: queue.Queue = queue.Queue()
-        self._pending_tasks: List[SlotActivationTask] = []
+        self._pending_tasks: list[SlotActivationTask] = []
 
-        self._execution_thread: Optional[threading.Thread] = None
+        self._execution_thread: threading.Thread | None = None
         self._execution_lock: threading.Lock = threading.Lock()
         self._running: bool = False
 
-        self._executor: Optional[ThreadPoolExecutor] = None
-        self._active_tasks: Set[Future] = set()
+        self._executor: ThreadPoolExecutor | None = None
+        self._active_tasks: set[Future] = set()
 
         self.add_serializable_fields(
             [
@@ -132,13 +133,13 @@ class Flow(Serializable):
             ]
         )
 
-        self._event_slot_connections: Dict[tuple, "Connection"] = {}
+        self._event_slot_connections: dict[tuple, Connection] = {}
 
     def __repr__(self) -> str:
         """Return string representation of the Flow."""
         return f"Flow[{self.flow_id}]"
 
-    def set_execution_strategy(self, strategy: str, max_workers: Optional[int] = None) -> None:
+    def set_execution_strategy(self, strategy: str, max_workers: int | None = None) -> None:
         """Set execution strategy.
 
         Args:
@@ -172,7 +173,7 @@ class Flow(Serializable):
             self._executor = ThreadPoolExecutor(max_workers=self.max_workers)
         return self._executor
 
-    def _get_routine_id(self, routine: "Routine") -> Optional[str]:
+    def _get_routine_id(self, routine: Routine) -> str | None:
         """Find the ID of a Routine object within this Flow.
 
         Args:
@@ -186,7 +187,7 @@ class Flow(Serializable):
                 return rid
         return None
 
-    def _build_dependency_graph(self) -> Dict[str, Set[str]]:
+    def _build_dependency_graph(self) -> dict[str, set[str]]:
         """Build routine dependency graph.
 
         Returns:
@@ -197,8 +198,8 @@ class Flow(Serializable):
         return build_dependency_graph(self.routines, self.connections)
 
     def _get_ready_routines(
-        self, completed: Set[str], dependency_graph: Dict[str, Set[str]], running: Set[str]
-    ) -> List[str]:
+        self, completed: set[str], dependency_graph: dict[str, set[str]], running: set[str]
+    ) -> list[str]:
         """Get routines ready for execution.
 
         Args:
@@ -213,7 +214,7 @@ class Flow(Serializable):
 
         return get_ready_routines(completed, dependency_graph, running)
 
-    def _find_connection(self, event: "Event", slot: "Slot") -> Optional["Connection"]:
+    def _find_connection(self, event: Event, slot: Slot) -> Connection | None:
         """Find Connection from event to slot.
 
         Args:
@@ -242,7 +243,7 @@ class Flow(Serializable):
 
         start_event_loop(self)
 
-    def add_routine(self, routine: "Routine", routine_id: Optional[str] = None) -> str:
+    def add_routine(self, routine: Routine, routine_id: str | None = None) -> str:
         """Add a routine to the flow.
 
         Args:
@@ -268,8 +269,8 @@ class Flow(Serializable):
         source_event: str,
         target_routine_id: str,
         target_slot: str,
-        param_mapping: Optional[Dict[str, str]] = None,
-    ) -> "Connection":
+        param_mapping: dict[str, str] | None = None,
+    ) -> Connection:
         """Connect two routines by linking a source event to a target slot.
 
         Args:
@@ -309,6 +310,7 @@ class Flow(Serializable):
                 param_mapping = {}  # No mapping needed
             else:
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.debug(
                     f"Parameter names don't match between {source_routine_id}.{source_event} "
@@ -325,48 +327,49 @@ class Flow(Serializable):
         self._event_slot_connections[key] = connection
 
         return connection
-    
-    def _params_match(self, event: "Event", slot: "Slot") -> bool:
+
+    def _params_match(self, event: Event, slot: Slot) -> bool:
         """Check if event and slot parameters match (for identity mapping).
-        
+
         Args:
             event: Event object.
             slot: Slot object.
-            
+
         Returns:
             True if all event parameters match slot parameters, False otherwise.
         """
         # Get event output parameters
         event_params = set(event.output_params) if event.output_params else set()
-        
+
         # For slots, we need to check the handler signature to determine expected parameters
         # This is a simplified check - in practice, slots can accept any parameters via **kwargs
         # So we consider it a match if event has parameters and slot handler accepts **kwargs
         if not event_params:
             return True  # No parameters to match
-        
+
         # Check if slot handler accepts **kwargs (most flexible)
         if slot.handler:
             import inspect
+
             try:
                 sig = inspect.signature(slot.handler)
                 params = list(sig.parameters.keys())
-                
+
                 # If handler accepts **kwargs, it can accept any parameters
                 if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
                     return True
-                
+
                 # Check if all event params are in handler params
                 handler_params = set(params)
                 return event_params.issubset(handler_params)
             except (ValueError, TypeError):
                 # Can't inspect signature, assume it matches
                 return True
-        
+
         # If no handler, assume it matches (handler might be set later)
         return True
 
-    def set_error_handler(self, error_handler: "ErrorHandler") -> None:
+    def set_error_handler(self, error_handler: ErrorHandler) -> None:
         """Set error handler for the flow.
 
         Args:
@@ -374,7 +377,7 @@ class Flow(Serializable):
         """
         self.error_handler = error_handler
 
-    def find_routines_by_type(self, routine_type: type) -> List[Tuple[str, "Routine"]]:
+    def find_routines_by_type(self, routine_type: type) -> list[tuple[str, Routine]]:
         """Find routines by type.
 
         Args:
@@ -395,7 +398,7 @@ class Flow(Serializable):
             if isinstance(routine, routine_type)
         ]
 
-    def get_routine_retry_count(self, routine_id: str) -> Optional[int]:
+    def get_routine_retry_count(self, routine_id: str) -> int | None:
         """Get retry count for a routine.
 
         Args:
@@ -419,8 +422,8 @@ class Flow(Serializable):
         return None
 
     def _get_error_handler_for_routine(
-        self, routine: "Routine", routine_id: str
-    ) -> Optional["ErrorHandler"]:
+        self, routine: Routine, routine_id: str
+    ) -> ErrorHandler | None:
         """Get error handler for a routine.
 
         Args:
@@ -435,7 +438,7 @@ class Flow(Serializable):
         return get_error_handler_for_routine(routine, routine_id, self)
 
     def pause(
-        self, job_state: "JobState", reason: str = "", checkpoint: Optional[Dict[str, Any]] = None
+        self, job_state: JobState, reason: str = "", checkpoint: dict[str, Any] | None = None
     ) -> None:
         """Pause execution.
 
@@ -455,7 +458,7 @@ class Flow(Serializable):
             )
         pause_flow(self, job_state, reason, checkpoint)
 
-    def resume(self, job_state: "JobState") -> "JobState":
+    def resume(self, job_state: JobState) -> JobState:
         """Resume execution from paused or saved state.
 
         Args:
@@ -471,7 +474,7 @@ class Flow(Serializable):
 
         return resume_flow(self, job_state)
 
-    def cancel(self, job_state: "JobState", reason: str = "") -> None:
+    def cancel(self, job_state: JobState, reason: str = "") -> None:
         """Cancel execution.
 
         Args:
@@ -492,10 +495,10 @@ class Flow(Serializable):
     def execute(
         self,
         entry_routine_id: str,
-        entry_params: Optional[Dict[str, Any]] = None,
-        execution_strategy: Optional[str] = None,
-        timeout: Optional[float] = None,
-    ) -> "JobState":
+        entry_params: dict[str, Any] | None = None,
+        execution_strategy: str | None = None,
+        timeout: float | None = None,
+    ) -> JobState:
         """Execute the flow starting from the specified entry routine.
 
         Args:
@@ -517,7 +520,7 @@ class Flow(Serializable):
         return execute_flow(self, entry_routine_id, entry_params, execution_strategy, timeout)
 
     def wait_for_completion(
-        self, timeout: Optional[float] = None, job_state: Optional["JobState"] = None
+        self, timeout: float | None = None, job_state: JobState | None = None
     ) -> bool:
         """Wait for all tasks to complete.
 
@@ -566,7 +569,7 @@ class Flow(Serializable):
             return not self._execution_thread.is_alive()
         return True
 
-    def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
+    def shutdown(self, wait: bool = True, timeout: float | None = None) -> None:
         """Shutdown Flow's executor and event loop.
 
         Args:
@@ -593,19 +596,19 @@ class Flow(Serializable):
         with self._execution_lock:
             self._active_tasks.clear()
 
-    def validate(self) -> List[str]:
+    def validate(self) -> list[str]:
         """Validate flow structure and return list of issues.
-        
+
         This method checks for common configuration errors that could cause
         problems during execution:
         - Circular dependencies (errors)
         - Unconnected events (warnings)
         - Unconnected slots (warnings)
         - Invalid connections (errors)
-        
+
         Returns:
             List of validation error/warning messages. Empty list means valid.
-            
+
         Examples:
             >>> flow = Flow()
             >>> # ... add routines and connections ...
@@ -614,10 +617,10 @@ class Flow(Serializable):
             ...     raise ValueError(f"Flow validation failed:\\n" + "\\n".join(issues))
         """
         from routilux.flow.validation import validate_flow
-        
+
         return validate_flow(self)
 
-    def serialize(self) -> Dict[str, Any]:
+    def serialize(self) -> dict[str, Any]:
         """Serialize Flow, including all routines and connections.
 
         Returns:
@@ -639,7 +642,7 @@ class Flow(Serializable):
 
         return serialize_flow(self)
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(self, data: dict[str, Any]) -> None:
         """Deserialize Flow, restoring all routines and connections.
 
         Args:
@@ -648,20 +651,20 @@ class Flow(Serializable):
         from routilux.flow.serialization import deserialize_flow
 
         deserialize_flow(self, data)
-    
+
     @classmethod
-    def from_dict(cls, spec: Dict[str, Any]) -> "Flow":
+    def from_dict(cls, spec: dict[str, Any]) -> Flow:
         """Create Flow from specification dictionary (JSON/dict DSL).
-        
+
         This method allows creating flows from Python dictionaries or JSON,
         providing a declarative way to define workflows.
-        
+
         Args:
             spec: Flow specification dictionary. See DSL documentation for format.
-            
+
         Returns:
             Constructed Flow object.
-            
+
         Examples:
             >>> flow = Flow.from_dict({
             ...     "flow_id": "my_flow",
@@ -677,28 +680,28 @@ class Flow(Serializable):
             ... })
         """
         from routilux.dsl.loader import load_flow_from_spec
-        
+
         return load_flow_from_spec(spec)
-    
+
     @classmethod
-    def from_yaml(cls, yaml_str: str) -> "Flow":
+    def from_yaml(cls, yaml_str: str) -> Flow:
         """Create Flow from YAML string.
-        
+
         This method parses a YAML string and creates a Flow from it.
         Requires the 'pyyaml' package to be installed.
-        
+
         Args:
             yaml_str: YAML string containing flow specification.
-            
+
         Returns:
             Constructed Flow object.
-            
+
         Raises:
             ValueError: If YAML is invalid or specification is invalid.
-            
+
         Note:
             pyyaml is a core dependency, so this method is always available.
-            
+
         Examples:
             >>> yaml_content = '''
             ... flow_id: my_flow
@@ -717,16 +720,15 @@ class Flow(Serializable):
             import yaml
         except ImportError:
             raise ImportError(
-                "YAML support requires 'pyyaml' package. "
-                "Install it with: pip install pyyaml"
+                "YAML support requires 'pyyaml' package. Install it with: pip install pyyaml"
             )
-        
+
         try:
             spec = yaml.safe_load(yaml_str)
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML: {e}")
-        
+
         if spec is None:
             raise ValueError("YAML string is empty or invalid")
-        
+
         return cls.from_dict(spec)
