@@ -5,6 +5,8 @@ These hooks are called at key execution points and have zero overhead
 when monitoring is disabled.
 """
 
+import asyncio
+import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
@@ -13,6 +15,45 @@ if TYPE_CHECKING:
     from routilux.job_state import JobState
     from routilux.routine import ExecutionContext, Routine
     from routilux.slot import Slot
+
+logger = logging.getLogger(__name__)
+
+
+def _publish_event_via_manager(job_id: str, event: dict) -> None:
+    """Publish event via event manager with error handling (fire-and-forget).
+
+    This is a helper function to avoid code duplication in hooks.
+    Handles both async and sync contexts.
+
+    Args:
+        job_id: Job identifier.
+        event: Event dictionary to publish.
+    """
+    try:
+        from routilux.monitoring.event_manager import get_event_manager
+
+        event_manager = get_event_manager()
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop exists
+            return
+
+        if loop.is_running():
+            # In async context, create task without waiting
+            asyncio.create_task(event_manager.publish(job_id, event))
+        else:
+            # In sync context with event loop, use threadsafe
+            asyncio.run_coroutine_threadsafe(
+                event_manager.publish(job_id, event),
+                loop,
+            )
+    except (RuntimeError, AttributeError):
+        # No event loop or import failed, skip event notification
+        pass
+    except Exception as e:
+        logger.error(f"Failed to publish event to job {job_id}: {e}")
 
 
 class ExecutionHooks:
@@ -40,38 +81,15 @@ class ExecutionHooks:
         if collector:
             collector.record_flow_start(flow.flow_id, job_state.job_id)
 
-            # Broadcast via WebSocket (non-blocking)
-            try:
-                import asyncio
-
-                from routilux.monitoring.websocket_manager import ws_manager
-
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(
-                        ws_manager.broadcast(
-                            job_state.job_id,
-                            {
-                                "type": "flow_start",
-                                "job_id": job_state.job_id,
-                                "flow_id": flow.flow_id,
-                            },
-                        )
-                    )
-                else:
-                    loop.run_until_complete(
-                        ws_manager.broadcast(
-                            job_state.job_id,
-                            {
-                                "type": "flow_start",
-                                "job_id": job_state.job_id,
-                                "flow_id": flow.flow_id,
-                            },
-                        )
-                    )
-            except (RuntimeError, AttributeError):
-                # No event loop, skip WebSocket notification
-                pass
+            # Publish flow_start event via event manager (non-blocking)
+            _publish_event_via_manager(
+                job_state.job_id,
+                {
+                    "type": "flow_start",
+                    "job_id": job_state.job_id,
+                    "flow_id": flow.flow_id,
+                },
+            )
 
     def on_flow_end(self, flow: "Flow", job_state: "JobState", status: str = "completed") -> None:
         """Hook called when flow execution ends.
@@ -92,22 +110,26 @@ class ExecutionHooks:
         if collector:
             collector.record_flow_end(job_state.job_id, status)
 
-            # Get final metrics and broadcast
+            # Get final metrics and broadcast via event manager
             metrics = collector.get_metrics(job_state.job_id)
             if metrics:
-                try:
-                    import asyncio
-
-                    from routilux.monitoring.websocket_manager import ws_manager
-
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(ws_manager.send_metrics(job_state.job_id, metrics))
-                    else:
-                        loop.run_until_complete(ws_manager.send_metrics(job_state.job_id, metrics))
-                except (RuntimeError, AttributeError):
-                    # No event loop, skip WebSocket notification
-                    pass
+                _publish_event_via_manager(
+                    job_state.job_id,
+                    {
+                        "type": "metrics",
+                        "job_id": job_state.job_id,
+                        "metrics": {
+                            "start_time": metrics.start_time.isoformat()
+                            if metrics.start_time
+                            else None,
+                            "end_time": metrics.end_time.isoformat() if metrics.end_time else None,
+                            "duration": metrics.duration,
+                            "total_events": metrics.total_events,
+                            "total_slot_calls": metrics.total_slot_calls,
+                            "total_event_emits": metrics.total_event_emits,
+                        },
+                    },
+                )
 
     def on_routine_start(
         self,
@@ -131,34 +153,9 @@ class ExecutionHooks:
         collector = registry.monitor_collector
 
         if collector:
+            # Note: MonitorCollector._publish_event() will automatically
+            # publish routine_start events via JobEventManager
             collector.record_routine_start(routine_id, job_state.job_id)
-
-            # Broadcast execution event via WebSocket (non-blocking)
-            try:
-                import asyncio
-                from datetime import datetime
-
-                from routilux.monitoring.monitor_collector import ExecutionEvent
-                from routilux.monitoring.websocket_manager import ws_manager
-
-                event = ExecutionEvent(
-                    event_id=f"event_{id(self)}",
-                    job_id=job_state.job_id,
-                    routine_id=routine_id,
-                    event_type="routine_start",
-                    timestamp=datetime.now(),
-                )
-
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(ws_manager.send_execution_event(job_state.job_id, event))
-                else:
-                    loop.run_until_complete(
-                        ws_manager.send_execution_event(job_state.job_id, event)
-                    )
-            except (RuntimeError, AttributeError):
-                # No event loop, skip WebSocket notification
-                pass
 
     def on_routine_end(
         self,
@@ -239,28 +236,21 @@ class ExecutionHooks:
                 if debug_store:
                     session = debug_store.get_or_create(job_state.job_id)
                     session.pause(context, reason=f"Breakpoint at {routine_id}.{slot.name}")
-                    # Notify via WebSocket
-                    import asyncio
-
-                    from routilux.monitoring.websocket_manager import ws_manager
-
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            asyncio.create_task(
-                                ws_manager.send_breakpoint_hit(
-                                    job_state.job_id, breakpoint, context
-                                )
-                            )
-                        else:
-                            loop.run_until_complete(
-                                ws_manager.send_breakpoint_hit(
-                                    job_state.job_id, breakpoint, context
-                                )
-                            )
-                    except RuntimeError:
-                        # No event loop, skip WebSocket notification
-                        pass
+                    # Notify via event manager
+                    _publish_event_via_manager(
+                        job_state.job_id,
+                        {
+                            "type": "breakpoint_hit",
+                            "job_id": job_state.job_id,
+                            "breakpoint": {
+                                "breakpoint_id": breakpoint.breakpoint_id,
+                                "type": breakpoint.type,
+                                "routine_id": breakpoint.routine_id,
+                                "slot_name": breakpoint.slot_name,
+                                "event_name": breakpoint.event_name,
+                            },
+                        },
+                    )
                     return False
 
         return True
@@ -316,28 +306,21 @@ class ExecutionHooks:
                 if debug_store:
                     session = debug_store.get_or_create(job_state.job_id)
                     session.pause(context, reason=f"Breakpoint at {routine_id}.{event.name}")
-                    # Notify via WebSocket
-                    import asyncio
-
-                    from routilux.monitoring.websocket_manager import ws_manager
-
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            asyncio.create_task(
-                                ws_manager.send_breakpoint_hit(
-                                    job_state.job_id, breakpoint, context
-                                )
-                            )
-                        else:
-                            loop.run_until_complete(
-                                ws_manager.send_breakpoint_hit(
-                                    job_state.job_id, breakpoint, context
-                                )
-                            )
-                    except RuntimeError:
-                        # No event loop, skip WebSocket notification
-                        pass
+                    # Notify via event manager
+                    _publish_event_via_manager(
+                        job_state.job_id,
+                        {
+                            "type": "breakpoint_hit",
+                            "job_id": job_state.job_id,
+                            "breakpoint": {
+                                "breakpoint_id": breakpoint.breakpoint_id,
+                                "type": breakpoint.type,
+                                "routine_id": breakpoint.routine_id,
+                                "slot_name": breakpoint.slot_name,
+                                "event_name": breakpoint.event_name,
+                            },
+                        },
+                    )
                     return False
 
         return True

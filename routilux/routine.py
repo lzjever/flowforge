@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
 
 T = TypeVar("T")
-from contextvars import ContextVar
+from contextvars import ContextVar  # noqa: E402
 
 if TYPE_CHECKING:
     from routilux.error_handler import ErrorHandler, ErrorStrategy
@@ -18,13 +18,11 @@ if TYPE_CHECKING:
     from routilux.job_state import JobState
     from routilux.slot import Slot
 
-from serilux import Serializable, register_serializable
+from serilux import Serializable, register_serializable  # noqa: E402
 
 # Context variable for thread-safe job_state access
 # Each execution context has its own value, even in the same thread
-_current_job_state: ContextVar[JobState | None] = ContextVar(
-    "_current_job_state", default=None
-)
+_current_job_state: ContextVar[JobState | None] = ContextVar("_current_job_state", default=None)
 
 
 class ExecutionContext(NamedTuple):
@@ -714,11 +712,10 @@ class Routine(Serializable):
             >>> optional_routine.set_as_optional()  # Uses CONTINUE by default
             >>> optional_routine.set_as_optional(ErrorStrategy.SKIP)  # Use SKIP instead
         """
-        from routilux.error_handler import ErrorHandler
-        from routilux.error_handler import ErrorStrategy as ES
+        from routilux.error_handler import ErrorHandler, ErrorStrategy
 
         if strategy is None:
-            strategy = ES.CONTINUE
+            strategy = ErrorStrategy.CONTINUE
         self.set_error_handler(ErrorHandler(strategy=strategy, is_critical=False))
 
     def set_as_critical(

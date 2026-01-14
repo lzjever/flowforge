@@ -42,7 +42,8 @@ try:
 except ImportError:
     API_AVAILABLE = False
     pytest.skip(
-        "API dependencies not available. Install with: uv sync --all-extras", allow_module_level=True
+        "API dependencies not available. Install with: uv sync --all-extras",
+        allow_module_level=True,
     )
 
 
@@ -1447,4 +1448,3 @@ class SimpleAPITestRoutine(Routine):
 
     def _handle(self, **kwargs):
         self.emit("output", data="test")
-

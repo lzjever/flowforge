@@ -701,3 +701,163 @@ class TestMonitoringIntegration:
         # Breakpoint should be checkable (though may not trigger without proper job_id)
         # This tests the integration point exists
         assert job_state.status == ExecutionStatus.COMPLETED
+
+
+class TestRingBuffer:
+    """Test ring buffer (deque with maxlen) functionality in MonitorCollector."""
+
+    def test_ring_buffer_prevents_unbounded_growth(self):
+        """Test that ring buffer prevents unbounded memory growth."""
+        from routilux.monitoring.monitor_collector import MonitorCollector
+
+        # Create collector with small ring buffer (max 10 events)
+        collector = MonitorCollector(max_events_per_job=10)
+
+        # Record flow start
+        collector.record_flow_start("test_flow", "job_001")
+
+        # Record 20 events (more than buffer size)
+        for i in range(20):
+            collector.record_routine_start(f"routine_{i}", "job_001")
+
+        # Get execution trace - should only have latest 10 events
+        trace = collector.get_execution_trace("job_001")
+        assert len(trace) == 10, "Ring buffer should only keep latest 10 events"
+
+        # Verify events are the latest ones (routine_10 to routine_19)
+        routine_ids = [event.routine_id for event in trace]
+        assert routine_ids == [f"routine_{i}" for i in range(10, 20)]
+
+    def test_ring_buffer_configurable_max_events(self):
+        """Test that max_events_per_job is configurable."""
+        from routilux.monitoring.monitor_collector import MonitorCollector
+
+        # Create collector with custom max events
+        collector = MonitorCollector(max_events_per_job=5)
+
+        # Record flow start
+        collector.record_flow_start("test_flow", "job_002")
+
+        # Record 10 events
+        for i in range(10):
+            collector.record_routine_start(f"routine_{i}", "job_002")
+
+        # Should only keep latest 5 events
+        trace = collector.get_execution_trace("job_002")
+        assert len(trace) == 5
+
+    def test_ring_buffer_default_max_events(self):
+        """Test default max_events_per_job is 1000."""
+        from routilux.monitoring.monitor_collector import (
+            DEFAULT_MAX_EVENTS_PER_JOB,
+            MonitorCollector,
+        )
+
+        assert DEFAULT_MAX_EVENTS_PER_JOB == 1000
+
+        # Create collector with default max events
+        collector = MonitorCollector()
+
+        # Record flow start
+        collector.record_flow_start("test_flow", "job_003")
+
+        # Record less than max (100 events)
+        for i in range(100):
+            collector.record_routine_start(f"routine_{i}", "job_003")
+
+        # All events should be kept
+        trace = collector.get_execution_trace("job_003")
+        assert len(trace) == 100
+
+    def test_ring_buffer_with_limit_parameter(self):
+        """Test get_execution_trace limit parameter works with ring buffer."""
+        from routilux.monitoring.monitor_collector import MonitorCollector
+
+        collector = MonitorCollector(max_events_per_job=100)
+
+        # Record flow start
+        collector.record_flow_start("test_flow", "job_004")
+
+        # Record 50 events
+        for i in range(50):
+            collector.record_routine_start(f"routine_{i}", "job_004")
+
+        # Get trace with limit=10
+        trace = collector.get_execution_trace("job_004", limit=10)
+        assert len(trace) == 10
+
+        # Verify it returns the last 10 events
+        routine_ids = [event.routine_id for event in trace]
+        assert routine_ids == [f"routine_{i}" for i in range(40, 50)]
+
+    def test_ring_buffer_multiple_jobs(self):
+        """Test ring buffer works correctly with multiple jobs."""
+        from routilux.monitoring.monitor_collector import MonitorCollector
+
+        collector = MonitorCollector(max_events_per_job=5)
+
+        # Record events for multiple jobs
+        for job_id in ["job_005", "job_006", "job_007"]:
+            collector.record_flow_start("test_flow", job_id)
+            for i in range(10):
+                collector.record_routine_start(f"routine_{i}", job_id)
+
+        # Each job should have only 5 events (ring buffer)
+        for job_id in ["job_005", "job_006", "job_007"]:
+            trace = collector.get_execution_trace(job_id)
+            assert len(trace) == 5, f"Job {job_id} should have only 5 events"
+
+    def test_set_max_events_per_job(self):
+        """Test set_max_events_per_job function."""
+        from routilux.monitoring import monitor_collector
+
+        # Get original value
+        original = monitor_collector.DEFAULT_MAX_EVENTS_PER_JOB
+
+        # Set new value
+        monitor_collector.set_max_events_per_job(500)
+        assert monitor_collector.DEFAULT_MAX_EVENTS_PER_JOB == 500
+
+        # Restore original value
+        monitor_collector.set_max_events_per_job(original)
+        assert monitor_collector.DEFAULT_MAX_EVENTS_PER_JOB == original
+
+    def test_set_max_events_per_job_invalid_value(self):
+        """Test set_max_events_per_job with invalid value."""
+        from routilux.monitoring.monitor_collector import set_max_events_per_job
+
+        # Try to set invalid value
+        with pytest.raises(ValueError, match="must be greater than 0"):
+            set_max_events_per_job(0)
+
+        with pytest.raises(ValueError, match="must be greater than 0"):
+            set_max_events_per_job(-10)
+
+    def test_ring_buffer_old_events_dropped(self):
+        """Test that old events are automatically dropped when buffer is full."""
+        from routilux.monitoring.monitor_collector import MonitorCollector
+
+        collector = MonitorCollector(max_events_per_job=10)
+
+        # Record flow start
+        collector.record_flow_start("test_flow", "job_008")
+
+        # Record 10 events (fills buffer)
+        for i in range(10):
+            collector.record_routine_start(f"routine_{i}", "job_008")
+
+        # Verify all 10 events are present
+        trace = collector.get_execution_trace("job_008")
+        assert len(trace) == 10
+        assert trace[0].routine_id == "routine_0"
+
+        # Add 1 more event (should drop routine_0)
+        collector.record_routine_start("routine_10", "job_008")
+
+        # Verify only 10 events remain, and routine_0 is gone
+        trace = collector.get_execution_trace("job_008")
+        assert len(trace) == 10
+        routine_ids = [event.routine_id for event in trace]
+        assert "routine_0" not in routine_ids
+        assert "routine_10" in routine_ids
+        assert routine_ids[0] == "routine_1"  # routine_0 was dropped

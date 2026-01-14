@@ -527,30 +527,6 @@ class JobState(Serializable):
         )
         self.updated_at = datetime.now()
 
-    def update_shared_data(self, key: str, value: Any) -> None:
-        """Update shared data.
-
-        Thread-safe in CPython (GIL protected).
-
-        Args:
-            key: Key to update.
-            value: Value to set.
-        """
-        self.shared_data[key] = value
-        self.updated_at = datetime.now()
-
-    def get_shared_data(self, key: str, default: Any = None) -> Any:
-        """Get shared data.
-
-        Args:
-            key: Key to get.
-            default: Default value if key doesn't exist.
-
-        Returns:
-            Value for key, or default if key doesn't exist.
-        """
-        return self.shared_data.get(key, default)
-
     def append_to_shared_log(self, entry: Dict[str, Any]) -> None:
         """Append entry to shared log.
 

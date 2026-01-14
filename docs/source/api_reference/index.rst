@@ -15,4 +15,5 @@ Complete API documentation for all modules and classes.
    error_handler
    execution_tracker
    completion
+   monitoring
 

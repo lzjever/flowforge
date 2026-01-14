@@ -6,27 +6,30 @@ All features are disabled by default and have zero overhead when not enabled.
 """
 
 import os
-from typing import Optional
 
 # Auto-enable if environment variable is set
 _AUTO_ENABLE = os.getenv("ROUTILUX_ENABLE_MONITORING", "false").lower() == "true"
 
-from routilux.monitoring.registry import MonitoringRegistry
+from routilux.monitoring.registry import MonitoringRegistry  # noqa: E402
 
 # Auto-enable if environment variable is set
 if _AUTO_ENABLE:
     MonitoringRegistry.enable()
 
-from routilux.monitoring.breakpoint_manager import Breakpoint, BreakpointManager
-from routilux.monitoring.debug_session import CallFrame, DebugSession, DebugSessionStore
-from routilux.monitoring.monitor_collector import (
+from routilux.monitoring.breakpoint_manager import Breakpoint, BreakpointManager  # noqa: E402
+from routilux.monitoring.debug_session import (  # noqa: E402
+    CallFrame,
+    DebugSession,
+    DebugSessionStore,
+)
+from routilux.monitoring.event_manager import JobEventManager, get_event_manager  # noqa: E402
+from routilux.monitoring.monitor_collector import (  # noqa: E402
     ErrorRecord,
     ExecutionEvent,
     ExecutionMetrics,
     MonitorCollector,
     RoutineMetrics,
 )
-from routilux.monitoring.registry import MonitoringRegistry
 
 __all__ = [
     "MonitoringRegistry",
@@ -40,4 +43,6 @@ __all__ = [
     "RoutineMetrics",
     "ExecutionEvent",
     "ErrorRecord",
+    "JobEventManager",
+    "get_event_manager",
 ]

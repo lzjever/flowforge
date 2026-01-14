@@ -15,4 +15,5 @@ This section provides detailed guidance on using routilux.
    job_state
    serialization
    identifiers
+   monitoring_debugging
 

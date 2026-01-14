@@ -52,9 +52,12 @@ class MonitoringRegistry:
         This initializes all monitoring services. Once enabled, monitoring
         hooks will collect data and check breakpoints.
         """
+        # First get the instance (without holding the lock)
+        instance = cls.get_instance()
+
+        # Then enable and initialize services (with lock)
         with cls._lock:
             cls._enabled = True
-            instance = cls.get_instance()
 
             # Lazy initialization of services
             if instance._breakpoint_manager is None:

@@ -2,12 +2,41 @@
 Monitor collector for execution metrics and events.
 
 Collects execution metrics, traces, and events for monitoring and analysis.
+Publishes events to JobEventManager for real-time streaming.
+Uses ring buffers (deque with maxlen) to prevent unbounded memory growth.
 """
 
 import threading
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional
+
+# Try to import event manager (optional for backwards compatibility)
+try:
+    from routilux.monitoring.event_manager import get_event_manager
+
+    EVENT_MANAGER_AVAILABLE = True
+except ImportError:
+    EVENT_MANAGER_AVAILABLE = False
+
+
+# Maximum events to store per job (ring buffer size)
+DEFAULT_MAX_EVENTS_PER_JOB = 1000
+
+
+def set_max_events_per_job(max_events: int) -> None:
+    """Set the maximum number of events to store per job.
+
+    This setting applies to newly created jobs only, not existing ones.
+
+    Args:
+        max_events: Maximum number of events per job (must be > 0).
+    """
+    global DEFAULT_MAX_EVENTS_PER_JOB
+    if max_events <= 0:
+        raise ValueError("max_events must be greater than 0")
+    DEFAULT_MAX_EVENTS_PER_JOB = max_events
 
 
 @dataclass
@@ -33,6 +62,23 @@ class ExecutionEvent:
     data: Dict[str, Any] = field(default_factory=dict)
     duration: Optional[float] = None
     status: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert event to dictionary for publishing.
+
+        Returns:
+            Dictionary representation of the event.
+        """
+        return {
+            "event_id": self.event_id,
+            "job_id": self.job_id,
+            "routine_id": self.routine_id,
+            "event_type": self.event_type,
+            "timestamp": self.timestamp.isoformat(),
+            "data": self.data,
+            "duration": self.duration,
+            "status": self.status,
+        }
 
 
 @dataclass
@@ -137,17 +183,60 @@ class MonitorCollector:
     """Collects execution metrics and events.
 
     Thread-safe collector that records execution events and computes metrics.
+    Publishes events to JobEventManager for real-time WebSocket streaming.
+    Uses ring buffers (deque with maxlen) to prevent unbounded memory growth.
     """
 
-    def __init__(self):
-        """Initialize monitor collector."""
+    def __init__(self, max_events_per_job: Optional[int] = None):
+        """Initialize monitor collector.
+
+        Args:
+            max_events_per_job: Maximum events to store per job (ring buffer size).
+                              If None, uses DEFAULT_MAX_EVENTS_PER_JOB (1000).
+        """
+        self._max_events_per_job = max_events_per_job or DEFAULT_MAX_EVENTS_PER_JOB
         self._metrics: Dict[str, ExecutionMetrics] = {}  # job_id -> ExecutionMetrics
-        self._events: Dict[str, List[ExecutionEvent]] = {}  # job_id -> List[ExecutionEvent]
+        self._events: Dict[
+            str, Deque[ExecutionEvent]
+        ] = {}  # job_id -> Deque[ExecutionEvent] (ring buffer)
         self._routine_starts: Dict[
             str, Dict[str, datetime]
         ] = {}  # job_id -> {routine_id -> start_time}
         self._lock = threading.RLock()
         self._event_counter = 0
+
+        # Get event manager if available (for real-time streaming)
+        self._event_manager = None
+        if EVENT_MANAGER_AVAILABLE:
+            try:
+                self._event_manager = get_event_manager()
+            except Exception:
+                # Event manager initialization failed, continue without it
+                pass
+
+    def _publish_event(self, event: ExecutionEvent) -> None:
+        """Publish event to event manager for WebSocket streaming.
+
+        Args:
+            event: Execution event to publish.
+        """
+        if self._event_manager is not None:
+            try:
+                # Use asyncio.create_task if in async context, otherwise run in thread
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # In async context, create task
+                    asyncio.create_task(self._event_manager.publish(event.job_id, event.to_dict()))
+                else:
+                    # Not in async context, run in thread pool
+                    asyncio.run_coroutine_threadsafe(
+                        self._event_manager.publish(event.job_id, event.to_dict()), loop
+                    )
+            except Exception:
+                # Event publishing failed, continue silently
+                pass
 
     def record_flow_start(self, flow_id: str, job_id: str) -> None:
         """Record flow execution start.
@@ -163,7 +252,8 @@ class MonitorCollector:
                     flow_id=flow_id,
                     start_time=datetime.now(),
                 )
-                self._events[job_id] = []
+                # Use deque with maxlen as ring buffer
+                self._events[job_id] = deque(maxlen=self._max_events_per_job)
                 self._routine_starts[job_id] = {}
 
     def record_flow_end(self, job_id: str, status: str = "completed") -> None:
@@ -204,11 +294,14 @@ class MonitorCollector:
             self._event_counter += 1
 
             if job_id not in self._events:
-                self._events[job_id] = []
+                self._events[job_id] = deque(maxlen=self._max_events_per_job)
             self._events[job_id].append(event)
 
             if job_id in self._metrics:
                 self._metrics[job_id].total_events += 1
+
+        # Publish event for WebSocket streaming (outside lock)
+        self._publish_event(event)
 
     def record_routine_end(
         self,
@@ -274,11 +367,14 @@ class MonitorCollector:
             self._event_counter += 1
 
             if job_id not in self._events:
-                self._events[job_id] = []
+                self._events[job_id] = deque(maxlen=self._max_events_per_job)
             self._events[job_id].append(event)
 
             if job_id in self._metrics:
                 self._metrics[job_id].total_events += 1
+
+        # Publish event for WebSocket streaming (outside lock)
+        self._publish_event(event)
 
     def record_slot_call(
         self,
@@ -307,12 +403,15 @@ class MonitorCollector:
             self._event_counter += 1
 
             if job_id not in self._events:
-                self._events[job_id] = []
+                self._events[job_id] = deque(maxlen=self._max_events_per_job)
             self._events[job_id].append(event)
 
             if job_id in self._metrics:
                 self._metrics[job_id].total_events += 1
                 self._metrics[job_id].total_slot_calls += 1
+
+        # Publish event for WebSocket streaming (outside lock)
+        self._publish_event(event)
 
     def record_event_emit(
         self,
@@ -341,12 +440,15 @@ class MonitorCollector:
             self._event_counter += 1
 
             if job_id not in self._events:
-                self._events[job_id] = []
+                self._events[job_id] = deque(maxlen=self._max_events_per_job)
             self._events[job_id].append(event)
 
             if job_id in self._metrics:
                 self._metrics[job_id].total_events += 1
                 self._metrics[job_id].total_event_emits += 1
+
+        # Publish event for WebSocket streaming (outside lock)
+        self._publish_event(event)
 
     def get_metrics(self, job_id: str) -> Optional[ExecutionMetrics]:
         """Get execution metrics for a job.
@@ -371,10 +473,11 @@ class MonitorCollector:
             List of execution events (chronologically ordered).
         """
         with self._lock:
-            events = self._events.get(job_id, [])
+            events = self._events.get(job_id, deque())
             if limit:
-                return events[-limit:]
-            return events.copy()
+                # Convert deque slice to list
+                return list(events)[-limit:]
+            return list(events)
 
     def clear(self, job_id: str) -> None:
         """Clear all data for a job.
@@ -386,3 +489,17 @@ class MonitorCollector:
             self._metrics.pop(job_id, None)
             self._events.pop(job_id, None)
             self._routine_starts.pop(job_id, None)
+
+        # Cleanup event manager subscribers for this job
+        if self._event_manager is not None:
+            try:
+                import asyncio
+
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._event_manager.cleanup(job_id))
+                else:
+                    asyncio.run_coroutine_threadsafe(self._event_manager.cleanup(job_id), loop)
+            except Exception:
+                # Event cleanup failed, continue silently
+                pass
