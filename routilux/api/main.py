@@ -4,15 +4,77 @@ FastAPI main application.
 This is the entry point for the Routilux monitoring and flow builder API.
 """
 
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routilux.api.routes import breakpoints, debug, flows, jobs, monitor, websocket
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    # Startup
+    if os.getenv("ROUTILUX_DEBUGGER_MODE") == "true":
+        print("🔧 Debugger mode enabled - registering test flows...")
+        await register_debugger_flows()
+        print("✓ Test flows registered")
+
+    yield
+
+    # Shutdown
+    print("🛑 Application shutting down...")
+
+
+async def register_debugger_flows():
+    """Register test flows for debugger"""
+    import sys
+    from pathlib import Path
+
+    # Add examples directory to path
+    examples_dir = str(Path(__file__).parent.parent.parent / "examples")
+    if examples_dir not in sys.path:
+        sys.path.insert(0, examples_dir)
+
+    from routilux.monitoring.registry import MonitoringRegistry
+    from routilux.monitoring.storage import flow_store
+
+    # Import flow creators
+    from debugger_test_app import (
+        create_branching_flow,
+        create_complex_flow,
+        create_error_flow,
+        create_linear_flow,
+    )
+
+    # Enable monitoring
+    MonitoringRegistry.enable()
+
+    # Create and register flows
+    linear_flow, _ = create_linear_flow()
+    flow_store.add(linear_flow)
+    print(f"  ✓ Registered: {linear_flow.flow_id}")
+
+    branch_flow, _ = create_branching_flow()
+    flow_store.add(branch_flow)
+    print(f"  ✓ Registered: {branch_flow.flow_id}")
+
+    complex_flow, _ = create_complex_flow()
+    flow_store.add(complex_flow)
+    print(f"  ✓ Registered: {complex_flow.flow_id}")
+
+    error_flow, _ = create_error_flow()
+    flow_store.add(error_flow)
+    print(f"  ✓ Registered: {error_flow.flow_id}")
+
+
 app = FastAPI(
     title="Routilux API",
     description="Monitoring, debugging, and flow builder API for Routilux",
     version="0.10.0",
+    lifespan=lifespan,
 )
 
 # CORS middleware for frontend access

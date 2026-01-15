@@ -285,8 +285,10 @@ def main():
     print("Creating Routilux Debugger Test Flows")
     print("=" * 60)
 
-    # Enable monitoring
+    # Enable monitoring BEFORE importing flow_store
     MonitoringRegistry.enable()
+
+    # Import AFTER enabling monitoring
     from routilux.monitoring.storage import flow_store
 
     flows = []
