@@ -3,8 +3,9 @@ Job management API routes.
 """
 
 from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from routilux.api.models.job import JobListResponse, JobResponse, JobStartRequest
 from routilux.job_state import JobState
@@ -56,13 +57,56 @@ async def start_job(request: JobStartRequest):
         raise HTTPException(status_code=400, detail=f"Failed to start job: {str(e)}")
 
 
-@router.get("/jobs", response_model=JobListResponse)
-async def list_jobs():
-    """List all jobs."""
-    jobs = job_store.list_all()
+@router.get(
+    "/jobs",
+    response_model=JobListResponse,
+    summary="List all jobs",
+    description="Retrieve a paginated list of jobs with optional filters",
+)
+async def list_jobs(
+    flow_id: Optional[str] = Query(None, description="Filter by flow ID"),
+    status: Optional[str] = Query(None, description="Filter by job status"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of jobs per page"),
+    offset: int = Query(0, ge=0, description="Number of jobs to skip"),
+):
+    """List jobs with optional filters and pagination.
+
+    Returns a paginated list of jobs that match the specified criteria.
+    The response includes total count for pagination controls.
+
+    Args:
+        flow_id: Filter jobs by flow ID
+        status: Filter jobs by status (pending, running, completed, failed, paused, cancelled)
+        limit: Maximum number of jobs to return (1-1000, default 100)
+        offset: Number of jobs to skip for pagination (default 0)
+
+    Returns:
+        JobListResponse: Paginated list of jobs with total count
+    """
+    all_jobs = job_store.list_all()
+
+    # Apply filters
+    filtered_jobs = all_jobs
+    if flow_id:
+        filtered_jobs = [j for j in filtered_jobs if j.flow_id == flow_id]
+    if status:
+        filtered_jobs = [
+            j
+            for j in filtered_jobs
+            if (j.status.value == status if hasattr(j.status, "value") else str(j.status) == status)
+        ]
+
+    # Get total before pagination
+    total = len(filtered_jobs)
+
+    # Apply pagination
+    jobs = filtered_jobs[offset : offset + limit]
+
     return JobListResponse(
         jobs=[_job_to_response(job) for job in jobs],
-        total=len(jobs),
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

@@ -28,23 +28,29 @@ Routilux uses an **event queue architecture** (v0.9.0+) with these key concepts:
 routilux/
 ├── routilux/              # Main package
 │   ├── routine.py         # Routine base class
-│   ├── flow/              # Flow management subsystem
+│   ├── flow/              # Flow management subsystem (refactored in v0.9.0)
 │   │   ├── flow.py        # Main Flow class
 │   │   ├── execution.py   # Sequential/concurrent execution
 │   │   ├── event_loop.py  # Event loop and task queue
 │   │   ├── state_management.py  # Pause/resume/cancel
-│   │   └── task.py        # TaskPriority, SlotActivationTask
+│   │   ├── task.py        # TaskPriority, SlotActivationTask
+│   │   ├── builder.py     # FlowBuilder for fluent API
+│   │   ├── dependency.py  # Dependency graph building
+│   │   ├── error_handling.py  # Error handling logic
+│   │   ├── validation.py  # Flow validation
+│   │   └── serialization.py  # Serialization helpers
 │   ├── event.py           # Event (output) mechanism
 │   ├── slot.py            # Slot (input) mechanism
 │   ├── connection.py      # Connection management
 │   ├── error_handler.py   # Error handling strategies
 │   ├── job_state.py       # Execution state tracking
 │   ├── execution_tracker.py # Performance metrics
+│   ├── analysis/          # Workflow analysis tools
 │   ├── api/               # FastAPI server (monitoring/debugging)
 │   ├── dsl/               # YAML/JSON DSL loader
 │   ├── monitoring/        # Debug/breakpoint system
 │   └── testing/           # Testing utilities
-├── tests/                 # Core test suite
+├── tests/                 # Core test suite (45+ test files)
 ├── examples/              # Usage examples (12 demos)
 ├── docs/                  # Sphinx documentation
 └── pyproject.toml         # Project configuration
@@ -74,10 +80,14 @@ make test-integration      # Run integration tests (requires external services)
 
 # Direct pytest usage
 pytest tests/              # Run all tests
+pytest tests/test_routine.py  # Run specific test file
+pytest tests/ -v -m integration  # Run integration tests only
+pytest tests/ -k "test_concurrent"  # Run tests matching pattern
 ```
 
 **Test markers**: `unit`, `integration`, `slow`, `persistence`, `resume`
 - Integration tests are excluded by default
+- Tests use pytest framework - see `tests/README.md` for details
 
 ### Code Quality
 
@@ -133,6 +143,36 @@ self.counter += 1  # Breaks concurrent execution!
 ```
 
 **Why?** The same routine instance can be used by multiple concurrent executions. Instance variables would cause data corruption between executions. All execution state must be stored in JobState.
+
+### Routine Configuration Pattern
+
+Routines should use the `_config` dictionary for configuration (not constructor parameters):
+
+```python
+class MyProcessor(Routine):
+    def __init__(self):
+        super().__init__()
+        # Set configuration (persists across serialization)
+        self.set_config(
+            name="my_processor",
+            timeout=30,
+            max_retries=3
+        )
+
+    def process(self, **kwargs):
+        # Read configuration during execution
+        timeout = self.get_config("timeout", default=10)
+        max_retries = self.get_config("max_retries", default=1)
+
+        # Store execution state in JobState
+        ctx = self.get_execution_context()
+        ctx.job_state.update_routine_state(ctx.routine_id, {
+            "processed": True,
+            "timeout_used": timeout
+        })
+```
+
+**Why?** Routines must be serializable. Constructor parameters break serialization. All configuration should be stored in `_config` which is automatically included in serialization.
 
 ### Non-Blocking emit()
 
@@ -234,6 +274,25 @@ flow = load_flow_from_spec(spec)
 #     to: validator.input
 ```
 
+### FlowBuilder Pattern
+
+For complex workflows, use FlowBuilder for a fluent API:
+
+```python
+from routilux.flow import FlowBuilder
+
+builder = FlowBuilder(flow_id="my_workflow")
+
+# Add routines with chaining
+builder.add_routine("processor", DataProcessor()) \
+       .add_routine("validator", DataValidator()) \
+       .connect("processor", "output", "validator", "input")
+
+# Build and execute
+flow = builder.build()
+job_state = flow.execute("processor", entry_params={"data": "test"})
+```
+
 ### Execution Strategies
 
 ```python
@@ -250,7 +309,14 @@ flow.set_execution_strategy("concurrent", max_workers=4)
 
 ## API Server (Monitoring & Debugging)
 
-FastAPI-based REST API + WebSocket server in `/home/percy/works/mygithub/routilux/routilux/api/`:
+FastAPI-based REST API + WebSocket server in `routilux/api/`:
+
+**Starting the server**:
+```bash
+python -m routilux.api.main
+# Or with custom host/port:
+uvicorn routilux.api.main:app --host 0.0.0.0 --port 8000
+```
 
 **REST Endpoints**:
 - `/api/flows` - Flow CRUD operations
@@ -262,6 +328,64 @@ FastAPI-based REST API + WebSocket server in `/home/percy/works/mygithub/routilu
 **WebSockets**:
 - `/api/ws/jobs/{job_id}/monitor` - Real-time monitoring
 - `/api/ws/jobs/{job_id}/debug` - Debug events
+
+**Core monitoring system** (in `routilux/monitoring/`):
+- `monitor_collector.py` - Event/data collection from running flows
+- `breakpoint_manager.py` - Breakpoint condition evaluation
+- `debug_session.py` - Interactive debugging state management
+- `hooks.py` - Execution hooks for pre/post slot processing
+- `event_manager.py` - Event streaming and management
+- `websocket_manager.py` - WebSocket connection management
+
+**See `examples/run_debugger_server.py` for a complete debugging setup.**
+
+## Analysis & Testing Tools
+
+### Workflow Analysis
+
+Routilux includes built-in analysis tools for understanding workflow structure:
+
+```python
+from routilux import analyze_workflow, WorkflowAnalyzer, WorkflowD2Formatter
+
+# Analyze a flow
+analyzer = WorkflowAnalyzer(flow)
+analysis = analyzer.analyze()
+
+# Generate D2 diagram (https://d2lang.com/)
+formatter = WorkflowD2Formatter()
+d2_output = formatter.format(analysis)
+print(d2_output)  # Copy to https://play.d2lang.com/
+
+# Or use the convenience function
+analysis_result = analyze_workflow(flow)
+```
+
+**Analysis components** (in `routilux/analysis/`):
+- `WorkflowAnalyzer` - Analyzes flow structure, dependencies, and patterns
+- `WorkflowD2Formatter` - Exports to D2 diagram format
+- `RoutineAnalyzer` - Analyzes individual routine structure
+- `RoutineMarkdownFormatter` - Documents routines as markdown
+
+### Testing Utilities
+
+The `routilux.testing.RoutineTester` class provides utilities for testing routines in isolation:
+
+```python
+from routilux.testing import RoutineTester
+
+# Create tester for a routine
+tester = RoutineTester(MyRoutine())
+
+# Test slot activation
+result = tester.activate_slot("input", data="test")
+assert result["status"] == "success"
+
+# Verify event emissions
+events = tester.get_emitted_events()
+assert len(events) == 1
+assert events[0].name == "output"
+```
 
 ## Common Pitfalls
 
@@ -282,6 +406,11 @@ FastAPI-based REST API + WebSocket server in `/home/percy/works/mygithub/routilu
 ### Optional Dependencies
 - **api** extra: FastAPI, uvicorn, websockets, pydantic, httpx
 - **dev** extra: pytest, pytest-cov, ruff, mypy, sphinx
+- **docs** extra: Sphinx, sphinx-rtd-theme, furo, sphinx-autodoc-typehints
+
+### Python Version Support
+- **Supported**: Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14
+- **Tested on**: All versions via CI/CD
 
 ## Related Projects
 
@@ -298,3 +427,19 @@ All part of the Agentsmith open-source ecosystem.
 - Examples: `/home/percy/works/mygithub/routilux/examples/`
 - API server: `/home/percy/works/mygithub/routilux/routilux/api/`
 - Documentation: `/home/percy/works/mygithub/routilux/docs/`
+- Playground: `/home/percy/works/mygithub/routilux/playground/` (experimental features)
+
+## Examples Directory
+
+The `examples/` directory contains 12+ demos covering:
+- `basic_example.py` - Simple workflow
+- `data_processing.py` - Multi-stage pipeline
+- `concurrent_flow_demo.py` - Parallel execution
+- `error_handling_example.py` - Error strategies
+- `state_management_example.py` - State tracking
+- `llm_agent_complex_demo.py` - Complex agent orchestration
+- `aggregator_demo.py` - Fan-in/fan-out patterns
+- `debugger_test_app.py` - Debugging system usage
+- `run_debugger_server.py` - Start monitoring server
+
+Run examples with: `python examples/<name>.py`

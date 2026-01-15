@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from routilux.api.routes import breakpoints, debug, flows, jobs, monitor, websocket
 
@@ -38,9 +39,6 @@ async def register_debugger_flows():
     if examples_dir not in sys.path:
         sys.path.insert(0, examples_dir)
 
-    from routilux.monitoring.registry import MonitoringRegistry
-    from routilux.monitoring.storage import flow_store
-
     # Import flow creators
     from debugger_test_app import (
         create_branching_flow,
@@ -48,6 +46,9 @@ async def register_debugger_flows():
         create_error_flow,
         create_linear_flow,
     )
+
+    from routilux.monitoring.registry import MonitoringRegistry
+    from routilux.monitoring.storage import flow_store
 
     # Enable monitoring
     MonitoringRegistry.enable()
@@ -78,13 +79,23 @@ app = FastAPI(
 )
 
 # CORS middleware for frontend access
+allowed_origins = os.getenv("ROUTILUX_CORS_ORIGINS", "*")
+
+if allowed_origins == "*":
+    allow_origins_list = ["*"]
+else:
+    allow_origins_list = [origin.strip() for origin in allowed_origins.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
+    allow_origins=allow_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# GZip middleware for response compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Include routers
 app.include_router(flows.router, prefix="/api", tags=["flows"])

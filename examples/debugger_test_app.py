@@ -16,6 +16,7 @@ from routilux.monitoring.registry import MonitoringRegistry
 
 # ===== Routines =====
 
+
 class DataSource(Routine):
     """Generates sample data"""
 
@@ -163,6 +164,7 @@ class SlowProcessor(Routine):
 
 # ===== Flows =====
 
+
 def create_linear_flow():
     """Simple linear flow: Source -> Validator -> Transformer -> Sink"""
     flow = Flow(flow_id="linear_flow")
@@ -279,6 +281,7 @@ def create_error_flow():
 
 # ===== Main =====
 
+
 def main():
     """Create and register all test flows"""
     print("=" * 60)
@@ -349,6 +352,7 @@ def main():
 
     # Start API server
     import uvicorn
+
     uvicorn.run(
         "routilux.api.main:app",
         host="0.0.0.0",

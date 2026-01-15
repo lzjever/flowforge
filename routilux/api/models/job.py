@@ -30,7 +30,9 @@ class JobResponse(BaseModel):
 
 
 class JobListResponse(BaseModel):
-    """Response model for job list."""
+    """Response model for job list with pagination support."""
 
     jobs: List[JobResponse]
     total: int
+    limit: int = 100
+    offset: int = 0

@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from routilux.api.models.debug import ExpressionEvalRequest, ExpressionEvalResponse
+from routilux.api.security import SecurityError, TimeoutError, safe_evaluate
 from routilux.monitoring.registry import MonitoringRegistry
 from routilux.monitoring.storage import job_store
 
@@ -217,3 +219,88 @@ async def get_call_stack(job_id: str):
             for frame in call_stack
         ],
     }
+
+
+@router.post("/jobs/{job_id}/debug/evaluate", response_model=ExpressionEvalResponse)
+async def evaluate_expression(job_id: str, request: ExpressionEvalRequest):
+    """Evaluate an expression in the context of a paused job.
+
+    Supports Python expressions with access to local and global variables
+    from the specified routine and stack frame.
+
+    **Security**: Expression evaluation is sandboxed and only allows safe operations.
+
+    Args:
+        job_id: Job identifier.
+        request: Evaluation request with expression and context.
+
+    Returns:
+        ExpressionEvalResponse: Evaluation result or error.
+
+    Raises:
+        404: If job or debug session not found.
+        400: If job is not paused.
+        400: If expression is unsafe or times out.
+    """
+    import os
+
+    # Check if expression evaluation is enabled
+    if os.getenv("ROUTILUX_EXPRESSION_EVAL_ENABLED", "false").lower() != "true":
+        raise HTTPException(
+            status_code=403,
+            detail="Expression evaluation is disabled. Set ROUTILUX_EXPRESSION_EVAL_ENABLED=true to enable.",
+        )
+
+    # Verify job exists
+    job_state = job_store.get(job_id)
+    if not job_state:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    # Get debug session
+    MonitoringRegistry.enable()
+    registry = MonitoringRegistry.get_instance()
+    debug_store = registry.debug_session_store
+
+    if not debug_store:
+        raise HTTPException(status_code=500, detail="Debug session store not available")
+
+    session = debug_store.get(job_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="No debug session for job '{job_id}'")
+
+    # Check if job is paused
+    if session.status != "paused":
+        raise HTTPException(status_code=400, detail="Job must be paused to evaluate expressions")
+
+    # Get variables from specified routine
+    routine_id = request.routine_id
+    if not routine_id and session.paused_at:
+        routine_id = session.paused_at.routine_id
+
+    if not routine_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No routine context available. Specify routine_id or ensure job is paused.",
+        )
+
+    variables = session.get_variables(routine_id)
+
+    # Get timeout from config
+    timeout = float(os.getenv("ROUTILUX_EXPRESSION_EVAL_TIMEOUT", "5.0"))
+
+    # Evaluate expression
+    try:
+        result = safe_evaluate(expression=request.expression, variables=variables, timeout=timeout)
+        return ExpressionEvalResponse(result=result["value"], type=result["type"], error=None)
+
+    except SecurityError as e:
+        return ExpressionEvalResponse(result=None, type=None, error=f"Security error: {str(e)}")
+
+    except TimeoutError as e:
+        return ExpressionEvalResponse(result=None, type=None, error=f"Timeout: {str(e)}")
+
+    except ValueError as e:
+        return ExpressionEvalResponse(result=None, type=None, error=f"Syntax error: {str(e)}")
+
+    except Exception as e:
+        return ExpressionEvalResponse(result=None, type=None, error=f"Evaluation error: {str(e)}")

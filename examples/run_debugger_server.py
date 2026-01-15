@@ -43,49 +43,65 @@ def register_flows():
     print("\n[1/4] Creating linear flow...")
     linear_flow, linear_entry = create_linear_flow()
     flow_store.add(linear_flow)
-    flows_info.append({
-        "id": linear_flow.flow_id,
-        "routines": len(linear_flow.routines),
-        "connections": len(linear_flow.connections),
-        "entry": linear_entry,
-    })
-    print(f"     ✓ {linear_flow.flow_id}: {flows_info[0]['routines']} routines, {flows_info[0]['connections']} connections")
+    flows_info.append(
+        {
+            "id": linear_flow.flow_id,
+            "routines": len(linear_flow.routines),
+            "connections": len(linear_flow.connections),
+            "entry": linear_entry,
+        }
+    )
+    print(
+        f"     ✓ {linear_flow.flow_id}: {flows_info[0]['routines']} routines, {flows_info[0]['connections']} connections"
+    )
 
     # Branching flow
     print("\n[2/4] Creating branching flow...")
     branch_flow, branch_entry = create_branching_flow()
     flow_store.add(branch_flow)
-    flows_info.append({
-        "id": branch_flow.flow_id,
-        "routines": len(branch_flow.routines),
-        "connections": len(branch_flow.connections),
-        "entry": branch_entry,
-    })
-    print(f"     ✓ {branch_flow.flow_id}: {flows_info[1]['routines']} routines, {flows_info[1]['connections']} connections")
+    flows_info.append(
+        {
+            "id": branch_flow.flow_id,
+            "routines": len(branch_flow.routines),
+            "connections": len(branch_flow.connections),
+            "entry": branch_entry,
+        }
+    )
+    print(
+        f"     ✓ {branch_flow.flow_id}: {flows_info[1]['routines']} routines, {flows_info[1]['connections']} connections"
+    )
 
     # Complex flow
     print("\n[3/4] Creating complex flow...")
     complex_flow, complex_entry = create_complex_flow()
     flow_store.add(complex_flow)
-    flows_info.append({
-        "id": complex_flow.flow_id,
-        "routines": len(complex_flow.routines),
-        "connections": len(complex_flow.connections),
-        "entry": complex_entry,
-    })
-    print(f"     ✓ {complex_flow.flow_id}: {flows_info[2]['routines']} routines, {flows_info[2]['connections']} connections")
+    flows_info.append(
+        {
+            "id": complex_flow.flow_id,
+            "routines": len(complex_flow.routines),
+            "connections": len(complex_flow.connections),
+            "entry": complex_entry,
+        }
+    )
+    print(
+        f"     ✓ {complex_flow.flow_id}: {flows_info[2]['routines']} routines, {flows_info[2]['connections']} connections"
+    )
 
     # Error flow
     print("\n[4/4] Creating error flow...")
     error_flow, error_entry = create_error_flow()
     flow_store.add(error_flow)
-    flows_info.append({
-        "id": error_flow.flow_id,
-        "routines": len(error_flow.routines),
-        "connections": len(error_flow.connections),
-        "entry": error_entry,
-    })
-    print(f"     ✓ {error_flow.flow_id}: {flows_info[3]['routines']} routines, {flows_info[3]['connections']} connections")
+    flows_info.append(
+        {
+            "id": error_flow.flow_id,
+            "routines": len(error_flow.routines),
+            "connections": len(error_flow.connections),
+            "entry": error_entry,
+        }
+    )
+    print(
+        f"     ✓ {error_flow.flow_id}: {flows_info[3]['routines']} routines, {flows_info[3]['connections']} connections"
+    )
 
     print("\n" + "=" * 60)
     print(f"✓ Successfully registered {len(flows_info)} flows")
@@ -138,6 +154,7 @@ def main():
 
         # Start API server
         import uvicorn
+
         uvicorn.run(
             "routilux.api.main:app",
             host="0.0.0.0",
@@ -151,6 +168,7 @@ def main():
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

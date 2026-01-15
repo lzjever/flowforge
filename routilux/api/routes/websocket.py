@@ -3,11 +3,12 @@ WebSocket routes for real-time monitoring and debug events.
 
 Uses event-driven push notifications via JobEventManager instead of polling.
 Includes comprehensive error handling, timeouts, and retry logic.
+Supports event filtering via subscription management.
 """
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -55,6 +56,82 @@ async def safe_send_json(
 
     logger.error(f"Failed to send {description} after {MAX_SEND_RETRIES} attempts")
     return False
+
+
+async def handle_client_message(
+    websocket: WebSocket, message: Dict, subscriptions: Dict[str, bool]
+) -> None:
+    """Handle client messages for subscription management.
+
+    Args:
+        websocket: WebSocket connection.
+        message: Message from client.
+        subscriptions: Dictionary tracking current subscriptions.
+    """
+    action = message.get("action")
+
+    if action == "subscribe":
+        # Subscribe to specific event types
+        events = message.get("events", [])
+        event_types = subscriptions.setdefault("event_types", set())
+
+        # Send confirmation
+        await safe_send_json(
+            websocket,
+            {
+                "type": "subscription:confirmed",
+                "action": "subscribe",
+                "events": events,
+            },
+            "subscription confirmation",
+        )
+
+        logger.debug(f"Client subscribed to events: {events}")
+
+    elif action == "unsubscribe":
+        # Unsubscribe from specific event types
+        events = message.get("events", [])
+        event_types = subscriptions.get("event_types", set())
+
+        for event in events:
+            event_types.discard(event)
+
+        # Send confirmation
+        await safe_send_json(
+            websocket,
+            {
+                "type": "subscription:confirmed",
+                "action": "unsubscribe",
+                "events": events,
+            },
+            "unsubscribe confirmation",
+        )
+
+        logger.debug(f"Client unsubscribed from events: {events}")
+
+    elif action == "subscribe_all":
+        # Subscribe to all events
+        subscriptions["event_types"] = set()
+        subscriptions["all"] = True
+
+        # Send confirmation
+        await safe_send_json(
+            websocket,
+            {
+                "type": "subscription:confirmed",
+                "action": "subscribe_all",
+            },
+            "subscribe all confirmation",
+        )
+
+        logger.debug("Client subscribed to all events")
+
+    elif action == "pong":
+        # Handle pong response (already handled by heartbeat)
+        pass
+
+    else:
+        logger.warning(f"Unknown client message action: {action}")
 
 
 @router.websocket("/ws/jobs/{job_id}/monitor")
