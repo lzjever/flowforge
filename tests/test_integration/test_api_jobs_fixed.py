@@ -48,18 +48,6 @@ def test_flow():
     flow_store.remove(flow.flow_id)
     FlowRegistry.get_instance().clear()
 
-    # Register in FlowRegistry
-    FlowRegistry.get_instance().register_by_name("test_flow", flow)
-
-    # Also add to flow_store for API
-    flow_store.add(flow)
-
-    yield flow
-
-    # Cleanup
-    flow_store.remove(flow.flow_id)
-    FlowRegistry.get_instance().clear()
-
 
 class TestAPIJobExecution:
     """Test API job execution with Runtime."""

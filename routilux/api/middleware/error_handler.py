@@ -18,16 +18,44 @@ logger = logging.getLogger(__name__)
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors."""
+    # Ensure all error details are JSON serializable
+    errors = exc.errors()
+    serializable_errors = []
+    for error in errors:
+        serializable_error = {}
+        for key, value in error.items():
+            # Convert non-serializable objects to strings
+            if isinstance(value, (Exception, type)):
+                serializable_error[key] = str(value)
+            elif isinstance(value, (dict, list)):
+                # Recursively convert nested structures
+                serializable_error[key] = _make_serializable(value)
+            else:
+                serializable_error[key] = value
+        serializable_errors.append(serializable_error)
+    
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=ErrorResponse(
             error="validation_error",
             error_code="VALIDATION_ERROR",
             message="Request validation failed",
-            details={"errors": exc.errors()},
+            details={"errors": serializable_errors},
             timestamp=int(datetime.now().timestamp()),
         ).model_dump(),
     )
+
+
+def _make_serializable(obj):
+    """Recursively convert non-serializable objects to strings."""
+    if isinstance(obj, (Exception, type)):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {key: _make_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [_make_serializable(item) for item in obj]
+    else:
+        return obj
 
 
 async def http_exception_handler(request: Request, exc):
