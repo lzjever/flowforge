@@ -167,10 +167,13 @@ def validate_flow(flow: "Flow") -> List[str]:
             )
         elif source_routine_id not in flow.routines:
             issues.append(f"Connection references source routine not in flow: {source_routine_id}")
-        elif connection.source_event.name not in flow.routines[source_routine_id]._events:
-            issues.append(
-                f"Connection references unknown event: {source_routine_id}.{connection.source_event.name}"
-            )
+        else:
+            # CRITICAL fix: Use .get() with proper error handling to prevent KeyError
+            source_routine = flow.routines.get(source_routine_id)
+            if source_routine is not None and connection.source_event.name not in source_routine._events:
+                issues.append(
+                    f"Connection references unknown event: {source_routine_id}.{connection.source_event.name}"
+                )
 
         if target_routine_id is None:
             issues.append(
@@ -178,9 +181,12 @@ def validate_flow(flow: "Flow") -> List[str]:
             )
         elif target_routine_id not in flow.routines:
             issues.append(f"Connection references target routine not in flow: {target_routine_id}")
-        elif connection.target_slot.name not in flow.routines[target_routine_id]._slots:
-            issues.append(
-                f"Connection references unknown slot: {target_routine_id}.{connection.target_slot.name}"
-            )
+        else:
+            # CRITICAL fix: Use .get() with proper error handling to prevent KeyError
+            target_routine = flow.routines.get(target_routine_id)
+            if target_routine is not None and connection.target_slot.name not in target_routine._slots:
+                issues.append(
+                    f"Connection references unknown slot: {target_routine_id}.{connection.target_slot.name}"
+                )
 
     return issues

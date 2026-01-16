@@ -2,8 +2,6 @@
 Event test cases for new Runtime-based design.
 """
 
-from datetime import datetime
-
 from routilux import Flow, Routine
 from routilux.activation_policies import immediate_policy
 from routilux.job_state import JobState
@@ -94,8 +92,8 @@ class TestEventEmission:
         routine2 = Routine()
         routine3 = Routine()
 
-        slot1 = routine2.define_slot("input1")
-        slot2 = routine3.define_slot("input2")
+        routine2.define_slot("input1")
+        routine3.define_slot("input2")
 
         routine2.set_logic(logic1)
         routine2.set_activation_policy(immediate_policy())
@@ -157,7 +155,9 @@ class TestEventEmission:
         # Unspecified parameters should also be passable
         runtime = Runtime()
         job_state = JobState(flow_id="test")
-        event.emit(runtime=runtime, job_state=job_state, result="ok", status="success", extra="data")
+        event.emit(
+            runtime=runtime, job_state=job_state, result="ok", status="success", extra="data"
+        )
 
 
 class TestEventDataFlow:

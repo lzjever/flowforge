@@ -12,7 +12,9 @@ from routilux.api.middleware.auth import RequireAuth
 from routilux.api.models.job import JobListResponse, JobResponse, JobStartRequest
 from routilux.api.validators import validate_flow_exists, validate_routine_exists
 from routilux.job_state import JobState
+from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.monitoring.storage import flow_store, job_store
+from routilux.runtime import Runtime
 from routilux.status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ def _job_to_response(job_state: JobState) -> JobResponse:
         # Fall back to shared_data
         if not error:
             error = job_state.shared_data.get("error")
-    
+
     return JobResponse(
         job_id=job_state.job_id,
         flow_id=job_state.flow_id,
@@ -52,7 +54,7 @@ def _job_to_response(job_state: JobState) -> JobResponse:
 @router.post("/jobs", response_model=JobResponse, status_code=201, dependencies=[RequireAuth])
 async def start_job(request: JobStartRequest):
     """Start a new job from a flow.
-    
+
     This endpoint immediately returns a job_id and executes the flow asynchronously
     in the background. Use the job status endpoint to check execution progress.
     """
@@ -63,26 +65,46 @@ async def start_job(request: JobStartRequest):
 
     # Create job state immediately (before execution)
     job_state = JobState(flow.flow_id)
-    
+
     # Store job immediately so it can be queried
     job_store.add(job_state)
-    
-    # Start flow execution asynchronously using the new start() method
+
+    # Ensure flow is registered in FlowRegistry (required for Runtime)
+    flow_registry = FlowRegistry.get_instance()
+    if not flow_registry.get(flow.flow_id) and not flow_registry.get_by_name(flow.flow_id):
+        # Register by both ID and name for flexibility
+        flow_registry.register(flow.flow_id, flow)
+        if hasattr(flow, "name") and flow.name:
+            flow_registry.register_by_name(flow.name, flow)
+
+    # Get or create Runtime instance
+    # For API, we use a module-level Runtime instance for efficiency
+    # This allows sharing thread pool across requests
+    if not hasattr(start_job, "_runtime"):
+        start_job._runtime = Runtime(thread_pool_size=10)
+
+    runtime = start_job._runtime
+
+    # Start flow execution asynchronously using Runtime.exec()
     # This returns immediately without blocking
     try:
-        started_job_state = flow.start(
-            entry_routine_id=request.entry_routine_id,
-            entry_params=request.entry_params,
-            timeout=request.timeout,
-            job_state=job_state,  # Use our pre-created job_state
+        # Store entry_params in job_state for later use by entry routine
+        if request.entry_params:
+            job_state.shared_data["entry_params"] = request.entry_params
+            job_state.shared_data["entry_routine_id"] = request.entry_routine_id
+
+        # Execute via Runtime
+        started_job_state = runtime.exec(
+            flow_name=flow.flow_id,  # Use flow_id as flow_name
+            job_state=job_state,
         )
-        
+
         # Update stored job with the started state
         job_store.add(started_job_state)
-        
+
         return _job_to_response(started_job_state)
     except Exception as e:
-        # If start() fails, mark job as failed
+        # If exec() fails, mark job as failed
         job_state.status = ExecutionStatus.FAILED
         job_state.shared_data["error"] = str(e)
         job_store.add(job_state)
@@ -240,13 +262,13 @@ async def cleanup_jobs(
     status: Optional[List[str]] = Query(None, description="Status filter"),
 ):
     """Clean up old jobs.
-    
+
     Removes jobs older than specified age, optionally filtered by status.
-    
+
     Args:
         max_age_hours: Maximum age in hours (1-720, default: 24).
         status: Optional list of statuses to clean up.
-        
+
     Returns:
         Number of jobs removed.
     """
@@ -255,7 +277,7 @@ async def cleanup_jobs(
         max_age_seconds=max_age_seconds,
         status_filter=status,
     )
-    
+
     return {
         "removed_count": removed_count,
         "max_age_hours": max_age_hours,

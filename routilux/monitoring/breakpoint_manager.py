@@ -20,10 +20,14 @@ class Breakpoint:
     Attributes:
         breakpoint_id: Unique identifier for this breakpoint.
         job_id: Job ID this breakpoint applies to.
-        type: Type of breakpoint (routine, slot, or event).
-        routine_id: Routine ID (required for all types).
+        type: Type of breakpoint (routine, slot, event, or connection).
+        routine_id: Routine ID (required for routine, slot, event types).
         slot_name: Slot name (required for slot type).
         event_name: Event name (required for event type).
+        source_routine_id: Source routine ID (required for connection type).
+        source_event_name: Source event name (required for connection type).
+        target_routine_id: Target routine ID (required for connection type).
+        target_slot_name: Target slot name (required for connection type).
         condition: Optional Python expression to evaluate (e.g., "data.get('value') > 10").
         enabled: Whether this breakpoint is active.
         hit_count: Number of times this breakpoint has been hit.
@@ -31,10 +35,15 @@ class Breakpoint:
 
     breakpoint_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     job_id: str = ""
-    type: Literal["routine", "slot", "event"] = "routine"
+    type: Literal["routine", "slot", "event", "connection"] = "routine"
     routine_id: Optional[str] = None
     slot_name: Optional[str] = None
     event_name: Optional[str] = None
+    # New fields for connection breakpoints
+    source_routine_id: Optional[str] = None
+    source_event_name: Optional[str] = None
+    target_routine_id: Optional[str] = None
+    target_slot_name: Optional[str] = None
     condition: Optional[str] = None
     enabled: bool = True
     hit_count: int = 0
@@ -45,8 +54,21 @@ class Breakpoint:
             raise ValueError("slot_name is required for slot breakpoints")
         if self.type == "event" and not self.event_name:
             raise ValueError("event_name is required for event breakpoints")
-        if not self.routine_id:
-            raise ValueError("routine_id is required for all breakpoint types")
+        if self.type == "connection":
+            if not all(
+                [
+                    self.source_routine_id,
+                    self.source_event_name,
+                    self.target_routine_id,
+                    self.target_slot_name,
+                ]
+            ):
+                raise ValueError(
+                    "All connection fields (source_routine_id, source_event_name, "
+                    "target_routine_id, target_slot_name) are required for connection breakpoints"
+                )
+        if self.type != "connection" and not self.routine_id:
+            raise ValueError("routine_id is required for routine, slot, and event breakpoint types")
 
 
 class BreakpointManager:
@@ -118,9 +140,13 @@ class BreakpointManager:
         self,
         job_id: str,
         routine_id: str,
-        breakpoint_type: Literal["routine", "slot", "event"],
+        breakpoint_type: Literal["routine", "slot", "event", "connection"],
         slot_name: Optional[str] = None,
         event_name: Optional[str] = None,
+        source_routine_id: Optional[str] = None,
+        source_event_name: Optional[str] = None,
+        target_routine_id: Optional[str] = None,
+        target_slot_name: Optional[str] = None,
         context: Optional["ExecutionContext"] = None,
         variables: Optional[Dict] = None,
     ) -> Optional[Breakpoint]:
@@ -128,10 +154,14 @@ class BreakpointManager:
 
         Args:
             job_id: Job ID being executed.
-            routine_id: Routine ID being executed.
+            routine_id: Routine ID being executed (used for routine/slot/event types).
             breakpoint_type: Type of breakpoint to check.
             slot_name: Slot name (for slot breakpoints).
             event_name: Event name (for event breakpoints).
+            source_routine_id: Source routine ID (for connection breakpoints).
+            source_event_name: Source event name (for connection breakpoints).
+            target_routine_id: Target routine ID (for connection breakpoints).
+            target_slot_name: Target slot name (for connection breakpoints).
             context: Execution context (for condition evaluation).
             variables: Local variables (for condition evaluation).
 
@@ -148,15 +178,26 @@ class BreakpointManager:
                 if breakpoint.type != breakpoint_type:
                     continue
 
-                if breakpoint.routine_id != routine_id:
-                    continue
-
                 # Check type-specific matching
-                if breakpoint_type == "slot" and breakpoint.slot_name != slot_name:
-                    continue
+                if breakpoint_type == "connection":
+                    # Connection breakpoints match on source + target
+                    if (
+                        breakpoint.source_routine_id != source_routine_id
+                        or breakpoint.source_event_name != source_event_name
+                        or breakpoint.target_routine_id != target_routine_id
+                        or breakpoint.target_slot_name != target_slot_name
+                    ):
+                        continue
+                else:
+                    # Routine, slot, event breakpoints match on routine_id
+                    if breakpoint.routine_id != routine_id:
+                        continue
 
-                if breakpoint_type == "event" and breakpoint.event_name != event_name:
-                    continue
+                    if breakpoint_type == "slot" and breakpoint.slot_name != slot_name:
+                        continue
+
+                    if breakpoint_type == "event" and breakpoint.event_name != event_name:
+                        continue
 
                 # Evaluate condition if present
                 if breakpoint.condition:

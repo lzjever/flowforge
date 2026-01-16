@@ -229,10 +229,9 @@ class DataSink(Routine):
         if ctx:
             routine_state = ctx.job_state.get_routine_state(ctx.routine_id) or {}
             received_count = routine_state.get("received_count", 0) + 1
-            ctx.job_state.update_routine_state(ctx.routine_id, {
-                "received_count": received_count,
-                "final_result": kwargs
-            })
+            ctx.job_state.update_routine_state(
+                ctx.routine_id, {"received_count": received_count, "final_result": kwargs}
+            )
             print(f"[{name}] Receiving data (#{received_count})")
         else:
             print(f"[{name}] Receiving data")
@@ -404,16 +403,19 @@ class LongRunningProcessor(Routine):
             progress = min(100, (elapsed / duration) * 100)
 
             # Emit progress event
-            self.emit("progress", progress=progress, elapsed=elapsed,
-                     message=f"Processing iteration {iteration}...")
+            self.emit(
+                "progress",
+                progress=progress,
+                elapsed=elapsed,
+                message=f"Processing iteration {iteration}...",
+            )
 
             # Update state in JobState
             if ctx:
-                ctx.job_state.update_routine_state(ctx.routine_id, {
-                    "iteration": iteration,
-                    "elapsed": elapsed,
-                    "progress": progress
-                })
+                ctx.job_state.update_routine_state(
+                    ctx.routine_id,
+                    {"iteration": iteration, "elapsed": elapsed, "progress": progress},
+                )
 
             print(f"[{name}] Progress: {progress:.1f}% ({elapsed:.1f}s / {duration}s)")
             time.sleep(chunk_duration)
@@ -432,8 +434,12 @@ class LoopController(Routine):
         super().__init__()
         self.set_config(name=name, max_iterations=max_iterations)
         self.input_slot = self.define_slot("input", handler=self.control_loop)
-        self.continue_loop_event = self.define_event("continue_loop", ["iteration", "data", "reason"])
-        self.exit_loop_event = self.define_event("exit_loop", ["final_data", "iterations", "reason"])
+        self.continue_loop_event = self.define_event(
+            "continue_loop", ["iteration", "data", "reason"]
+        )
+        self.exit_loop_event = self.define_event(
+            "exit_loop", ["final_data", "iterations", "reason"]
+        )
 
     def control_loop(self, data=None, iteration=None, **kwargs):
         ctx = self.get_execution_context()
@@ -466,10 +472,9 @@ class LoopController(Routine):
         else:
             reason = "max_iterations_reached" if not should_continue else "validation_passed"
             if ctx:
-                ctx.job_state.update_routine_state(ctx.routine_id, {
-                    "iteration": current_iteration,
-                    "completed": True
-                })
+                ctx.job_state.update_routine_state(
+                    ctx.routine_id, {"iteration": current_iteration, "completed": True}
+                )
 
             print(f"[{name}] → Exiting loop (reason: {reason})")
             self.emit("exit_loop", final_data=data, iterations=current_iteration + 1, reason=reason)
@@ -494,6 +499,7 @@ class LoopProcessor(Routine):
         # Simulate: sometimes processing succeeds, sometimes needs retry
         # Success probability increases with iteration
         import random
+
         success_probability = min(0.9, 0.3 + (iteration * 0.15))
         is_success = random.random() < success_probability
 
@@ -755,12 +761,16 @@ def create_loop_flow():
     flow.connect(proc_id, "output", controller_id, "input")
 
     # Loop: loop_controller.continue_loop -> processor (creates a cycle)
-    flow.connect(controller_id, "continue_loop", proc_id, "input",
-                 param_mapping={"data": "data", "iteration": "iteration"})
+    flow.connect(
+        controller_id,
+        "continue_loop",
+        proc_id,
+        "input",
+        param_mapping={"data": "data", "iteration": "iteration"},
+    )
 
     # Exit: loop_controller.exit_loop -> sink
-    flow.connect(controller_id, "exit_loop", sink_id, "input",
-                 param_mapping={"final_data": "data"})
+    flow.connect(controller_id, "exit_loop", sink_id, "input", param_mapping={"final_data": "data"})
 
     return flow, src_id
 
@@ -826,7 +836,9 @@ def demo_long_running_flow(flow_store, duration=60):
         processor = flow.routines.get("processor")
         if processor:
             processor.set_config(duration=duration)
-        job_id = flow.start(entry_routine_id="source", entry_params={"data": f"Long Running Test ({duration}s)"})
+        job_id = flow.start(
+            entry_routine_id="source", entry_params={"data": f"Long Running Test ({duration}s)"}
+        )
         print(f"\n✓ Started long-running flow job: {job_id} (duration: {duration}s)")
         return job_id
 

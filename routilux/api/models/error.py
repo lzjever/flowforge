@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 class ErrorResponse(BaseModel):
     """Standardized error response format."""
-    
+
     error: str
     error_code: str
     message: str

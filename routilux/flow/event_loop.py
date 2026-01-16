@@ -21,17 +21,25 @@ def start_event_loop(flow: "Flow") -> None:
     Args:
         flow: Flow object.
     """
-    # Check if event loop thread is already running
-    if flow._running and flow._execution_thread is not None and flow._execution_thread.is_alive():
-        return
+    # CRITICAL fix: Check if required attributes exist before accessing them
+    if not hasattr(flow, "_running") or not hasattr(flow, "_execution_thread"):
+        raise AttributeError("Flow is missing required attributes: _running or _execution_thread. Ensure Flow.__init__() has been called properly.")
 
-    # If thread exists but is not alive, reset _running flag
-    if flow._execution_thread is not None and not flow._execution_thread.is_alive():
-        flow._running = False
+    # CRITICAL fix: Use lock to prevent race condition in thread creation
+    with flow._execution_lock:
+        # Check if event loop thread is already running (double-checked locking)
+        if flow._running and flow._execution_thread is not None and flow._execution_thread.is_alive():
+            return
 
-    flow._running = True
-    flow._execution_thread = threading.Thread(target=event_loop, args=(flow,), daemon=True)
-    flow._execution_thread.start()
+        # If thread exists but is not alive, reset _running flag
+        if flow._execution_thread is not None and not flow._execution_thread.is_alive():
+            flow._running = False
+
+        # Only create new thread if not running
+        if not flow._running:
+            flow._running = True
+            flow._execution_thread = threading.Thread(target=event_loop, args=(flow,), daemon=True)
+            flow._execution_thread.start()
 
 
 def event_loop(flow: "Flow") -> None:
@@ -40,9 +48,19 @@ def event_loop(flow: "Flow") -> None:
     Args:
         flow: Flow object.
     """
+    # CRITICAL fix: Validate required attributes exist before loop
+    required_attrs = ["_running", "_paused", "_task_queue", "_execution_lock", "_active_tasks"]
+    for attr in required_attrs:
+        if not hasattr(flow, attr):
+            raise AttributeError(f"Flow is missing required attribute: {attr}. Ensure Flow.__init__() has been called properly.")
+
     while flow._running:
         try:
-            if flow._paused:
+            # HIGH fix: Read _paused flag atomically within lock
+            with flow._execution_lock:
+                is_paused = flow._paused
+
+            if is_paused:
                 time.sleep(0.01)
                 continue
 
@@ -64,29 +82,34 @@ def event_loop(flow: "Flow") -> None:
 
             # Check if executor is still available (not shut down)
             executor = flow._get_executor()
-            if executor is None:
-                # Executor was shut down, stop event loop
-                logging.warning("Executor was shut down, stopping event loop")
-                flow._running = False
-                break
-
+            # HIGH fix: Remove dead code - _get_executor() always returns a valid executor
+            # The None check is unreachable since _get_executor creates executor if None
+            # Instead, check if executor has been shut down
             try:
+                # Try to submit a task to verify executor is still running
                 future = executor.submit(execute_task, task, flow)
             except RuntimeError as e:
-                # Executor was shut down, stop event loop
-                if "cannot schedule new futures after shutdown" in str(e):
-                    logging.warning("Executor was shut down, stopping event loop")
+                # HIGH fix: More robust error handling for executor shutdown
+                if "cannot schedule new futures after shutdown" in str(e) or "shutdown" in str(e).lower():
+                    logging.warning(f"Executor was shut down, stopping event loop: {e}")
                     flow._running = False
                     break
+                # Re-raise unexpected RuntimeError
+                logging.error(f"Unexpected RuntimeError submitting task: {e}")
                 raise
 
             with flow._execution_lock:
                 flow._active_tasks.add(future)
 
+            # CRITICAL fix: Add exception handling to callback to prevent silent failures
             def on_task_done(fut=future):
-                with flow._execution_lock:
-                    flow._active_tasks.discard(fut)
-                flow._task_queue.task_done()
+                try:
+                    with flow._execution_lock:
+                        flow._active_tasks.discard(fut)
+                    flow._task_queue.task_done()
+                except Exception as e:
+                    # Log but don't raise - callback exceptions are ignored by Future
+                    logging.getLogger(__name__).error(f"Error in task done callback: {e}", exc_info=True)
 
             future.add_done_callback(on_task_done)
 
@@ -107,8 +130,13 @@ def execute_task(task: "SlotActivationTask", flow: "Flow") -> None:
         else:
             mapped_data = task.data
 
+        # CRITICAL fix: Add comprehensive None checks for task.slot.routine
+        if task.slot is None:
+            raise ValueError(f"Task slot is None, cannot execute task")
+        if task.slot.routine is None:
+            raise ValueError(f"Task slot {task.slot} has no routine attached")
         # Set routine._current_flow for slot.receive() to find routine_id
-        if task.slot.routine:
+        if hasattr(task.slot.routine, '_current_flow'):
             task.slot.routine._current_flow = flow
 
         task.slot.receive(mapped_data, job_state=task.job_state, flow=flow)
@@ -126,10 +154,16 @@ def enqueue_task(task: "SlotActivationTask", flow: "Flow") -> None:
         task: SlotActivationTask to enqueue.
         flow: Flow object.
     """
-    if flow._paused:
-        flow._pending_tasks.append(task)
-    else:
-        flow._task_queue.put(task)
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_paused") or not hasattr(flow, "_pending_tasks") or not hasattr(flow, "_task_queue"):
+        raise AttributeError("Flow is missing required attributes: _paused, _pending_tasks, or _task_queue. Ensure Flow.__init__() has been called properly.")
+
+    # HIGH fix: Acquire lock to prevent race condition when checking _paused and enqueuing
+    with flow._execution_lock:
+        if flow._paused:
+            flow._pending_tasks.append(task)
+        else:
+            flow._task_queue.put(task)
 
 
 def is_all_tasks_complete(flow: "Flow") -> bool:
@@ -141,6 +175,10 @@ def is_all_tasks_complete(flow: "Flow") -> bool:
     Returns:
         True if queue is empty and no active tasks.
     """
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_task_queue") or not hasattr(flow, "_execution_lock") or not hasattr(flow, "_active_tasks"):
+        raise AttributeError("Flow is missing required attributes: _task_queue, _execution_lock, or _active_tasks. Ensure Flow.__init__() has been called properly.")
+
     if not flow._task_queue.empty():
         return False
 

@@ -9,14 +9,12 @@ Tests include:
 - Multiple slots handling
 """
 
-import pytest
 from datetime import datetime
 
 from routilux import Routine
-from routilux.activation_policies import all_slots_ready_policy, immediate_policy
-from routilux.error_handler import ErrorHandler, ErrorStrategy
-from routilux.job_state import JobState
+from routilux.activation_policies import immediate_policy
 from routilux.flow.flow import Flow
+from routilux.job_state import JobState
 
 
 class TestRoutineActivationPolicyLogic:
@@ -44,8 +42,8 @@ class TestRoutineActivationPolicyLogic:
 
         # Logic is None - Runtime should handle gracefully
         # (Will raise error when trying to call None logic)
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -81,8 +79,8 @@ class TestRoutineActivationPolicyLogic:
         routine.set_logic(my_logic)
         # No policy - should activate immediately
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -123,8 +121,8 @@ class TestRoutineActivationPolicyLogic:
         routine.set_logic(my_logic)
         routine.set_activation_policy(immediate_policy())
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -169,8 +167,8 @@ class TestRoutineActivationPolicyLogic:
         routine.set_logic(my_logic)
         routine.set_activation_policy(my_policy)
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -230,7 +228,7 @@ class TestRoutineJobStateHelpers:
         """Test: get_state returns default when key not found"""
         routine = Routine()
         flow = Flow("test_flow")
-        routine_id = flow.add_routine(routine, "test")
+        flow.add_routine(routine, "test")
         routine._current_flow = flow
 
         job_state = JobState(flow_id=flow.flow_id)
@@ -242,7 +240,7 @@ class TestRoutineJobStateHelpers:
         """Test: set_state sets a single key"""
         routine = Routine()
         flow = Flow("test_flow")
-        routine_id = flow.add_routine(routine, "test")
+        flow.add_routine(routine, "test")
         routine._current_flow = flow
 
         job_state = JobState(flow_id=flow.flow_id)
@@ -257,7 +255,7 @@ class TestRoutineJobStateHelpers:
         """Test: update_state updates multiple keys at once"""
         routine = Routine()
         flow = Flow("test_flow")
-        routine_id = flow.add_routine(routine, "test")
+        flow.add_routine(routine, "test")
         routine._current_flow = flow
 
         job_state = JobState(flow_id=flow.flow_id)
@@ -305,8 +303,8 @@ class TestRoutineErrorHandling:
         routine.set_logic(failing_logic)
         routine.set_activation_policy(immediate_policy())
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -341,8 +339,8 @@ class TestRoutineErrorHandling:
 
         routine.set_activation_policy(failing_policy)
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -377,8 +375,8 @@ class TestRoutineEdgeCases:
         routine.set_logic(my_logic)
         routine.set_activation_policy(immediate_policy())
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -411,8 +409,8 @@ class TestRoutineEdgeCases:
         routine.set_logic(my_logic)
         routine.set_activation_policy(immediate_policy())
 
-        from routilux.runtime import Runtime
         from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.runtime import Runtime
 
         flow = Flow("test_flow")
         flow.add_routine(routine, "test")
@@ -457,6 +455,7 @@ class TestRoutineEdgeCases:
         job_state = JobState(flow_id=flow.flow_id)
 
         from routilux.runtime import Runtime
+
         runtime = Runtime()
 
         retrieved_id = runtime._get_routine_id(routine, job_state)
@@ -472,6 +471,7 @@ class TestRoutineEdgeCases:
         job_state = JobState(flow_id="test")
 
         from routilux.runtime import Runtime
+
         runtime = Runtime()
 
         retrieved_id = runtime._get_routine_id(routine, job_state)

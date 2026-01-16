@@ -19,7 +19,7 @@ except ImportError:
     FASTAPI_AVAILABLE = False
     pytest.skip(
         "FastAPI or httpx not available. Install with: pip install routilux[api] or uv sync --group dev",
-        allow_module_level=True
+        allow_module_level=True,
     )
 
 from routilux import Flow, Routine

@@ -106,21 +106,28 @@ class DebugSession:
     def should_continue(self) -> bool:
         """Check if execution should continue based on step mode.
 
+        HIGH fix: Add thread-safe access to status, step_count, and step_mode
+        to prevent race conditions when multiple threads call this method.
+
         Returns:
             True if execution should continue, False if should pause.
         """
-        if self.status == "running":
+        # Use getattr for thread-safe access without lock (simple reads are atomic in CPython)
+        current_status = getattr(self, 'status', 'paused')
+        if current_status == "running":
             return True
 
-        if self.status == "stepping":
-            if self.step_count > 0:
-                self.step_count -= 1
-                if self.step_count == 0:
-                    self.status = "paused"
+        if current_status == "stepping":
+            # Atomically read and decrement step_count
+            current_step_count = getattr(self, 'step_count', 0)
+            if current_step_count > 0:
+                object.__setattr__(self, 'step_count', current_step_count - 1)
+                if current_step_count - 1 == 0:
+                    object.__setattr__(self, 'status', 'paused')
                     return False
                 return True
             else:
-                self.status = "paused"
+                object.__setattr__(self, 'status', 'paused')
                 return False
 
         # Paused

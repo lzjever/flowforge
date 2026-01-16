@@ -20,6 +20,10 @@ from routilux.event import Event
 from routilux.execution_tracker import ExecutionTracker
 from routilux.flow import Flow
 from routilux.flow.builder import FlowBuilder
+
+# Import job management
+from routilux.job_executor import JobExecutor
+from routilux.job_manager import GlobalJobManager, get_job_manager, reset_job_manager
 from routilux.job_state import ExecutionRecord, JobState
 from routilux.output_handler import (
     CallbackOutputHandler,
@@ -30,10 +34,6 @@ from routilux.output_handler import (
 from routilux.routine import ExecutionContext, Routine
 from routilux.slot import Slot
 from routilux.status import ExecutionStatus, RoutineStatus
-
-# Import job management
-from routilux.job_executor import JobExecutor
-from routilux.job_manager import GlobalJobManager, get_job_manager, reset_job_manager
 
 # Import testing utilities
 from routilux.testing import RoutineTester

@@ -103,11 +103,15 @@ class Connection(Serializable):
 
         return data
 
-    def deserialize(self, data: dict[str, Any]) -> None:
+    def deserialize(
+        self, data: dict[str, Any], strict: bool = False, registry: Any | None = None
+    ) -> None:
         """Deserialize the Connection.
 
         Args:
             data: Serialized data dictionary.
+            strict: Whether to use strict deserialization.
+            registry: Optional ObjectRegistry for deserializing callables.
         """
         # Save reference information for later restoration by Flow
         source_routine_id = data.pop("_source_routine_id", None)
@@ -115,7 +119,7 @@ class Connection(Serializable):
         target_routine_id = data.pop("_target_routine_id", None)
         target_slot_name = data.pop("_target_slot_name", None)
 
-        super().deserialize(data)
+        super().deserialize(data, strict=strict, registry=registry)
 
         # Save reference information to be restored by Flow.deserialize()
         # (Flow has access to routines dictionary to restore references)
@@ -130,11 +134,10 @@ class Connection(Serializable):
 
     def __repr__(self) -> str:
         """Return string representation of the Connection."""
-        # Fix: Handle None values in source_event and target_slot
-        source = f"{self.source_event.name}" if self.source_event else "None"
-        target = f"{self.target_slot.name}" if self.target_slot else "None"
+        # Fix: Handle None values and missing name attribute
+        source = f"{getattr(self.source_event, 'name', 'unknown')}" if self.source_event else "None"
+        target = f"{getattr(self.target_slot, 'name', 'unknown')}" if self.target_slot else "None"
         return f"Connection[{source} -> {target}]"
-
 
     def disconnect(self) -> None:
         """Disconnect the connection.

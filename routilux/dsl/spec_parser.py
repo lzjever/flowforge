@@ -86,11 +86,21 @@ def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
 def _load_class(class_spec: Union[str, Type]) -> Type:
     """Load class from string path or return class object.
 
+    SECURITY WARNING: This function uses importlib.import_module() to dynamically
+    load classes from user-provided string paths. This can execute arbitrary code
+    if the spec comes from an untrusted source. Only use this function with
+    trusted/trusted-validated specifications. Consider implementing a whitelist
+    of allowed modules if loading from untrusted sources.
+
     Args:
         class_spec: Either a class object or a string path like "module.path.ClassName".
 
     Returns:
         Class object.
+
+    Raises:
+        ValueError: If class_spec is invalid or loaded class is not a Routine subclass.
+        ImportError: If module cannot be imported.
     """
     if isinstance(class_spec, type):
         return class_spec

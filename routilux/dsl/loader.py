@@ -60,10 +60,22 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
                 f"Each routine must specify a 'class' field with the routine class or import path."
             )
         routine_class = routine_info["class"]
+
+        # Critical fix: Validate that routine_class is callable
+        if not callable(routine_class):
+            raise TypeError(
+                f"Routine class for '{routine_id}' must be callable (a class or callable that returns Routine instances), got {type(routine_class).__name__}"
+            )
+
         routine = routine_class()
 
         # Apply config
         config = routine_info.get("config")
+        # Critical fix: Validate config is a dict
+        if config is not None and not isinstance(config, dict):
+            raise ValueError(
+                f"Config for routine '{routine_id}' must be a dictionary, got {type(config).__name__}"
+            )
         if config:
             routine.set_config(**config)
 
@@ -103,7 +115,7 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
             raise ValueError(f"Each connection must be a dictionary, got {type(conn)}")
 
         if "from" not in conn or "to" not in conn:
-            raise ValueError(f"Connection must specify 'from' and 'to' keys")
+            raise ValueError("Connection must specify 'from' and 'to' keys")
 
         from_path = conn["from"].split(".")
         to_path = conn["to"].split(".")
@@ -111,6 +123,12 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
         if len(from_path) != 2 or len(to_path) != 2:
             raise ValueError(
                 f"Invalid connection format: {conn['from']} -> {conn['to']}. Expected 'routine_id.event_name' -> 'routine_id.slot_name'"
+            )
+
+        # LOW fix: Validate that path segments are non-empty
+        if not all(from_path) or not all(to_path):
+            raise ValueError(
+                f"Connection path cannot contain empty segments: {conn['from']} -> {conn['to']}"
             )
 
         source_id = from_path[0]
@@ -123,7 +141,13 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
     # Apply execution settings
     execution = parsed.get("execution", {})
     if "strategy" in execution:
-        flow.set_execution_strategy(execution["strategy"], max_workers=execution.get("max_workers"))
+        # Note: execution_strategy and max_workers are set in Flow.__init__()
+        # We need to update them directly since set_execution_strategy() doesn't exist
+        flow.execution_strategy = execution["strategy"]
+        flow.max_workers = execution.get("max_workers", flow.max_workers)
+        # Update worker count based on strategy
+        if flow.execution_strategy == "sequential":
+            flow.max_workers = 1
     if "timeout" in execution:
         flow.execution_timeout = execution["timeout"]
 

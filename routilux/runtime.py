@@ -10,19 +10,19 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
+import warnings
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from routilux.event import Event
     from routilux.flow.flow import Flow
     from routilux.job_state import JobState
     from routilux.routine import Routine
-    from routilux.slot import Slot
 
-from routilux.status import ExecutionStatus
 from routilux.slot import SlotQueueFullError
+from routilux.status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +56,66 @@ class Runtime:
         Args:
             thread_pool_size: Maximum number of worker threads in the thread pool.
                 Default: 10
+
+        Raises:
+            ValueError: If thread_pool_size is less than 1.
         """
+        # MEDIUM fix: Validate thread_pool_size parameter
+        if thread_pool_size < 1:
+            raise ValueError(f"thread_pool_size must be at least 1, got {thread_pool_size}")
+        if thread_pool_size > 1000:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"thread_pool_size {thread_pool_size} is unusually large, may cause resource issues"
+            )
+
         self.thread_pool_size = thread_pool_size
         self.thread_pool = ThreadPoolExecutor(
             max_workers=thread_pool_size, thread_name_prefix="RoutiluxWorker"
         )
-        self._active_jobs: Dict[str, JobState] = {}
+        self._active_jobs: dict[str, JobState] = {}
         self._job_lock = threading.RLock()
         self._shutdown = False
+        # Critical fix: Track if thread pool is shutdown to prevent double-shutdown
+        self._is_shutdown = False
 
-    def exec(self, flow_name: str, job_state: Optional[JobState] = None) -> JobState:
+    def __del__(self) -> None:
+        """Cleanup thread pool when Runtime is garbage collected.
+
+        Critical fix: Prevent thread pool leaks when Runtime objects are not
+        explicitly cleaned up with shutdown().
+        """
+        # Shutdown thread pool if not already shutdown
+        # Use wait=False to avoid blocking during garbage collection
+        if not self._is_shutdown and hasattr(self, "thread_pool"):
+            try:
+                self.thread_pool.shutdown(wait=False)
+            except Exception:
+                # Ignore exceptions during garbage collection
+                pass
+
+    def __enter__(self):
+        """Context manager entry.
+
+        Returns:
+            Self for use in with statements.
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit.
+
+        Ensures thread pool is properly cleaned up.
+
+        Args:
+            exc_type: Exception type if an exception was raised.
+            exc_val: Exception value if an exception was raised.
+            exc_tb: Exception traceback if an exception was raised.
+        """
+        self.shutdown(wait=True)
+        return False
+
+    def exec(self, flow_name: str, job_state: JobState | None = None) -> JobState:
         """Execute a flow and return immediately.
 
         This method starts flow execution in the background and returns
@@ -131,22 +181,38 @@ class Runtime:
             flow: Flow to execute.
             job_state: JobState for this execution.
         """
+        # Import hooks at method level to avoid circular imports
+        from routilux.monitoring.hooks import execution_hooks
+
         try:
-            # Set flow and runtime context in routines
+            # Call flow start hook
+            execution_hooks.on_flow_start(flow, job_state)
+
+            # Set flow and runtime context in routines and job_state
             for routine in flow.routines.values():
                 routine._current_flow = flow
                 routine._current_runtime = self
+            # Also set on job_state for access in logic functions
+            job_state._current_runtime = self
+            job_state._current_flow = flow
 
             # Find entry routine (first routine or one with "trigger" slot)
-            entry_routine_id = None
-            for rid, routine in flow.routines.items():
-                if routine.get_slot("trigger") is not None:
-                    entry_routine_id = rid
-                    break
+            # Check if entry_routine_id was specified in job_state
+            entry_routine_id = job_state.shared_data.get("entry_routine_id")
+            if entry_routine_id and entry_routine_id in flow.routines:
+                # Use specified entry routine
+                pass
+            else:
+                # Auto-detect entry routine
+                entry_routine_id = None
+                for rid, routine in flow.routines.items():
+                    if routine.get_slot("trigger") is not None:
+                        entry_routine_id = rid
+                        break
 
-            if entry_routine_id is None:
-                # Use first routine as entry
-                entry_routine_id = next(iter(flow.routines.keys()))
+                if entry_routine_id is None:
+                    # Use first routine as entry
+                    entry_routine_id = next(iter(flow.routines.keys()))
 
             entry_routine = flow.routines[entry_routine_id]
             job_state.current_routine_id = entry_routine_id
@@ -157,9 +223,11 @@ class Runtime:
             # Trigger entry routine
             trigger_slot = entry_routine.get_slot("trigger")
             if trigger_slot is not None:
-                # Create empty data for trigger
+                # Get entry_params from job_state if available
+                entry_params = job_state.shared_data.get("entry_params", {})
+                # Create data for trigger
                 trigger_slot.enqueue(
-                    data={},
+                    data=entry_params,
                     emitted_from="system",
                     emitted_at=datetime.now(),
                 )
@@ -171,13 +239,18 @@ class Runtime:
             # For now, we need to wait until all routines complete
             # This is a simplified version - in production, we'd track active routines
             import time
+
             time.sleep(0.1)  # Brief delay to allow initial processing
 
-            # Check if all routines completed
-            # In a real implementation, we'd track this properly
-            # For now, mark as completed
-            job_state.status = ExecutionStatus.COMPLETED
-            job_state.completed_at = datetime.now()
+            # Check if job failed due to routine error (set by error handler)
+            # Only mark as completed if status is still RUNNING
+            if job_state.status == ExecutionStatus.RUNNING:
+                # Check if all routines completed
+                # In a real implementation, we'd track this properly
+                # For now, mark as completed
+                job_state.status = ExecutionStatus.COMPLETED
+                job_state.completed_at = datetime.now()
+            # If status is already FAILED (set by error handler), don't override it
 
         except Exception as e:
             logger.exception(f"Error executing flow {flow.flow_id}: {e}")
@@ -185,11 +258,22 @@ class Runtime:
             job_state.error = str(e)
             job_state.completed_at = datetime.now()
         finally:
+            # Call flow end hook
+            status = (
+                job_state.status.value
+                if hasattr(job_state.status, "value")
+                else str(job_state.status)
+            )
+            execution_hooks.on_flow_end(flow, job_state, status=status)
+
             # Update job state
             job_state.updated_at = datetime.now()
+            # Cleanup from active jobs to prevent memory leak
+            with self._job_lock:
+                self._active_jobs.pop(job_state.job_id, None)
 
     def handle_event_emit(
-        self, event: Event, event_data: Dict[str, Any], job_state: JobState
+        self, event: Event, event_data: dict[str, Any], job_state: JobState
     ) -> None:
         """Handle event emission and route to connected slots.
 
@@ -201,15 +285,16 @@ class Runtime:
             event_data: Event data dictionary with "data" and "metadata" keys.
             job_state: JobState for this execution.
         """
+        # Import hooks at method level to avoid circular imports
+        from routilux.monitoring.hooks import execution_hooks
+
         # Get flow to find connections
         from routilux.monitoring.flow_registry import FlowRegistry
 
         flow_registry = FlowRegistry.get_instance()
         flow = flow_registry.get(job_state.flow_id)
         if flow is None:
-            logger.warning(
-                f"Flow {job_state.flow_id} not found in registry, cannot route event"
-            )
+            logger.warning(f"Flow {job_state.flow_id} not found in registry, cannot route event")
             return
 
         # Find connections for this event
@@ -218,15 +303,123 @@ class Runtime:
             # No consumer slots - discard event (normal case, don't log)
             return
 
+        # Track event emission
+        source_routine_id = self._get_routine_id(event.routine, job_state)
+        if source_routine_id:
+            # Extract data for hook
+            data = event_data.get("data", {}) if isinstance(event_data, dict) else {}
+            # Record event emission
+            job_state.record_execution(
+                source_routine_id,
+                "event_emit",
+                {"event_name": event.name, "data": data},
+            )
+            should_continue = execution_hooks.on_event_emit(
+                event, source_routine_id, job_state, data=data
+            )
+            if not should_continue:
+                # Breakpoint hit, don't route
+                return
+
         # Route to all connected slots
         for connection in connections:
             slot = connection.target_slot
+            if slot is None:
+                continue
             try:
+                # HIGH fix: Validate event_data structure before accessing
+                if not isinstance(event_data, dict):
+                    logger.error(f"Invalid event_data type: {type(event_data).__name__}")
+                    continue
+
+                metadata = event_data.get("metadata")
+                if not isinstance(metadata, dict):
+                    logger.error("Invalid or missing metadata in event_data")
+                    continue
+
+                data = event_data.get("data", {})
+                emitted_from = metadata.get("emitted_from", "unknown")
+                emitted_at = metadata.get("emitted_at", datetime.now())
+
+                # Get source and target routine IDs for connection breakpoint checking
+                source_routine_id = self._get_routine_id(event.routine, job_state)
+                target_routine_id = self._get_routine_id(slot.routine, job_state)
+
+                # Check connection breakpoint before enqueueing
+                if source_routine_id and target_routine_id:
+                    from routilux.monitoring.registry import MonitoringRegistry
+
+                    if MonitoringRegistry.is_enabled():
+                        breakpoint_mgr = MonitoringRegistry.get_instance().breakpoint_manager
+                        if breakpoint_mgr:
+                            breakpoint = breakpoint_mgr.check_breakpoint(
+                                job_state.job_id,
+                                source_routine_id,  # Use source for connection breakpoint
+                                "connection",
+                                source_routine_id=source_routine_id,
+                                source_event_name=event.name,
+                                target_routine_id=target_routine_id,
+                                target_slot_name=slot.name,
+                                variables=data if isinstance(data, dict) else {"data": data},
+                            )
+                            if breakpoint:
+                                debug_store = MonitoringRegistry.get_instance().debug_session_store
+                                if debug_store:
+                                    session = debug_store.get_or_create(job_state.job_id)
+                                    session.pause(
+                                        None,
+                                        reason=(
+                                            f"Breakpoint at connection "
+                                            f"{source_routine_id}.{event.name} -> "
+                                            f"{target_routine_id}.{slot.name}"
+                                        ),
+                                    )
+                                    # Notify via event manager
+                                    from routilux.monitoring.hooks import _publish_event_via_manager
+
+                                    _publish_event_via_manager(
+                                        job_state.job_id,
+                                        {
+                                            "type": "breakpoint_hit",
+                                            "job_id": job_state.job_id,
+                                            "breakpoint": {
+                                                "breakpoint_id": breakpoint.breakpoint_id,
+                                                "type": breakpoint.type,
+                                                "source_routine_id": breakpoint.source_routine_id,
+                                                "source_event_name": breakpoint.source_event_name,
+                                                "target_routine_id": breakpoint.target_routine_id,
+                                                "target_slot_name": breakpoint.target_slot_name,
+                                            },
+                                        },
+                                    )
+                                    # Don't enqueue data yet - paused at breakpoint
+                                    continue
+
                 slot.enqueue(
-                    data=event_data["data"],
-                    emitted_from=event_data["metadata"]["emitted_from"],
-                    emitted_at=event_data["metadata"]["emitted_at"],
+                    data=data,
+                    emitted_from=emitted_from,
+                    emitted_at=emitted_at,
                 )
+
+                # Track slot data reception
+                if target_routine_id:
+                    # Record slot data reception
+                    job_state.record_execution(
+                        target_routine_id,
+                        "slot_data_received",
+                        {
+                            "slot_name": slot.name,
+                            "source_routine": source_routine_id,
+                            "event_name": event.name,
+                        },
+                    )
+                    should_continue = execution_hooks.on_slot_data_received(
+                        slot, target_routine_id, job_state, data=data
+                    )
+                    if not should_continue:
+                        # Breakpoint hit, skip this slot
+                        continue
+
                 # Trigger routine activation check
                 routine = slot.routine
                 if routine is not None:
@@ -247,6 +440,20 @@ class Runtime:
             routine: Routine to check.
             job_state: JobState for this execution.
         """
+        routine_id = self._get_routine_id(routine, job_state)
+        if routine_id:
+            # Record activation check
+            job_state.record_execution(
+                routine_id,
+                "activation_check",
+                {
+                    "slot_data_counts": {
+                        name: slot.get_unconsumed_count()
+                        for name, slot in routine.slots.items()
+                    }
+                },
+            )
+
         if routine._activation_policy is None:
             # No activation policy - activate immediately with all new data
             self._activate_routine(routine, job_state)
@@ -262,8 +469,6 @@ class Runtime:
             logger.exception(f"Error in activation policy for routine: {e}")
             error_handler = routine.get_error_handler()
             if error_handler is None:
-                from routilux.flow.flow import Flow
-
                 flow = getattr(routine, "_current_flow", None)
                 if flow:
                     error_handler = flow.error_handler
@@ -290,7 +495,7 @@ class Runtime:
         self,
         routine: Routine,
         job_state: JobState,
-        data_slice: Optional[Dict[str, List[Any]]] = None,
+        data_slice: dict[str, list[Any]] | None = None,
         policy_message: Any = None,
     ) -> None:
         """Activate routine logic.
@@ -302,6 +507,9 @@ class Runtime:
                 If None, consumes all new data from all slots.
             policy_message: Optional message from activation policy.
         """
+        # Import hooks at method level to avoid circular imports
+        from routilux.monitoring.hooks import execution_hooks
+
         # Get routine_id
         routine_id = self._get_routine_id(routine, job_state)
         if routine_id is None:
@@ -317,30 +525,50 @@ class Runtime:
             for slot_name, slot in routine.slots.items():
                 data_slice[slot_name] = slot.consume_all_new()
 
+        # Record routine start
+        job_state.record_execution(
+            routine_id,
+            "start",
+            {
+                "slot_data_counts": {name: len(data) for name, data in data_slice.items()},
+                "policy_message": policy_message,
+            },
+        )
+
+        # Call routine start hook
+        execution_hooks.on_routine_start(routine, routine_id, job_state)
+
         # Prepare slot_data_lists in order of slot definition
         slot_data_lists = [
-            data_slice.get(slot_name, [])
-            for slot_name in sorted(routine.slots.keys())
+            data_slice.get(slot_name, []) for slot_name in sorted(routine.slots.keys())
         ]
 
         # Execute logic
         if routine._logic is None:
             logger.warning(f"Routine {routine_id} has no logic set, skipping execution")
+            # Call routine end hook even if no logic
+            execution_hooks.on_routine_end(routine, routine_id, job_state, status="skipped")
             return
 
+        start_time = time.time()
+        status = "completed"
+        error = None
+
         try:
-            routine._logic(
-                *slot_data_lists, policy_message=policy_message, job_state=job_state
-            )
+            routine._logic(*slot_data_lists, policy_message=policy_message, job_state=job_state)
             # Mark routine as completed
             job_state.update_routine_state(routine_id, {"status": "completed"})
+            # Record completion
+            duration = time.time() - start_time
+            job_state.record_execution(routine_id, "completed", {"duration": duration})
         except Exception as e:
             # Error in logic - apply error handling
             logger.exception(f"Error in logic for routine {routine_id}: {e}")
+            status = "failed"
+            error = e
+            duration = time.time() - start_time
             error_handler = routine.get_error_handler()
             if error_handler is None:
-                from routilux.flow.flow import Flow
-
                 flow = getattr(routine, "_current_flow", None)
                 if flow:
                     error_handler = flow.error_handler
@@ -354,26 +582,60 @@ class Runtime:
                     job_state.update_routine_state(
                         routine_id, {"status": "failed", "error": str(e)}
                     )
+                    job_state.record_execution(
+                        routine_id,
+                        "error",
+                        {
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "duration": duration,
+                        },
+                    )
                 elif error_handler.strategy == ErrorStrategy.CONTINUE:
+                    status = "error_continued"
                     job_state.record_execution(
                         routine_id,
                         "error_continued",
-                        {"error": str(e), "error_type": type(e).__name__},
+                        {
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "duration": duration,
+                        },
                     )
                 elif error_handler.strategy == ErrorStrategy.SKIP:
+                    status = "skipped"
                     job_state.update_routine_state(
                         routine_id, {"status": "skipped", "error": str(e)}
+                    )
+                    job_state.record_execution(
+                        routine_id,
+                        "error",
+                        {
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "duration": duration,
+                        },
                     )
                 # RETRY strategy would need more complex handling
             else:
                 # Default: stop on error
                 job_state.status = ExecutionStatus.FAILED
                 job_state.error = f"Logic error: {e}"
-                job_state.update_routine_state(
-                    routine_id, {"status": "failed", "error": str(e)}
+                job_state.update_routine_state(routine_id, {"status": "failed", "error": str(e)})
+                job_state.record_execution(
+                    routine_id,
+                    "error",
+                    {
+                        "error": str(e),
+                        "error_type": type(e).__name__,
+                        "duration": duration,
+                    },
                 )
+        finally:
+            # Call routine end hook
+            execution_hooks.on_routine_end(routine, routine_id, job_state, status=status, error=error)
 
-    def _get_routine_id(self, routine: Routine, job_state: JobState) -> Optional[str]:
+    def _get_routine_id(self, routine: Routine, job_state: JobState) -> str | None:
         """Get routine_id for a routine.
 
         Args:
@@ -383,14 +645,13 @@ class Runtime:
         Returns:
             Routine ID if found, None otherwise.
         """
-        from routilux.flow.flow import Flow
 
         flow = getattr(routine, "_current_flow", None)
         if flow:
             return flow._get_routine_id(routine)
         return None
 
-    def wait_until_all_jobs_finished(self, timeout: Optional[float] = None) -> bool:
+    def wait_until_all_jobs_finished(self, timeout: float | None = None) -> bool:
         """Wait until all active jobs complete.
 
         Args:
@@ -417,7 +678,7 @@ class Runtime:
 
             time.sleep(0.1)  # Check every 100ms
 
-    def get_job(self, job_id: str) -> Optional[JobState]:
+    def get_job(self, job_id: str) -> JobState | None:
         """Get job state by ID.
 
         Args:
@@ -429,7 +690,7 @@ class Runtime:
         with self._job_lock:
             return self._active_jobs.get(job_id)
 
-    def list_jobs(self, status: Optional[str] = None) -> List[JobState]:
+    def list_jobs(self, status: str | None = None) -> list[JobState]:
         """List all jobs, optionally filtered by status.
 
         Args:
@@ -445,7 +706,11 @@ class Runtime:
                 jobs = [
                     j
                     for j in jobs
-                    if (j.status.value == status if hasattr(j.status, "value") else str(j.status) == status)
+                    if (
+                        j.status.value == status
+                        if hasattr(j.status, "value")
+                        else str(j.status) == status
+                    )
                 ]
             return jobs
 
@@ -478,13 +743,19 @@ class Runtime:
 
             return True
 
-    def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
+    def shutdown(self, wait: bool = True, timeout: float | None = None) -> None:
         """Shutdown runtime and thread pool.
+
+        Critical fix: Prevents double-shutdown and ensures thread pool cleanup.
 
         Args:
             wait: If True, wait for all jobs to complete before shutting down.
             timeout: Optional timeout in seconds for waiting.
         """
+        # Critical fix: Prevent double-shutdown
+        if self._is_shutdown:
+            return
+
         self._shutdown = True
 
         if wait:
@@ -494,4 +765,6 @@ class Runtime:
             self.wait_until_all_jobs_finished(timeout=wait_timeout)
 
         # Shutdown thread pool - use wait=False if we already waited for jobs
+        # Critical fix: Set flag before shutdown to prevent race conditions
+        self._is_shutdown = True
         self.thread_pool.shutdown(wait=wait)

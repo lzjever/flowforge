@@ -39,23 +39,41 @@ def pause_flow(
             f"JobState flow_id '{job_state.flow_id}' does not match Flow flow_id '{flow.flow_id}'"
         )
 
+    # CRITICAL fix: Validate required attributes exist
+    required_attrs = ["_paused", "_task_queue", "_pending_tasks", "_active_tasks"]
+    for attr in required_attrs:
+        if not hasattr(flow, attr):
+            raise AttributeError(f"Flow is missing required attribute: {attr}. Ensure Flow.__init__() has been called properly.")
+
     flow._paused = True
 
     wait_for_active_tasks(flow)
 
     # Drain task queue with timeout to avoid blocking indefinitely
+    # HIGH fix: Track drained tasks to ensure we don't proceed with tasks still in queue
     max_wait = 2.0
     start_time = time.time()
+    drained_count = 0
     while not flow._task_queue.empty():
         if time.time() - start_time > max_wait:
+            # HIGH fix: Log more detailed information about remaining tasks
+            remaining_count = flow._task_queue.qsize()
             logger.warning(
                 f"pause_flow: Timeout draining task queue after {max_wait}s. "
-                f"Queue size: {flow._task_queue.qsize()}. Proceeding with pause."
+                f"Drained {drained_count} tasks, {remaining_count} remaining. "
+                f"Queue size: {flow._task_queue.qsize()}. State may be inconsistent."
             )
+            # HIGH fix: Add warning about potential task loss
+            if remaining_count > 0:
+                logger.error(
+                    f"pause_flow: {remaining_count} tasks may be lost or processed out of order. "
+                    f"Consider increasing timeout or investigating why tasks are still being enqueued."
+                )
             break
         try:
             task = flow._task_queue.get(timeout=0.1)
             flow._pending_tasks.append(task)
+            drained_count += 1
         except queue.Empty:
             # Queue is empty, we're done draining
             break
@@ -81,6 +99,10 @@ def wait_for_active_tasks(flow: "Flow") -> None:
     Args:
         flow: Flow object.
     """
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_execution_lock") or not hasattr(flow, "_active_tasks"):
+        raise AttributeError("Flow is missing required attributes: _execution_lock or _active_tasks. Ensure Flow.__init__() has been called properly.")
+
     check_interval = 0.05
     max_wait_time = 5.0
     start_time = time.time()
@@ -98,14 +120,30 @@ def wait_for_active_tasks(flow: "Flow") -> None:
                 f"wait_for_active_tasks timed out after {max_wait_time}s. "
                 f"Active tasks: {len(active)}. Proceeding with pause."
             )
-            # Try to cancel any remaining futures that can be cancelled
+            # HIGH fix: Cancel futures and wait briefly for cancellation to complete
+            cancelled_count = 0
             with flow._execution_lock:
                 for future in list(flow._active_tasks):
                     if not future.done():
                         try:
-                            future.cancel()
-                        except Exception:
-                            pass
+                            if future.cancel():
+                                cancelled_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to cancel future: {e}")
+
+            # HIGH fix: Wait a short time for cancelled futures to clean up
+            if cancelled_count > 0:
+                logger.info(f"Cancelled {cancelled_count} futures, waiting briefly for cleanup")
+                time.sleep(0.1)  # Give cancelled futures a moment to clean up
+
+            # Check again if any tasks are still running
+            with flow._execution_lock:
+                still_active = [f for f in flow._active_tasks if not f.done()]
+                if still_active:
+                    logger.error(
+                        f"After timeout and cancellation, {len(still_active)} tasks are still running. "
+                        f"Proceeding with pause may cause inconsistent state."
+                    )
             break
 
         time.sleep(check_interval)
@@ -118,6 +156,10 @@ def serialize_pending_tasks(flow: "Flow", job_state: "JobState") -> None:
         flow: Flow object.
         job_state: JobState to serialize tasks to.
     """
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_pending_tasks"):
+        raise AttributeError("Flow is missing required attribute: _pending_tasks. Ensure Flow.__init__() has been called properly.")
+
     serialized_tasks = []
     for task in flow._pending_tasks:
         connection = task.connection
@@ -159,6 +201,10 @@ def deserialize_pending_tasks(flow: "Flow", job_state: "JobState") -> None:
         flow: Flow object.
         job_state: JobState to deserialize tasks from.
     """
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_pending_tasks"):
+        raise AttributeError("Flow is missing required attribute: _pending_tasks. Ensure Flow.__init__() has been called properly.")
+
     if not hasattr(job_state, "pending_tasks") or not job_state.pending_tasks:
         return
 
@@ -230,6 +276,10 @@ def _recover_slot_tasks(flow: "Flow", job_state: "JobState") -> None:
         flow: Flow object.
         job_state: JobState to recover tasks from.
     """
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_enqueue_task"):
+        raise AttributeError("Flow is missing required attribute/method: _enqueue_task. Ensure Flow.__init__() has been called properly.")
+
     from routilux.flow.error_handling import get_error_handler_for_routine
     from routilux.flow.task import SlotActivationTask, TaskPriority
 
@@ -355,7 +405,9 @@ def resume_flow(flow: "Flow", job_state: "JobState") -> "JobState":
         raise ValueError(f"Current routine '{job_state.current_routine_id}' not found in flow")
 
     job_state._set_running()
-    flow._paused = False
+    # CRITICAL fix: Acquire lock before modifying _paused flag
+    with flow._execution_lock:
+        flow._paused = False
 
     # JobState is now passed directly via tasks, no need for thread-local storage
 
@@ -414,17 +466,23 @@ def resume_flow(flow: "Flow", job_state: "JobState") -> "JobState":
     for event_info in processed_events:
         job_state.deferred_events.remove(event_info)
 
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_pending_tasks") or not hasattr(flow, "_task_queue"):
+        raise AttributeError("Flow is missing required attributes: _pending_tasks or _task_queue. Ensure Flow.__init__() has been called properly.")
+
     for task in flow._pending_tasks:
         flow._task_queue.put(task)
     flow._pending_tasks.clear()
 
     from routilux.flow.event_loop import start_event_loop
 
-    # Check if event loop thread is still running
-    # If thread has stopped but _running is still True, restart it
-    if not flow._running or (
-        flow._execution_thread is not None and not flow._execution_thread.is_alive()
-    ):
+    # CRITICAL fix: Check _running flag atomically
+    with flow._execution_lock:
+        should_restart = not flow._running or (
+            flow._execution_thread is not None and not flow._execution_thread.is_alive()
+        )
+
+    if should_restart:
         start_event_loop(flow)
 
     return job_state
@@ -447,11 +505,11 @@ def cancel_flow(flow: "Flow", job_state: "JobState", reason: str = "") -> None:
         )
 
     job_state._set_cancelled(reason=reason)
-    flow._paused = False
 
-    # Stop event loop
-    flow._running = False
+    # CRITICAL fix: Acquire lock before modifying _paused and _running flags
     with flow._execution_lock:
+        flow._paused = False
+        flow._running = False
         # Critical fix: Cancel all futures first, then clear the set
         # Clearing inside the loop would skip remaining futures
         for future in flow._active_tasks.copy():

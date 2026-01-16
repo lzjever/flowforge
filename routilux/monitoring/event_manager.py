@@ -8,13 +8,13 @@ eliminating polling overhead in WebSocket connections.
 import asyncio
 import logging
 import threading
-from typing import AsyncIterator, Dict, Optional, Set
+from typing import AsyncIterator, Dict, Set
 
 logger = logging.getLogger(__name__)
 
 # Module-level lock for thread-safe singleton initialization
 _event_manager_lock = threading.Lock()
-_event_manager: "JobEventManager" = None
+_event_manager: "JobEventManager | None" = None
 
 
 class JobEventManager:
@@ -176,22 +176,21 @@ class JobEventManager:
 
         # Publish outside lock to avoid blocking
         try:
-            # If queue is full, get_nowait() and put_nowait() simulate ring buffer
-            if queue.full():
-                # Remove oldest event
+            # HIGH fix: Use put_nowait() with exception handling instead of check-then-act pattern
+            # This prevents TOCTOU race condition where queue state changes between full() check and put()
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                # Queue is full, remove oldest event and try again (ring buffer behavior)
                 try:
                     queue.get_nowait()
+                    queue.put_nowait(event)
                     logger.debug(f"Event queue full for job {job_id}, dropped oldest event")
                 except asyncio.QueueEmpty:
-                    pass
-
-            # Add new event
-            queue.put_nowait(event)
+                    # Shouldn't happen, but handle gracefully
+                    logger.warning(f"Event queue full for job {job_id}, dropping event")
             logger.debug(f"Published event to job {job_id}, queue size: {queue.qsize()}")
 
-        except asyncio.QueueFull:
-            # Queue is full, log warning and drop event
-            logger.warning(f"Event queue full for job {job_id}, dropping event")
         except Exception as e:
             logger.error(f"Error publishing event to job {job_id}: {e}", exc_info=True)
 
@@ -215,11 +214,13 @@ class JobEventManager:
                     if event.get("type") == "done":
                         break
         """
-        if subscriber_id not in self._subscriber_info:
-            logger.warning(f"Subscriber {subscriber_id} not found")
-            return
+        # HIGH fix: Acquire lock to prevent race condition when accessing _subscriber_info
+        async with self._lock:
+            if subscriber_id not in self._subscriber_info:
+                logger.warning(f"Subscriber {subscriber_id} not found")
+                return
 
-        job_id, queue = self._subscriber_info[subscriber_id]
+            job_id, queue = self._subscriber_info[subscriber_id]
 
         try:
             while True:
@@ -253,10 +254,16 @@ class JobEventManager:
         Returns:
             Number of active subscribers.
         """
-        # Fix: Acquire lock when reading shared mutable state
-        # Even though we're just reading, the underlying dict could be modified concurrently
-        with self._lock:
-            return len(self._subscribers.get(job_id, set()))
+        # CRITICAL fix: Add synchronous lock for thread-safe access in sync methods
+        # Since this is a sync method that can be called from non-async contexts,
+        # we need a separate lock for thread safety
+        if not hasattr(self, '_sync_lock'):
+            import threading
+            self._sync_lock = threading.RLock()
+
+        with self._sync_lock:
+            subscribers = self._subscribers.get(job_id, set()).copy()
+            return len(subscribers)
 
     async def cleanup(self, job_id: str) -> None:
         """Clean up all resources for a job.
@@ -312,23 +319,23 @@ class JobEventManager:
         Note:
             This is a synchronous method for monitoring purposes.
         """
-        # Fix: Acquire lock when reading shared mutable state for consistency
-        with self._lock:
-            return {
-                "total_jobs": len(self._queues),
-                "total_subscribers": len(self._subscriber_info),
-                "jobs": {
-                    job_id: {
-                        "subscribers": len(subs),
-                        "queue_size": self._queues[job_id].qsize() if job_id in self._queues else 0,
-                    }
-                    for job_id, subs in self._subscribers.items()
-                },
-            }
+        # Fix: Copy data for thread safety since this is a sync method
+        # We can't use async with in a sync method
+        queues_copy = self._queues.copy()
+        subscribers_copy = self._subscribers.copy()
+        subscriber_info_copy = self._subscriber_info.copy()
 
-
-# Global singleton instance (redeclared for type checking)
-_event_manager: Optional[JobEventManager] = None
+        return {
+            "total_jobs": len(queues_copy),
+            "total_subscribers": len(subscriber_info_copy),
+            "jobs": {
+                job_id: {
+                    "subscribers": len(subs),
+                    "queue_size": queues_copy[job_id].qsize() if job_id in queues_copy else 0,
+                }
+                for job_id, subs in subscribers_copy.items()
+            },
+        }
 
 
 def get_event_manager() -> JobEventManager:

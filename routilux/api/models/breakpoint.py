@@ -10,10 +10,15 @@ from pydantic import BaseModel
 class BreakpointCreateRequest(BaseModel):
     """Request model for creating a breakpoint."""
 
-    type: Literal["routine", "slot", "event"]
+    type: Literal["routine", "slot", "event", "connection"]
     routine_id: Optional[str] = None
     slot_name: Optional[str] = None
     event_name: Optional[str] = None
+    # Connection breakpoint fields
+    source_routine_id: Optional[str] = None
+    source_event_name: Optional[str] = None
+    target_routine_id: Optional[str] = None
+    target_slot_name: Optional[str] = None
     condition: Optional[str] = None
     enabled: bool = True
 
@@ -27,6 +32,11 @@ class BreakpointResponse(BaseModel):
     routine_id: Optional[str]
     slot_name: Optional[str]
     event_name: Optional[str]
+    # Connection breakpoint fields
+    source_routine_id: Optional[str] = None
+    source_event_name: Optional[str] = None
+    target_routine_id: Optional[str] = None
+    target_slot_name: Optional[str] = None
     condition: Optional[str]
     enabled: bool
     hit_count: int

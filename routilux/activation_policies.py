@@ -7,12 +7,18 @@ based on slot data availability and conditions.
 
 from __future__ import annotations
 
+import threading
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from routilux.job_state import JobState
     from routilux.slot import Slot
+
+
+# Thread-safe storage for time_interval_policy
+_last_activation_lock = threading.RLock()
+_last_activation: dict[str, float] = {}
 
 
 def time_interval_policy(min_interval_seconds: float):
@@ -31,9 +37,10 @@ def time_interval_policy(min_interval_seconds: float):
         >>> policy = time_interval_policy(5.0)  # Activate at most once every 5 seconds
         >>> routine.set_activation_policy(policy)
     """
-    last_activation: Dict[str, float] = {}
 
-    def policy(slots: Dict[str, Slot], job_state: JobState) -> Tuple[bool, Dict[str, List[Any]], Any]:
+    def policy(
+        slots: dict[str, Slot], job_state: JobState
+    ) -> tuple[bool, dict[str, list[Any]], Any]:
         """Time interval activation policy.
 
         Args:
@@ -43,24 +50,28 @@ def time_interval_policy(min_interval_seconds: float):
         Returns:
             Tuple of (should_activate, data_slice, policy_message).
         """
+        # Use composite key (job_id + routine_id) to avoid collisions
         routine_id = job_state.current_routine_id or "unknown"
+        activation_key = f"{job_state.job_id}:{routine_id}"
         now = time.time()
 
-        # Check if enough time has passed
-        if routine_id in last_activation:
-            if now - last_activation[routine_id] < min_interval_seconds:
-                return False, {}, None
+        # Check if enough time has passed (thread-safe)
+        with _last_activation_lock:
+            if activation_key in _last_activation:
+                if now - _last_activation[activation_key] < min_interval_seconds:
+                    return False, {}, None
+            # Update last activation time
+            _last_activation[activation_key] = now
 
         # Extract data from all slots
         data_slice = {}
         for slot_name, slot in slots.items():
             data_slice[slot_name] = slot.consume_all_new()
 
-        last_activation[routine_id] = now
         policy_message = {
             "reason": "time_interval_met",
             "interval": min_interval_seconds,
-            "last_activation": last_activation.get(routine_id),
+            "last_activation": _last_activation.get(activation_key),
         }
         return True, data_slice, policy_message
 
@@ -83,7 +94,10 @@ def batch_size_policy(min_batch_size: int):
         >>> policy = batch_size_policy(10)  # Activate when all slots have 10+ items
         >>> routine.set_activation_policy(policy)
     """
-    def policy(slots: Dict[str, Slot], job_state: JobState) -> Tuple[bool, Dict[str, List[Any]], Any]:
+
+    def policy(
+        slots: dict[str, Slot], job_state: JobState
+    ) -> tuple[bool, dict[str, list[Any]], Any]:
         """Batch size activation policy.
 
         Args:
@@ -131,7 +145,10 @@ def all_slots_ready_policy():
         >>> policy = all_slots_ready_policy()
         >>> routine.set_activation_policy(policy)
     """
-    def policy(slots: Dict[str, Slot], job_state: JobState) -> Tuple[bool, Dict[str, List[Any]], Any]:
+
+    def policy(
+        slots: dict[str, Slot], job_state: JobState
+    ) -> tuple[bool, dict[str, list[Any]], Any]:
         """All slots ready activation policy.
 
         Args:
@@ -159,7 +176,7 @@ def all_slots_ready_policy():
     return policy
 
 
-def custom_policy(check_function: Callable[[Dict[str, Slot], JobState], bool]):
+def custom_policy(check_function: Callable[[dict[str, Slot], JobState], bool]):
     """Create a custom activation policy from a check function.
 
     The check function should return True if the routine should be activated,
@@ -180,7 +197,10 @@ def custom_policy(check_function: Callable[[Dict[str, Slot], JobState], bool]):
         >>> policy = custom_policy(my_check)
         >>> routine.set_activation_policy(policy)
     """
-    def policy(slots: Dict[str, Slot], job_state: JobState) -> Tuple[bool, Dict[str, List[Any]], Any]:
+
+    def policy(
+        slots: dict[str, Slot], job_state: JobState
+    ) -> tuple[bool, dict[str, list[Any]], Any]:
         """Custom activation policy.
 
         Args:
@@ -217,7 +237,10 @@ def immediate_policy():
         >>> policy = immediate_policy()
         >>> routine.set_activation_policy(policy)
     """
-    def policy(slots: Dict[str, Slot], job_state: JobState) -> Tuple[bool, Dict[str, List[Any]], Any]:
+
+    def policy(
+        slots: dict[str, Slot], job_state: JobState
+    ) -> tuple[bool, dict[str, list[Any]], Any]:
         """Immediate activation policy.
 
         Args:

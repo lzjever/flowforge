@@ -74,7 +74,14 @@ class QueueOutputHandler(OutputHandler):
             "data": data,
             "timestamp": (timestamp or datetime.now()).isoformat(),
         }
-        self.queue.put(entry)
+        # HIGH fix: Use put_nowait to avoid blocking on full queues
+        try:
+            self.queue.put_nowait(entry)
+        except Exception as e:
+            # Log and continue to avoid breaking execution flow
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to put output in queue: {e}")
 
 
 class CallbackOutputHandler(OutputHandler):
@@ -104,8 +111,19 @@ class CallbackOutputHandler(OutputHandler):
         data: Dict[str, Any],
         timestamp: Optional[datetime] = None,
     ) -> None:
-        """Call callback function."""
-        self.callback(job_id, routine_id, output_type, data, timestamp or datetime.now())
+        """Call callback function.
+
+        MEDIUM fix: Add error handling to prevent callback exceptions from breaking execution flow.
+        """
+        try:
+            self.callback(job_id, routine_id, output_type, data, timestamp or datetime.now())
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"CallbackOutputHandler callback failed for job {job_id}, routine {routine_id}: {e}",
+                exc_info=True
+            )
 
 
 class NullOutputHandler(OutputHandler):

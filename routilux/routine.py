@@ -6,7 +6,8 @@ Improved Routine mechanism supporting slots (input slots) and events (output eve
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, NamedTuple, Optional, TypeVar
+import threading
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
 
 T = TypeVar("T")
 from contextvars import ContextVar  # noqa: E402
@@ -133,6 +134,8 @@ class Routine(Serializable):
         # All configuration values are automatically serialized/deserialized
         # Use set_config() and get_config() methods for convenient access
         self._config: dict[str, Any] = {}
+        # Critical fix: Add lock for thread-safe config access
+        self._config_lock: threading.RLock = threading.RLock()
 
         # Error handler for this routine (optional)
         # Priority: routine-level error handler > flow-level error handler > default (STOP)
@@ -145,15 +148,23 @@ class Routine(Serializable):
         # Register serializable fields
         # _slots and _events are included - base class automatically serializes/deserializes them
         # Note: _activation_policy and _logic are callables, handled by serilux
-        self.add_serializable_fields(["_id", "_config", "_error_handler", "_slots", "_events", "_activation_policy", "_logic"])
+        self.add_serializable_fields(
+            [
+                "_id",
+                "_config",
+                "_error_handler",
+                "_slots",
+                "_events",
+                "_activation_policy",
+                "_logic",
+            ]
+        )
 
     def __repr__(self) -> str:
         """Return string representation of the Routine."""
         return f"{self.__class__.__name__}[{self._id}]"
 
-    def define_slot(
-        self, name: str, max_queue_length: int = 1000, watermark: float = 0.8
-    ) -> Slot:
+    def define_slot(self, name: str, max_queue_length: int = 1000, watermark: float = 0.8) -> Slot:
         """Define an input slot for receiving data from other routines.
 
         This method creates a new slot that can be connected to events from
@@ -182,15 +193,23 @@ class Routine(Serializable):
             Custom queue size:
                 >>> slot = routine.define_slot("input", max_queue_length=100, watermark=0.7)
         """
-        if name in self._slots:
-            raise ValueError(f"Slot '{name}' already exists in {self}")
+        # MEDIUM fix: Add validation for parameters
+        if max_queue_length <= 0:
+            raise ValueError(f"max_queue_length must be > 0, got {max_queue_length}")
+        if not 0.0 <= watermark <= 1.0:
+            raise ValueError(f"watermark must be between 0.0 and 1.0, got {watermark}")
 
-        # Lazy import to avoid circular dependency
-        from routilux.slot import Slot
+        # MEDIUM fix: Use lock to prevent race conditions
+        with self._config_lock:
+            if name in self._slots:
+                raise ValueError(f"Slot '{name}' already exists in {self}")
 
-        slot = Slot(name, self, max_queue_length=max_queue_length, watermark=watermark)
-        self._slots[name] = slot
-        return slot
+            # Lazy import to avoid circular dependency
+            from routilux.slot import Slot
+
+            slot = Slot(name, self, max_queue_length=max_queue_length, watermark=watermark)
+            self._slots[name] = slot
+            return slot
 
     def define_event(self, name: str, output_params: list[str] | None = None) -> Event:
         """Define an output event for transmitting data to other routines.
@@ -240,15 +259,17 @@ class Routine(Serializable):
                 >>> routine.define_event("error", ["error_code", "message"])
                 >>> # Can emit different events for different outcomes
         """
-        if name in self._events:
-            raise ValueError(f"Event '{name}' already exists in {self}")
+        # MEDIUM fix: Use lock to prevent race conditions
+        with self._config_lock:
+            if name in self._events:
+                raise ValueError(f"Event '{name}' already exists in {self}")
 
-        # Lazy import to avoid circular dependency
-        from routilux.event import Event
+            # Lazy import to avoid circular dependency
+            from routilux.event import Event
 
-        event = Event(name, self, output_params or [])
-        self._events[name] = event
-        return event
+            event = Event(name, self, output_params or [])
+            self._events[name] = event
+            return event
 
     def emit(self, event_name: str, runtime=None, job_state=None, **kwargs) -> None:
         """Emit an event and send data to all connected slots.
@@ -278,9 +299,17 @@ class Routine(Serializable):
         event = self._events[event_name]
 
         # Get runtime and job_state from context if not provided
+        # Priority: context variable > instance attribute > raise error
         if runtime is None:
-            # Try to get from context (stored by Runtime)
-            runtime = getattr(self, "_current_runtime", None)
+            # First check context variable (set by Runtime.execute_routine)
+            from routilux.runtime import _current_runtime
+            runtime_ctx = _current_runtime.get(None)
+            if runtime_ctx is not None:
+                runtime = runtime_ctx
+            else:
+                # Fallback to instance attribute (for backward compatibility)
+                runtime = getattr(self, "_current_runtime", None)
+
         if runtime is None:
             raise RuntimeError(
                 "Runtime is required for emit(). "
@@ -475,21 +504,23 @@ class Routine(Serializable):
               proper serialization/deserialization support.
             - During execution, use JobState.shared_data for execution-specific state.
         """
-        # Prevent modification during execution
-        if hasattr(self, "_current_flow") and getattr(self, "_current_flow", None):
-            raise RuntimeError(
-                "Cannot modify _config during execution. "
-                "Use JobState.shared_data for execution-specific state."
-            )
-
-        # Validate serializability
-        for key, value in kwargs.items():
-            if not self._is_serializable(value):
-                raise ValueError(
-                    f"Config value for '{key}' must be serializable. Got {type(value).__name__}"
+        # Critical fix: Use lock to make check-and-modify atomic
+        with self._config_lock:
+            # Prevent modification during execution
+            if hasattr(self, "_current_flow") and getattr(self, "_current_flow", None):
+                raise RuntimeError(
+                    "Cannot modify _config during execution. "
+                    "Use JobState.shared_data for execution-specific state."
                 )
 
-        self._config.update(kwargs)
+            # Validate serializability
+            for key, value in kwargs.items():
+                if not self._is_serializable(value):
+                    raise ValueError(
+                        f"Config value for '{key}' must be serializable. Got {type(value).__name__}"
+                    )
+
+            self._config.update(kwargs)
 
     def _is_serializable(self, value: Any) -> bool:
         """Check if value is serializable.
@@ -547,6 +578,8 @@ class Routine(Serializable):
     def get_config(self, key: str, default: Any = None) -> Any:
         """Get a configuration value from the _config dictionary.
 
+        Critical fix: Thread-safe read of configuration.
+
         Args:
             key: Configuration key to retrieve.
             default: Default value to return if key doesn't exist.
@@ -560,10 +593,13 @@ class Routine(Serializable):
             >>> timeout = routine.get_config("timeout", default=10)  # Returns 30
             >>> retries = routine.get_config("retries", default=0)  # Returns 0
         """
-        return self._config.get(key, default)
+        with self._config_lock:
+            return self._config.get(key, default)
 
     def config(self) -> dict[str, Any]:
         """Get a copy of the configuration dictionary.
+
+        Critical fix: Thread-safe copy of configuration.
 
         Returns:
             Copy of the _config dictionary. Modifications to the returned
@@ -575,7 +611,8 @@ class Routine(Serializable):
             >>> config = routine.config()
             >>> print(config)  # {"name": "test", "timeout": 30}
         """
-        return self._config.copy()
+        with self._config_lock:
+            return self._config.copy()
 
     def set_timeout(self, timeout: float) -> None:
         """Set execution timeout for this routine.
@@ -725,7 +762,7 @@ class Routine(Serializable):
         # We don't need to do anything here - Runtime will call _check_routine_activation
         pass
 
-    def _get_routine_id(self, job_state: JobState) -> Optional[str]:
+    def _get_routine_id(self, job_state: JobState) -> str | None:
         """Get routine_id for this routine.
 
         Args:
@@ -734,7 +771,6 @@ class Routine(Serializable):
         Returns:
             Routine ID if found, None otherwise.
         """
-        from routilux.flow.flow import Flow
 
         flow = getattr(self, "_current_flow", None)
         if flow:
@@ -805,7 +841,7 @@ class Routine(Serializable):
         current_state[key] = value
         job_state.update_routine_state(routine_id, current_state)
 
-    def update_state(self, job_state: JobState, updates: Dict[str, Any]) -> None:
+    def update_state(self, job_state: JobState, updates: dict[str, Any]) -> None:
         """Update multiple routine-specific state keys at once.
 
         Convenience method that automatically uses routine_id.
@@ -886,7 +922,8 @@ class Routine(Serializable):
             )
             return None
 
-        routine_id = flow._get_routine_id(self)
+        # MEDIUM fix: Use getattr to safely get routine_id, handle missing method
+        routine_id = getattr(flow, "_get_routine_id", lambda r: None)(self)
         if routine_id is None:
             logger.warning(
                 f"Routine {self.__class__.__name__} is not registered in flow {flow.flow_id if flow else 'Unknown'}. "
@@ -993,7 +1030,7 @@ class Routine(Serializable):
             - Deferred events are emitted in the order they were added.
         """
         ctx = self.get_execution_context()
-        if ctx is None:
+        if ctx is None or ctx.job_state is None:
             raise RuntimeError(
                 "Cannot emit deferred event: not in execution context. "
                 "This method can only be called during flow execution."
@@ -1038,7 +1075,7 @@ class Routine(Serializable):
             - If no output_handler is set, output is only logged (not sent anywhere).
         """
         ctx = self.get_execution_context()
-        if ctx is None:
+        if ctx is None or ctx.job_state is None:
             raise RuntimeError(
                 "Cannot send output: not in execution context. "
                 "This method can only be called during flow execution."
@@ -1058,17 +1095,20 @@ class Routine(Serializable):
 
         return data
 
-    def deserialize(self, data: dict[str, Any], registry: Any | None = None) -> None:
+    def deserialize(
+        self, data: dict[str, Any], strict: bool = False, registry: Any | None = None
+    ) -> None:
         """Deserialize Routine.
 
         Args:
             data: Serialized data dictionary.
+            strict: Whether to use strict deserialization.
             registry: Optional ObjectRegistry for deserializing callables.
         """
 
         # Let base class handle all registered fields including _slots and _events
         # Base class automatically deserializes Serializable objects in dicts
-        super().deserialize(data, registry=registry)
+        super().deserialize(data, strict=strict, registry=registry)
 
         # Restore routine references for slots and events (required after deserialization)
         if hasattr(self, "_slots") and self._slots:

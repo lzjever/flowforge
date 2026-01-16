@@ -64,7 +64,7 @@ class TestImmediatePolicy:
         """Test: Immediate policy with multiple slots"""
         routine = Routine()
         slot1 = routine.define_slot("input1")
-        slot2 = routine.define_slot("input2")
+        routine.define_slot("input2")
 
         policy = immediate_policy()
         job_state = JobState(flow_id="test")

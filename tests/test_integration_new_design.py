@@ -11,14 +11,10 @@ Tests the complete execution flow:
 """
 
 import time
-from datetime import datetime
-
-import pytest
 
 from routilux import Flow, Routine
 from routilux.activation_policies import all_slots_ready_policy, immediate_policy
 from routilux.error_handler import ErrorHandler, ErrorStrategy
-from routilux.job_state import JobState
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.runtime import Runtime
 from routilux.status import ExecutionStatus
@@ -94,7 +90,9 @@ class TestCompleteExecutionFlow:
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify execution
-        assert job_state.status.value in ["completed", "failed", "running"] or str(job_state.status) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["completed", "failed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
         # Results may be empty if execution hasn't completed yet
         # This is a simplified test - proper completion detection would verify results
 
@@ -162,7 +160,9 @@ class TestCompleteExecutionFlow:
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        assert job_state.status.value in ["completed", "failed", "running"] or str(job_state.status) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["completed", "failed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
 
         runtime.shutdown(wait=True)
 
@@ -231,8 +231,8 @@ class TestCompleteExecutionFlow:
         runtime = Runtime(thread_pool_size=5)
 
         # Start both A and B
-        job_state1 = runtime.exec("test_flow")
-        job_state2 = runtime.exec("test_flow")
+        runtime.exec("test_flow")
+        runtime.exec("test_flow")
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
@@ -305,7 +305,7 @@ class TestActivationPolicyIntegration:
         FlowRegistry.get_instance().register_by_name("test_flow", flow)
 
         runtime = Runtime(thread_pool_size=5)
-        job_state = runtime.exec("test_flow")
+        runtime.exec("test_flow")
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
@@ -397,10 +397,10 @@ class TestRuntimeIntegrationEdgeCases:
         # Empty flow will fail when trying to find entry routine
         # Runtime catches the exception and marks job as failed
         job_state = runtime.exec("empty_flow")
-        
+
         # Wait a bit for execution to complete
         runtime.wait_until_all_jobs_finished(timeout=1.0)
-        
+
         # Job should be marked as failed
         assert job_state.status == ExecutionStatus.FAILED
 

@@ -8,8 +8,8 @@ import logging
 from datetime import datetime
 
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from routilux.api.models.error import ErrorResponse
 
@@ -41,7 +41,7 @@ async def http_exception_handler(request: Request, exc):
         error_code = "http_error"
         message = str(exc.detail)
         details = None
-    
+
     return JSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
@@ -57,7 +57,7 @@ async def http_exception_handler(request: Request, exc):
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle general exceptions."""
     logger.exception(f"Unhandled exception: {exc}")
-    
+
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=ErrorResponse(

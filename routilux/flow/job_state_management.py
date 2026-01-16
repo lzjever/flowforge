@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
+    from routilux.flow.flow import Flow
     from routilux.job_executor import JobExecutor
     from routilux.job_state import JobState
 
@@ -38,9 +39,11 @@ def pause_job_executor(
         reason: Reason for pausing.
         checkpoint: Optional checkpoint data.
     """
-    executor._paused = True
-    # Critical fix: Keep flow._paused in sync with executor._paused
-    executor.flow._paused = True
+    # HIGH fix: Acquire lock first to prevent enqueue_task from running
+    with executor._lock:
+        executor._paused = True
+        # Critical fix: Keep flow._paused in sync with executor._paused
+        executor.flow._paused = True
 
     # Wait for active tasks to complete
     _wait_for_active_tasks(executor)
@@ -71,7 +74,9 @@ def pause_job_executor(
         "queue_size": executor.task_queue.qsize(),
     }
 
-    executor.job_state.pause_points.append(pause_point)
+    # CRITICAL fix: Acquire lock before modifying pause_points
+    with executor.job_state._pause_points_lock:
+        executor.job_state.pause_points.append(pause_point)
     executor.job_state._set_paused(reason=reason, checkpoint=checkpoint)
 
     # Serialize pending tasks
@@ -113,21 +118,22 @@ def resume_job_executor(executor: "JobExecutor") -> "JobState":
     # Deserialize pending tasks if any
     _deserialize_pending_tasks(executor)
 
-    # Re-enqueue pending tasks
-    for task in executor.pending_tasks:
-        executor.task_queue.put(task)
-    executor.pending_tasks.clear()
+    # HIGH fix: Acquire lock when modifying pending_tasks
+    with executor._lock:
+        # Re-enqueue pending tasks
+        for task in executor.pending_tasks:
+            executor.task_queue.put(task)
+        executor.pending_tasks.clear()
 
     # Restart event loop if needed
     if not executor._running or (
-        executor.event_loop_thread is not None
-        and not executor.event_loop_thread.is_alive()
+        executor.event_loop_thread is not None and not executor.event_loop_thread.is_alive()
     ):
         executor._running = True
         executor.event_loop_thread = threading.Thread(
             target=executor._event_loop,
             daemon=True,
-            name=f"JobExecutor-{executor.job_state.job_id[:8]}"
+            name=f"JobExecutor-{executor.job_state.job_id[:8]}",
         )
         executor.event_loop_thread.start()
 
@@ -148,11 +154,12 @@ def cancel_job_executor(executor: "JobExecutor", reason: str = "") -> None:
         executor: JobExecutor to cancel.
         reason: Reason for cancellation.
     """
-    executor._running = False
-    executor._paused = False
-
-    # Cancel active tasks
+    # HIGH fix: Acquire lock before modifying state flags
     with executor._lock:
+        executor._running = False
+        executor._paused = False
+
+        # Cancel active tasks while holding lock
         for future in list(executor.active_tasks):
             if not future.done():
                 future.cancel()
@@ -219,28 +226,20 @@ def _serialize_pending_tasks(executor: "JobExecutor") -> None:
             "slot_name": task.slot.name,
             "data": task.data,
             "connection_source_routine_id": (
-                _get_routine_id_from_flow(
-                    executor.flow, connection.source_event.routine
-                )
+                _get_routine_id_from_flow(executor.flow, connection.source_event.routine)
                 if connection and connection.source_event and connection.source_event.routine
                 else None
             ),
             "connection_source_event_name": (
-                connection.source_event.name
-                if connection and connection.source_event
-                else None
+                connection.source_event.name if connection and connection.source_event else None
             ),
             "connection_target_routine_id": (
-                _get_routine_id_from_flow(
-                    executor.flow, connection.target_slot.routine
-                )
+                _get_routine_id_from_flow(executor.flow, connection.target_slot.routine)
                 if connection and connection.target_slot and connection.target_slot.routine
                 else None
             ),
             "connection_target_slot_name": (
-                connection.target_slot.name
-                if connection and connection.target_slot
-                else None
+                connection.target_slot.name if connection and connection.target_slot else None
             ),
             "param_mapping": connection.param_mapping if connection else {},
             "priority": task.priority.value if task.priority else TaskPriority.NORMAL.value,
@@ -250,7 +249,9 @@ def _serialize_pending_tasks(executor: "JobExecutor") -> None:
         }
         serialized_tasks.append(serialized)
 
-    executor.job_state.pending_tasks = serialized_tasks
+    # CRITICAL fix: Acquire lock before modifying pending_tasks
+    with executor.job_state._pending_tasks_lock:
+        executor.job_state.pending_tasks = serialized_tasks
 
 
 def _deserialize_pending_tasks(executor: "JobExecutor") -> None:
@@ -296,14 +297,10 @@ def _deserialize_pending_tasks(executor: "JobExecutor") -> None:
                 source_routine = executor.flow.routines[source_routine_id]
                 target_routine = executor.flow.routines[target_routine_id]
                 source_event = (
-                    source_routine.get_event(source_event_name)
-                    if source_event_name
-                    else None
+                    source_routine.get_event(source_event_name) if source_event_name else None
                 )
                 target_slot = (
-                    target_routine.get_slot(target_slot_name)
-                    if target_slot_name
-                    else None
+                    target_routine.get_slot(target_slot_name) if target_slot_name else None
                 )
 
                 if source_event and target_slot:
@@ -326,8 +323,9 @@ def _deserialize_pending_tasks(executor: "JobExecutor") -> None:
 
         executor.pending_tasks.append(task)
 
-    # Clear serialized tasks from job_state after deserialization
-    executor.job_state.pending_tasks = []
+    # CRITICAL fix: Acquire lock before clearing pending_tasks
+    with executor.job_state._pending_tasks_lock:
+        executor.job_state.pending_tasks = []
 
     logger.info(f"Deserialized {len(executor.pending_tasks)} pending tasks")
 

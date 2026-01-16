@@ -32,7 +32,7 @@ class TestConnectionCreation:
         slot = routine.define_slot("input")
 
         # Create connection
-        connection = Connection(event, slot)
+        Connection(event, slot)
 
         # Verify bidirectional link
         assert slot in event.connected_slots

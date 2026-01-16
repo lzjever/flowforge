@@ -175,9 +175,7 @@ class ErrorHandler(Serializable):
         elif isinstance(strategy, ErrorStrategy):
             self.strategy: ErrorStrategy = strategy
         else:
-            raise TypeError(
-                f"strategy must be str or ErrorStrategy, got {type(strategy).__name__}"
-            )
+            raise TypeError(f"strategy must be str or ErrorStrategy, got {type(strategy).__name__}")
 
         # Critical fix: Validate retry parameters to prevent infinite loops
         if max_retries is not None and max_retries < 0:
@@ -185,7 +183,9 @@ class ErrorHandler(Serializable):
         if retry_delay is not None and retry_delay < 0:
             raise ValueError(f"retry_delay must be >= 0, got {retry_delay}")
         if retry_backoff is not None and retry_backoff < 1.0:
-            raise ValueError(f"retry_backoff must be >= 1.0 for exponential backoff, got {retry_backoff}")
+            raise ValueError(
+                f"retry_backoff must be >= 1.0 for exponential backoff, got {retry_backoff}"
+            )
 
         self.max_retries: int = max_retries
         self.retry_delay: float = retry_delay
@@ -312,7 +312,7 @@ class ErrorHandler(Serializable):
                 time.sleep(delay)
                 return True  # Return True to indicate retry should occur
             else:
-                # Max retries exceeded
+                # Max retries exceeded - both critical and non-critical should stop
                 if self.is_critical:
                     logger.error(
                         f"Error in routine {routine_id}: {error}. "
@@ -323,8 +323,8 @@ class ErrorHandler(Serializable):
                         f"Error in routine {routine_id}: {error}. "
                         f"Max retries ({self.max_retries}) exceeded. Stopping."
                     )
-                # For critical routines, retry failure means flow must fail
-                return not self.is_critical
+                # Max retries exceeded - always stop execution
+                return False
 
         elif self.strategy == ErrorStrategy.SKIP:
             logger.warning(f"Error in routine {routine_id}: {error}. Skipping routine.")
@@ -353,14 +353,17 @@ class ErrorHandler(Serializable):
             data["strategy"] = data["strategy"].value
         return data
 
-    def deserialize(self, data: dict[str, Any], registry: Any | None = None) -> None:
+    def deserialize(
+        self, data: dict[str, Any], strict: bool = False, registry: Any | None = None
+    ) -> None:
         """Deserialize the ErrorHandler.
 
         Args:
             data: Serialized data dictionary.
+            strict: Whether to use strict deserialization.
             registry: Optional ObjectRegistry for deserializing callables.
         """
         # ErrorStrategy needs to be converted from string to enum
         if "strategy" in data and isinstance(data["strategy"], str):
             data["strategy"] = ErrorStrategy(data["strategy"])
-        super().deserialize(data, registry=registry)
+        super().deserialize(data, strict=strict, registry=registry)

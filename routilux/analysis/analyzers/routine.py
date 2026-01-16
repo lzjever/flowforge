@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 class RoutineAnalyzer:
@@ -61,9 +61,16 @@ class RoutineAnalyzer:
         with open(file_path, encoding="utf-8") as f:
             source_code = f.read()
 
-        tree = ast.parse(source_code, filename=str(file_path))
+        # MEDIUM fix: Handle SyntaxError gracefully
+        try:
+            tree = ast.parse(source_code, filename=str(file_path))
+        except SyntaxError as e:
+            raise ValueError(
+                f"Failed to parse Python file {file_path}: {e.msg} at line {e.lineno}"
+            ) from e
 
-        result = {"file_path": str(file_path), "routines": []}
+        result: dict[str, Any] = {"file_path": str(file_path), "routines": []}
+        routines_list: list[dict[str, Any]] = result["routines"]  # type: ignore[assignment]
 
         # Find all classes that inherit from Routine
         for node in ast.walk(tree):
@@ -71,7 +78,7 @@ class RoutineAnalyzer:
                 if self._inherits_from_routine(node):
                     routine_info = self._analyze_routine_class(node, source_code)
                     if routine_info:
-                        result["routines"].append(routine_info)
+                        routines_list.append(routine_info)
 
         return result
 
@@ -89,8 +96,9 @@ class RoutineAnalyzer:
                 if base.id == "Routine":
                     return True
             elif isinstance(base, ast.Attribute):
+                # MEDIUM fix: Check if base.attr exists before accessing
                 # Handle cases like "routilux.Routine"
-                if base.attr == "Routine":
+                if hasattr(base, 'attr') and base.attr == "Routine":
                     return True
         return False
 
@@ -124,10 +132,11 @@ class RoutineAnalyzer:
             routine_info["config"] = self._extract_config(init_method)
 
         # Extract all methods
+        methods_list: list[dict[str, Any]] = routine_info["methods"]  # type: ignore[assignment]
         for node in class_node.body:
             if isinstance(node, ast.FunctionDef):
                 method_info = self._analyze_method(node)
-                routine_info["methods"].append(method_info)
+                methods_list.append(method_info)
 
         return routine_info
 
@@ -254,7 +263,7 @@ class RoutineAnalyzer:
         if len(call_node.args) < 1:
             return None
 
-        event_info = {"name": self._extract_string_value(call_node.args[0]), "output_params": []}
+        event_info: dict[str, Any] = {"name": self._extract_string_value(call_node.args[0]), "output_params": []}
 
         # Extract output_params from args or kwargs
         if len(call_node.args) > 1:
@@ -297,7 +306,7 @@ class RoutineAnalyzer:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value
         elif isinstance(node, ast.Str):  # Python < 3.8 compatibility
-            return node.s
+            return cast(str, node.s)
         return None
 
     def _extract_literal_value(self, node: ast.AST) -> Any:

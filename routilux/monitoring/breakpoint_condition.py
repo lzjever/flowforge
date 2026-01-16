@@ -58,20 +58,29 @@ def evaluate_condition(
         "getattr": getattr,
     }
 
-    eval_context = {
+    eval_context: Dict[str, Any] = {
         "__builtins__": safe_builtins,
     }
 
     # Add variables from context
-    # This allows access like data.get('value') or data['value']
+    # Critical fix: Validate that variables don't override safe builtins
+    # This prevents security bypass via __builtins__ override
     if variables:
-        eval_context.update(variables)
+        for key, value in variables.items():
+            # Prevent override of __builtins__ and other protected keys
+            if key in ("__builtins__", "__import__", "__name__", "__file__"):
+                raise ValueError(f"Cannot override protected variable: {key}")
+            # Ensure value is safe (no callables that could escape sandbox)
+            if callable(value) and key not in safe_builtins:
+                # Allow only whitelisted callables
+                raise ValueError(f"Custom callables not allowed in conditions: {key}")
+            eval_context[key] = value
 
     # Add context variables
     if context:
-        eval_context["job_state"] = context.job_state
-        eval_context["flow"] = context.flow
-        eval_context["routine_id"] = context.routine_id
+        eval_context["job_state"] = context.job_state  # type: ignore[assignment]
+        eval_context["flow"] = context.flow  # type: ignore[assignment]
+        eval_context["routine_id"] = context.routine_id  # type: ignore[assignment]
 
         # Add shared data access
         if context.job_state:

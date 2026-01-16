@@ -7,12 +7,14 @@ This module provides a singleton GlobalJobManager that manages:
 - Job lifecycle management
 """
 
+from __future__ import annotations
+
 import atexit
 import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from routilux.flow.flow import Flow
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Global instance
-_global_job_manager: Optional["GlobalJobManager"] = None
+_global_job_manager: GlobalJobManager | None = None
 _global_job_manager_lock = threading.Lock()
 
 
@@ -60,21 +62,20 @@ class GlobalJobManager:
         """
         self.max_workers = max_workers
         self.global_thread_pool = ThreadPoolExecutor(
-            max_workers=max_workers,
-            thread_name_prefix="RoutiluxWorker"
+            max_workers=max_workers, thread_name_prefix="RoutiluxWorker"
         )
-        self.running_jobs: Dict[str, "JobExecutor"] = {}
+        self.running_jobs: dict[str, JobExecutor] = {}
         self._lock = threading.Lock()
         self._shutdown = False
 
     def start_job(
         self,
-        flow: "Flow",
+        flow: Flow,
         entry_routine_id: str,
-        entry_params: Optional[Dict[str, Any]] = None,
-        timeout: Optional[float] = None,
-        job_state: Optional["JobState"] = None,
-    ) -> "JobState":
+        entry_params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        job_state: JobState | None = None,
+    ) -> JobState:
         """Start a new job execution.
 
         This method creates a JobExecutor and starts execution in the background.
@@ -108,8 +109,8 @@ class GlobalJobManager:
         # Auto-register job with global registry if monitoring is enabled
         # This allows the API to discover jobs started outside the API
         try:
-            from routilux.monitoring.registry import MonitoringRegistry
             from routilux.monitoring.job_registry import JobRegistry
+            from routilux.monitoring.registry import MonitoringRegistry
 
             if MonitoringRegistry.is_enabled():
                 registry = JobRegistry.get_instance()
@@ -142,7 +143,7 @@ class GlobalJobManager:
 
         return job_state
 
-    def get_job(self, job_id: str) -> Optional["JobExecutor"]:
+    def get_job(self, job_id: str) -> JobExecutor | None:
         """Get job executor by job_id.
 
         Args:
@@ -225,7 +226,8 @@ class GlobalJobManager:
             # Check if all jobs are done
             with self._lock:
                 running = [
-                    job_id for job_id, executor in self.running_jobs.items()
+                    job_id
+                    for job_id, executor in self.running_jobs.items()
                     if executor.is_running()
                 ]
 

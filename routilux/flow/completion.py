@@ -26,6 +26,10 @@ def ensure_event_loop_running(flow: "Flow") -> bool:
     """
     from routilux.flow.event_loop import start_event_loop
 
+    # CRITICAL fix: Validate required attributes exist
+    if not hasattr(flow, "_task_queue") or not hasattr(flow, "_execution_thread"):
+        raise AttributeError("Flow is missing required attributes: _task_queue or _execution_thread. Ensure Flow.__init__() has been called properly.")
+
     queue_size = flow._task_queue.qsize()
     is_running = flow._execution_thread is not None and flow._execution_thread.is_alive()
 
@@ -59,6 +63,12 @@ def wait_for_event_loop_completion(flow: "Flow", timeout: float | None = None) -
     """
     import time
 
+    # CRITICAL fix: Validate required attributes exist
+    required_attrs = ["_execution_thread", "_running", "_execution_lock", "_active_tasks", "_task_queue"]
+    for attr in required_attrs:
+        if not hasattr(flow, attr):
+            raise AttributeError(f"Flow is missing required attribute: {attr}. Ensure Flow.__init__() has been called properly.")
+
     start_time = time.time()
 
     # Wait for event loop thread to terminate AND all active tasks to complete
@@ -86,8 +96,22 @@ def wait_for_event_loop_completion(flow: "Flow", timeout: float | None = None) -
         # Check if task queue is empty
         queue_empty = flow._task_queue.empty()
 
-        # Done if: event loop terminated OR flow stopped AND queue empty AND no active tasks
-        if ((not event_loop_alive) or (not flow_running)) and queue_empty and active_count == 0:
+        # MEDIUM fix: Improved condition to prevent early exit
+        # Only exit if:
+        # 1. Event loop is terminated (not just temporarily stopped)
+        # 2. AND queue is empty
+        # 3. AND no active tasks
+        # The flow_running check alone could cause early exit if flag transiently changes
+        if (not event_loop_alive) and queue_empty and active_count == 0:
+            # Additional check: only exit if flow is actually done (not just paused)
+            if not flow_running:
+                break
+            # Event loop terminated but flow says it's running - this is inconsistent
+            # Log and exit to prevent infinite loop
+            logging.getLogger(__name__).warning(
+                f"Event loop terminated but flow._running=True. "
+                f"This may indicate inconsistent state. Exiting wait loop."
+            )
             break
 
         time.sleep(0.01)  # Small sleep to avoid busy waiting

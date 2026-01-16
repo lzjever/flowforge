@@ -59,8 +59,8 @@ class RoutineTester:
             # This is OK for testing - just skip setting it
             pass
 
-        # Set up context variable
-        _current_job_state.set(mock_job_state)
+        # HIGH fix: Store token for proper context restoration
+        self._original_job_state_token = _current_job_state.set(mock_job_state)
 
         # Mock _get_routine_id to return a test ID
         def mock_get_routine_id(routine):
@@ -132,6 +132,43 @@ class RoutineTester:
         """
         return self._captured_events.copy()
 
+    # CRITICAL fix: Remove duplicate cleanup() method definition (lines 135-159)
+    # The cleanup() method is now defined only once at lines 173-190
+
     def clear_captured_events(self) -> None:
         """Clear all captured events."""
         self._captured_events.clear()
+
+    def cleanup(self) -> None:
+        """Clean up test resources and restore original state.
+
+        Critical fix: Properly cleans up context variables and monkey-patched
+        methods to prevent state leakage between tests.
+        """
+        from routilux.routine import _current_job_state
+
+        # HIGH fix: Properly reset context variable using the token
+        if hasattr(self, '_original_job_state_token'):
+            _current_job_state.reset(self._original_job_state_token)
+        else:
+            # Fallback if token not stored (shouldn't happen)
+            _current_job_state.set(None)
+
+        # Restore original emit method if it was monkey-patched
+        if hasattr(self.routine, "_original_emit"):
+            self.routine.emit = self.routine._original_emit
+            delattr(self.routine, "_original_emit")
+
+        # Clear captured events
+        self._captured_events.clear()
+
+    def __del__(self) -> None:
+        """Cleanup when tester is garbage collected.
+
+        Critical fix: Ensures cleanup is called even if explicit cleanup() is not called.
+        """
+        try:
+            self.cleanup()
+        except Exception:
+            # Ignore exceptions during garbage collection
+            pass

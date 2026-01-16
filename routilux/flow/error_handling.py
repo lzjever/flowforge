@@ -104,6 +104,9 @@ def handle_task_error(
                     )
                     # Route to JobExecutor if available, otherwise use flow._enqueue_task()
                     if not _enqueue_to_executor(retry_task, task.job_state):
+                        # CRITICAL fix: Validate required method exists before calling
+                        if not hasattr(flow, "_enqueue_task"):
+                            raise AttributeError("Flow is missing required method: _enqueue_task. Ensure Flow.__init__() has been called properly.")
                         flow._enqueue_task(retry_task)
                     return
             # Max retries reached or non-retryable exception, fall through to default
@@ -178,9 +181,18 @@ def _stop_execution(job_state, flow: "Flow") -> None:
         executor = job_manager.get_job(job_state.job_id)
 
         if executor is not None:
-            executor._running = False
+            # CRITICAL fix: Acquire lock before modifying _running flag
+            if hasattr(executor, '_lock'):
+                with executor._lock:
+                    executor._running = False
+            else:
+                executor._running = False
             return
 
     # Fallback: stop flow (legacy mode)
-    if hasattr(flow, "_running"):
+    if hasattr(flow, "_running") and hasattr(flow, "_execution_lock"):
+        # CRITICAL fix: Acquire lock before modifying _running flag
+        with flow._execution_lock:
+            flow._running = False
+    elif hasattr(flow, "_running"):
         flow._running = False

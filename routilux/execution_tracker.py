@@ -74,7 +74,7 @@ class ExecutionTracker(Serializable):
             ["flow_id", "routine_executions", "event_flow", "performance_metrics"]
         )
 
-    def record_routine_start(self, routine_id: str, params: dict[str, Any] = None) -> None:
+    def record_routine_start(self, routine_id: str, params: dict[str, Any] | None = None) -> None:
         """Record the start of a routine execution.
 
         This method is called when a routine begins execution. It creates
@@ -176,16 +176,25 @@ class ExecutionTracker(Serializable):
 
             # Calculate execution time
             if "start_time" in execution and "end_time" in execution:
-                start = datetime.fromisoformat(execution["start_time"])
-                end = datetime.fromisoformat(execution["end_time"])
-                execution["execution_time"] = (end - start).total_seconds()
+                try:
+                    start = datetime.fromisoformat(execution["start_time"])
+                    end = datetime.fromisoformat(execution["end_time"])
+                    execution["execution_time"] = (end - start).total_seconds()
+                except (ValueError, TypeError) as e:
+                    # MEDIUM fix: Handle malformed datetime strings gracefully
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"Failed to parse execution time for routine {routine_id}: {e}. "
+                        f"start_time={execution.get('start_time')}, end_time={execution.get('end_time')}"
+                    )
+                    execution["execution_time"] = None
 
     def record_event(
         self,
         source_routine_id: str,
         event_name: str,
         target_routine_id: str | None = None,
-        data: dict[str, Any] = None,
+        data: dict[str, Any] | None = None,
     ) -> None:
         """Record an event emission in the event flow.
 
@@ -269,7 +278,9 @@ class ExecutionTracker(Serializable):
             completed = sum(1 for e in executions if e.get("status") == "completed")
             failed = sum(1 for e in executions if e.get("status") == "failed")
 
-            execution_times = [e.get("execution_time", 0) for e in executions if "execution_time" in e]
+            execution_times = [
+                e.get("execution_time", 0) for e in executions if "execution_time" in e
+            ]
 
             avg_time = sum(execution_times) / len(execution_times) if execution_times else 0
             min_time = min(execution_times) if execution_times else 0
@@ -313,8 +324,10 @@ class ExecutionTracker(Serializable):
             for routine_id in self.routine_executions:
                 perf = self.get_routine_performance(routine_id)
                 # perf is now guaranteed to be non-None dict
-                if perf.get("avg_execution_time"):
-                    all_execution_times.append(perf["avg_execution_time"])
+                # HIGH fix: Use "is not None" instead of truthy check to handle 0.0 correctly
+                avg_time = perf.get("avg_execution_time")
+                if avg_time is not None:
+                    all_execution_times.append(avg_time)
 
             total_time = sum(all_execution_times)
             avg_time = total_time / len(all_execution_times) if all_execution_times else 0

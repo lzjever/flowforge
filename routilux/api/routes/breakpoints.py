@@ -26,13 +26,22 @@ def _breakpoint_to_response(bp: Breakpoint) -> BreakpointResponse:
         routine_id=bp.routine_id,
         slot_name=bp.slot_name,
         event_name=bp.event_name,
+        source_routine_id=bp.source_routine_id,
+        source_event_name=bp.source_event_name,
+        target_routine_id=bp.target_routine_id,
+        target_slot_name=bp.target_slot_name,
         condition=bp.condition,
         enabled=bp.enabled,
         hit_count=bp.hit_count,
     )
 
 
-@router.post("/jobs/{job_id}/breakpoints", response_model=BreakpointResponse, status_code=201, dependencies=[RequireAuth])
+@router.post(
+    "/jobs/{job_id}/breakpoints",
+    response_model=BreakpointResponse,
+    status_code=201,
+    dependencies=[RequireAuth],
+)
 async def create_breakpoint(job_id: str, request: BreakpointCreateRequest):
     """Create a breakpoint for a job."""
     # Verify job exists
@@ -53,6 +62,10 @@ async def create_breakpoint(job_id: str, request: BreakpointCreateRequest):
         routine_id=request.routine_id,
         slot_name=request.slot_name,
         event_name=request.event_name,
+        source_routine_id=request.source_routine_id,
+        source_event_name=request.source_event_name,
+        target_routine_id=request.target_routine_id,
+        target_slot_name=request.target_slot_name,
         condition=request.condition,
         enabled=request.enabled,
     )
@@ -62,7 +75,9 @@ async def create_breakpoint(job_id: str, request: BreakpointCreateRequest):
     return _breakpoint_to_response(breakpoint)
 
 
-@router.get("/jobs/{job_id}/breakpoints", response_model=BreakpointListResponse, dependencies=[RequireAuth])
+@router.get(
+    "/jobs/{job_id}/breakpoints", response_model=BreakpointListResponse, dependencies=[RequireAuth]
+)
 async def list_breakpoints(job_id: str):
     """List all breakpoints for a job."""
     # Verify job exists
@@ -84,7 +99,9 @@ async def list_breakpoints(job_id: str):
     )
 
 
-@router.delete("/jobs/{job_id}/breakpoints/{breakpoint_id}", status_code=204, dependencies=[RequireAuth])
+@router.delete(
+    "/jobs/{job_id}/breakpoints/{breakpoint_id}", status_code=204, dependencies=[RequireAuth]
+)
 async def delete_breakpoint(job_id: str, breakpoint_id: str):
     """Delete a breakpoint."""
     # Verify job exists
@@ -101,7 +118,11 @@ async def delete_breakpoint(job_id: str, breakpoint_id: str):
     breakpoint_mgr.remove_breakpoint(breakpoint_id, job_id)
 
 
-@router.put("/jobs/{job_id}/breakpoints/{breakpoint_id}", response_model=BreakpointResponse, dependencies=[RequireAuth])
+@router.put(
+    "/jobs/{job_id}/breakpoints/{breakpoint_id}",
+    response_model=BreakpointResponse,
+    dependencies=[RequireAuth],
+)
 async def update_breakpoint(job_id: str, breakpoint_id: str, enabled: bool):
     """Update breakpoint (enable/disable)."""
     # Verify job exists

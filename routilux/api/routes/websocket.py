@@ -8,6 +8,7 @@ Supports event filtering via subscription management.
 
 import asyncio
 import logging
+import re
 from typing import Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -149,6 +150,15 @@ async def job_monitor_websocket(websocket: WebSocket, job_id: str):
     subscriber_id: Optional[str] = None
 
     try:
+        # MEDIUM fix: Validate job_id format before processing
+        if not job_id or not isinstance(job_id, str):
+            await websocket.close(code=1008, reason="Invalid job_id format")
+            return
+        # job_id should be a UUID format (alphanumeric with dashes)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', job_id):
+            await websocket.close(code=1008, reason="Invalid job_id format")
+            return
+
         # Verify job exists (with error handling)
         try:
             job_state = job_store.get(job_id)
@@ -245,6 +255,15 @@ async def job_debug_websocket(websocket: WebSocket, job_id: str):
     subscriber_id: Optional[str] = None
 
     try:
+        # MEDIUM fix: Validate job_id format before processing
+        if not job_id or not isinstance(job_id, str):
+            await websocket.close(code=1008, reason="Invalid job_id format")
+            return
+        # job_id should be a UUID format (alphanumeric with dashes)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', job_id):
+            await websocket.close(code=1008, reason="Invalid job_id format")
+            return
+
         # Verify job exists
         try:
             job_state = job_store.get(job_id)
@@ -336,6 +355,14 @@ async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
     subscribers = []  # List of (job_id, subscriber_id) tuples
 
     try:
+        # MEDIUM fix: Validate flow_id format before processing
+        if not flow_id or not isinstance(flow_id, str):
+            await websocket.close(code=1008, reason="Invalid flow_id format")
+            return
+        if not re.match(r'^[a-zA-Z0-9_-]+$', flow_id):
+            await websocket.close(code=1008, reason="Invalid flow_id format")
+            return
+
         # Verify flow exists
         try:
             flow = flow_store.get(flow_id)
@@ -406,8 +433,18 @@ async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
         # Run all listeners concurrently
         tasks = [listen_to_job(job_id, sub_id) for job_id, sub_id in subscribers]
 
-        # Wait for all tasks (runs until WebSocket disconnects)
-        await asyncio.gather(*tasks, return_exceptions=True)
+        # MEDIUM fix: Ensure tasks are properly cleaned up on disconnect
+        try:
+            # Wait for all tasks (runs until WebSocket disconnects)
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            # Cancel all pending tasks to ensure cleanup
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for tasks to finish cancellation
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     except WebSocketDisconnect as e:
         logger.debug(f"Flow WebSocket disconnected for flow {flow_id}: code={e.code}")

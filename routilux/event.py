@@ -6,6 +6,7 @@ Output events for sending data to other routines.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -73,9 +74,11 @@ class Event(Serializable):
         """
         super().__init__()
         self.name: str = name
-        self.routine: Routine = routine
+        self.routine: Routine | None = routine
         self.output_params: list[str] = output_params or []
         self.connected_slots: list[Slot] = []
+        # Critical fix: Add lock for thread-safe connection management
+        self._connection_lock: threading.RLock = threading.RLock()
 
         # Register serializable fields
         self.add_serializable_fields(["name", "output_params"])
@@ -92,16 +95,19 @@ class Event(Serializable):
         # Flow will add routine_id when serializing routines
         return super().serialize()
 
-    def deserialize(self, data: dict[str, Any], registry: Any | None = None) -> None:
+    def deserialize(
+        self, data: dict[str, Any], strict: bool = False, registry: Any | None = None
+    ) -> None:
         """Deserialize the Event.
 
         Args:
             data: Serialized data dictionary.
+            strict: Whether to use strict deserialization.
             registry: Optional ObjectRegistry for deserializing callables.
         """
         # Let base class handle registered fields (name, output_params)
         # Base class is sufficient - no special handling needed
-        super().deserialize(data, registry=registry)
+        super().deserialize(data, strict=strict, registry=registry)
 
     def __repr__(self) -> str:
         """Return string representation of the Event."""
@@ -113,26 +119,38 @@ class Event(Serializable):
     def connect(self, slot: Slot) -> None:
         """Connect to a slot.
 
+        Critical fix: Thread-safe connection to prevent race conditions
+        in concurrent execution mode. Use lock ordering to prevent deadlock.
+
         Args:
             slot: Slot object to connect to.
         """
-        if slot not in self.connected_slots:
-            self.connected_slots.append(slot)
-            # Bidirectional connection
-            if self not in slot.connected_events:
-                slot.connected_events.append(self)
+        # HIGH fix: Always acquire locks in consistent order (by id) to prevent deadlock
+        lock1, lock2 = sorted((self._connection_lock, slot._connection_lock), key=id)
+        with lock1, lock2:
+            if slot not in self.connected_slots:
+                self.connected_slots.append(slot)
+                # Bidirectional connection
+                if self not in slot.connected_events:
+                    slot.connected_events.append(self)
 
     def disconnect(self, slot: Slot) -> None:
         """Disconnect from a slot.
 
+        Critical fix: Thread-safe disconnection to prevent race conditions
+        in concurrent execution mode. Use lock ordering to prevent deadlock.
+
         Args:
             slot: Slot object to disconnect from.
         """
-        if slot in self.connected_slots:
-            self.connected_slots.remove(slot)
-            # Bidirectional disconnection
-            if self in slot.connected_events:
-                slot.connected_events.remove(self)
+        # HIGH fix: Always acquire locks in consistent order (by id) to prevent deadlock
+        lock1, lock2 = sorted((self._connection_lock, slot._connection_lock), key=id)
+        with lock1, lock2:
+            if slot in self.connected_slots:
+                self.connected_slots.remove(slot)
+                # Bidirectional disconnection
+                if self in slot.connected_events:
+                    slot.connected_events.remove(self)
 
     def emit(self, runtime: Runtime, job_state: JobState, **kwargs) -> None:
         """Emit the event and route data through Runtime to connected slots.
@@ -151,10 +169,10 @@ class Event(Serializable):
                 >>> event.emit(runtime=runtime, job_state=job_state, result="data", status="ok")
         """
         # Pack data with metadata
-        # Use routine class name or _id as emitted_from
+        # Use routine _id if available, otherwise class name
         emitted_from = "unknown"
         if self.routine:
-            emitted_from = self.routine.__class__.__name__ or getattr(self.routine, "_id", "unknown")
+            emitted_from = getattr(self.routine, "_id", None) or self.routine.__class__.__name__
 
         event_data = {
             "data": kwargs,

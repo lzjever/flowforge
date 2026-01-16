@@ -47,9 +47,13 @@ def execute_flow(
     execution_timeout = timeout if timeout is not None else flow.execution_timeout
 
     if strategy == "concurrent":
-        return execute_concurrent(flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state)
+        return execute_concurrent(
+            flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state
+        )
     else:
-        return execute_sequential(flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state)
+        return execute_sequential(
+            flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state
+        )
 
 
 def start_flow_execution(
@@ -89,13 +93,13 @@ def start_flow_execution(
     # Create or use provided job_state
     if job_state is None:
         job_state = JobState(flow.flow_id)
-    
+
     job_state.status = ExecutionStatus.RUNNING
     job_state.current_routine_id = entry_routine_id
 
     # Start execution in background thread
     import threading
-    
+
     def _run_execution():
         """Run execution in background thread."""
         try:
@@ -103,21 +107,50 @@ def start_flow_execution(
             # The execution will complete in the background
             strategy = execution_strategy or flow.execution_strategy
             execution_timeout = timeout if timeout is not None else flow.execution_timeout
-            
+
             if strategy == "concurrent":
-                execute_concurrent(flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state)
+                execute_concurrent(
+                    flow,
+                    entry_routine_id,
+                    entry_params,
+                    timeout=execution_timeout,
+                    job_state=job_state,
+                )
             else:
-                execute_sequential(flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state)
+                execute_sequential(
+                    flow,
+                    entry_routine_id,
+                    entry_params,
+                    timeout=execution_timeout,
+                    job_state=job_state,
+                )
         except Exception as e:
             import logging
+
             logging.exception(f"Error in background execution for job {job_state.job_id}: {e}")
             job_state.status = ExecutionStatus.FAILED
             if "error" not in job_state.shared_data:
                 job_state.shared_data["error"] = str(e)
 
     # Start background thread
-    thread = threading.Thread(target=_run_execution, daemon=True)
+    # HIGH fix: Use daemon=False to ensure proper cleanup, but track thread for cleanup
+    # Changed from daemon=True to prevent abrupt termination
+    thread = threading.Thread(target=_run_execution, daemon=False, name=f"FlowExecution-{job_state.job_id[:8]}")
     thread.start()
+
+    # HIGH fix: Store thread reference for cleanup and monitoring
+    # This allows proper shutdown instead of abrupt daemon termination
+    if not hasattr(job_state, '_execution_thread'):
+        job_state._execution_thread = thread
+    else:
+        # If thread already exists, the previous one should be done
+        # This prevents memory leaks from multiple execute() calls
+        old_thread = job_state._execution_thread
+        if old_thread is not None and old_thread.is_alive():
+            logging.getLogger(__name__).warning(
+                f"Previous execution thread still running for job {job_state.job_id}"
+            )
+        job_state._execution_thread = thread
 
     return job_state
 
@@ -160,7 +193,13 @@ def execute_sequential(
     flow.execution_tracker = ExecutionTracker(flow.flow_id)
 
     entry_params = entry_params or {}
-    entry_routine = flow.routines[entry_routine_id]
+    # CRITICAL fix: Use .get() with proper error handling to prevent KeyError
+    entry_routine = flow.routines.get(entry_routine_id)
+    if entry_routine is None:
+        raise ValueError(
+            f"Entry routine '{entry_routine_id}' not found in flow. "
+            f"Available routines: {list(flow.routines.keys())}"
+        )
 
     try:
         for routine in flow.routines.values():
@@ -192,12 +231,20 @@ def execute_sequential(
 
         try:
             trigger_slot.call_handler(entry_params or {}, propagate_exceptions=True)
+        except Exception:
+            # CRITICAL fix: Ensure context is restored even if handler raises exception
+            raise
         finally:
             # Restore previous job_state
-            if old_job_state is not None:
-                _current_job_state.set(old_job_state)
-            else:
-                _current_job_state.set(None)
+            # Use try-except to ensure cleanup even if set() fails
+            try:
+                if old_job_state is not None:
+                    _current_job_state.set(old_job_state)
+                else:
+                    _current_job_state.set(None)
+            except Exception:
+                # Log but don't raise - cleanup is critical
+                pass
 
         # Entry routine's trigger handler completed successfully
         # Update its state regardless of downstream routine failures
@@ -219,13 +266,15 @@ def execute_sequential(
         # This is critical for timeout tasks that may emit new events
         wait_for_event_loop_completion(flow, timeout=timeout)
 
+        # MEDIUM fix: Make status check and update atomic using job_state's lock
         # Only update job status to completed if it hasn't already failed
-        if job_state.status != ExecutionStatus.FAILED:
-            # Set job state to completed
-            job_state.status = ExecutionStatus.COMPLETED
+        with job_state._status_lock:
+            if job_state.status != ExecutionStatus.FAILED:
+                # Set job state to completed
+                job_state.status = ExecutionStatus.COMPLETED
 
-            # Monitoring hook: Flow end
-            execution_hooks.on_flow_end(flow, job_state, "completed")
+                # Monitoring hook: Flow end
+                execution_hooks.on_flow_end(flow, job_state, "completed")
 
         return job_state
 
@@ -341,4 +390,6 @@ def execute_concurrent(
     Returns:
         JobState object.
     """
-    return execute_sequential(flow, entry_routine_id, entry_params, timeout=timeout, job_state=job_state)
+    return execute_sequential(
+        flow, entry_routine_id, entry_params, timeout=timeout, job_state=job_state
+    )

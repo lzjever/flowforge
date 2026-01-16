@@ -12,7 +12,6 @@ This example demonstrates:
 
 from routilux import Flow, Routine
 from routilux.activation_policies import immediate_policy
-from routilux.job_state import JobState
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.runtime import Runtime
 
@@ -50,7 +49,11 @@ class DataProcessor(Routine):
             """Process incoming data"""
             # Handle data from slot
             if input_data:
-                data_value = input_data[0].get("data", input_data[0]) if isinstance(input_data[0], dict) else input_data[0]
+                data_value = (
+                    input_data[0].get("data", input_data[0])
+                    if isinstance(input_data[0], dict)
+                    else input_data[0]
+                )
             else:
                 data_value = ""
 
@@ -79,7 +82,11 @@ class DataSink(Routine):
             """Receive and store the final result"""
             # Handle data from slot
             if input_data:
-                result_value = input_data[0].get("result", input_data[0]) if isinstance(input_data[0], dict) else input_data[0]
+                result_value = (
+                    input_data[0].get("result", input_data[0])
+                    if isinstance(input_data[0], dict)
+                    else input_data[0]
+                )
             else:
                 result_value = None
 

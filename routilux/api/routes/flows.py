@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from routilux.api.middleware.auth import RequireAuth
 from routilux.api.models.flow import (
     ConnectionInfo,
     FlowCreateRequest,
@@ -13,7 +14,6 @@ from routilux.api.models.flow import (
     FlowResponse,
     RoutineInfo,
 )
-from routilux.api.middleware.auth import RequireAuth
 from routilux.api.validators import validate_dsl_size, validate_routine_id_conflict
 from routilux.flow import Flow
 from routilux.monitoring.storage import flow_store
@@ -39,8 +39,12 @@ def _flow_to_response(flow: Flow) -> FlowResponse:
         if conn.source_event is None or conn.target_slot is None:
             continue  # Skip incomplete connections
 
-        source_routine_id = flow._get_routine_id(conn.source_event.routine) if conn.source_event.routine else None
-        target_routine_id = flow._get_routine_id(conn.target_slot.routine) if conn.target_slot.routine else None
+        source_routine_id = (
+            flow._get_routine_id(conn.source_event.routine) if conn.source_event.routine else None
+        )
+        target_routine_id = (
+            flow._get_routine_id(conn.target_slot.routine) if conn.target_slot.routine else None
+        )
         connections.append(
             ConnectionInfo(
                 connection_id=f"conn_{i}",
@@ -232,8 +236,12 @@ async def list_flow_connections(flow_id: str):
         if conn.source_event is None or conn.target_slot is None:
             continue  # Skip incomplete connections
 
-        source_routine_id = flow._get_routine_id(conn.source_event.routine) if conn.source_event.routine else None
-        target_routine_id = flow._get_routine_id(conn.target_slot.routine) if conn.target_slot.routine else None
+        source_routine_id = (
+            flow._get_routine_id(conn.source_event.routine) if conn.source_event.routine else None
+        )
+        target_routine_id = (
+            flow._get_routine_id(conn.target_slot.routine) if conn.target_slot.routine else None
+        )
         connections.append(
             ConnectionInfo(
                 connection_id=f"conn_{i}",
@@ -253,8 +261,8 @@ async def add_routine_to_flow(
     flow_id: str, routine_id: str, class_path: str, config: Optional[Dict[str, Any]] = None
 ):
     """Add a routine to an existing flow."""
-    from routilux.api.validators import validate_flow_exists, validate_routine_id_conflict
-    
+    from routilux.api.validators import validate_flow_exists
+
     flow = validate_flow_exists(flow_id)
     validate_routine_id_conflict(flow, routine_id)
 
@@ -262,7 +270,7 @@ async def add_routine_to_flow(
     if "." not in class_path or class_path.startswith(".") or class_path.endswith("."):
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid class_path format: '{class_path}'. Expected format: 'module.path.ClassName'"
+            detail=f"Invalid class_path format: '{class_path}'. Expected format: 'module.path.ClassName'",
         )
 
     # Load routine class
@@ -276,7 +284,9 @@ async def add_routine_to_flow(
         routine_class = getattr(module, class_name)
         routine = routine_class()
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to load routine class: {str(e)}") from e
+        raise HTTPException(
+            status_code=400, detail=f"Failed to load routine class: {str(e)}"
+        ) from e
 
     # Apply config
     if config:
@@ -311,7 +321,9 @@ async def add_connection_to_flow(
         raise HTTPException(status_code=400, detail=f"Failed to add connection: {str(e)}") from e
 
 
-@router.delete("/flows/{flow_id}/routines/{routine_id}", status_code=204, dependencies=[RequireAuth])
+@router.delete(
+    "/flows/{flow_id}/routines/{routine_id}", status_code=204, dependencies=[RequireAuth]
+)
 async def remove_routine_from_flow(flow_id: str, routine_id: str):
     """Remove a routine from a flow."""
     flow = flow_store.get(flow_id)
@@ -347,7 +359,9 @@ async def remove_routine_from_flow(flow_id: str, routine_id: str):
     flow_store.add(flow)  # Update stored flow
 
 
-@router.delete("/flows/{flow_id}/connections/{connection_index}", status_code=204, dependencies=[RequireAuth])
+@router.delete(
+    "/flows/{flow_id}/connections/{connection_index}", status_code=204, dependencies=[RequireAuth]
+)
 async def remove_connection_from_flow(flow_id: str, connection_index: int):
     """Remove a connection from a flow."""
     flow = flow_store.get(flow_id)

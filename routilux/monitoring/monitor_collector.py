@@ -239,7 +239,9 @@ class MonitorCollector:
                 except RuntimeError:
                     # No running event loop - skip publishing to avoid blocking
                     # This is expected in synchronous API routes and flow execution
-                    logging.debug(f"No event loop running, skipping event publish for job {event.job_id}")
+                    logging.debug(
+                        f"No event loop running, skipping event publish for job {event.job_id}"
+                    )
             except (RuntimeError, AttributeError) as e:
                 # Expected errors when event manager is not available or in wrong context
                 logging.debug(f"Cannot publish event: {e}")

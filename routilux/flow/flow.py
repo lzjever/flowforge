@@ -6,8 +6,10 @@ Flow manager responsible for managing multiple Routine nodes and execution flow.
 
 from __future__ import annotations
 
+import queue
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -20,7 +22,6 @@ if TYPE_CHECKING:
     from routilux.slot import Slot
 
 from serilux import Serializable, register_serializable
-
 
 
 @register_serializable
@@ -93,6 +94,19 @@ class Flow(Serializable):
             execution_timeout: Default timeout for execution completion in seconds.
                 None for no timeout (default: 300.0 seconds).
         """
+        # MEDIUM fix: Validate max_workers parameter
+        if not isinstance(max_workers, int):
+            raise TypeError(f"max_workers must be int, got {type(max_workers).__name__}")
+        if max_workers < 1:
+            raise ValueError(f"max_workers must be >= 1, got {max_workers}")
+
+        # MEDIUM fix: Validate execution_strategy parameter
+        valid_strategies = {"sequential", "concurrent"}
+        if execution_strategy not in valid_strategies:
+            raise ValueError(
+                f"execution_strategy must be one of {valid_strategies}, got '{execution_strategy}'"
+            )
+
         super().__init__()
         self.flow_id: str = flow_id or str(uuid.uuid4())
         self.routines: dict[str, Routine] = {}
@@ -101,6 +115,18 @@ class Flow(Serializable):
         self.execution_tracker: ExecutionTracker | None = None
         self.error_handler: ErrorHandler | None = None
         self._paused: bool = False
+
+        # Critical fix: Initialize runtime attributes that are used by flow subsystem
+        # These are required by event_loop.py, completion.py, state_management.py, etc.
+        self._task_queue: queue.PriorityQueue = queue.PriorityQueue()
+        self._active_tasks: set = set()
+        self._execution_lock: threading.RLock = threading.RLock()
+        # MEDIUM fix: Add lock for flow configuration operations (add_routine, connect)
+        self._config_lock: threading.RLock = threading.RLock()
+        self._running: bool = False
+        self._execution_thread: threading.Thread | None = None
+        self._pending_tasks: list = []
+        self._executor: ThreadPoolExecutor | None = None
 
         self.execution_strategy: str = execution_strategy
         self.max_workers: int = max_workers if execution_strategy == "concurrent" else 1
@@ -112,9 +138,7 @@ class Flow(Serializable):
                     f"execution_timeout must be numeric, got {type(execution_timeout).__name__}"
                 )
             if execution_timeout <= 0:
-                raise ValueError(
-                    f"execution_timeout must be positive, got {execution_timeout}"
-                )
+                raise ValueError(f"execution_timeout must be positive, got {execution_timeout}")
         self.execution_timeout: float | None = (
             execution_timeout if execution_timeout is not None else 300.0
         )
@@ -122,8 +146,8 @@ class Flow(Serializable):
         # Auto-register with global registry if monitoring is enabled
         # This allows the API to discover flows created outside the API
         try:
-            from routilux.monitoring.registry import MonitoringRegistry
             from routilux.monitoring.flow_registry import FlowRegistry
+            from routilux.monitoring.registry import MonitoringRegistry
 
             if MonitoringRegistry.is_enabled():
                 registry = FlowRegistry.get_instance()
@@ -154,6 +178,36 @@ class Flow(Serializable):
         """Return string representation of the Flow."""
         return f"Flow[{self.flow_id}]"
 
+    def _get_executor(self) -> ThreadPoolExecutor:
+        """Get or create the thread pool executor.
+
+        Critical fix: This method is required by event_loop.py for task execution.
+
+        Returns:
+            ThreadPoolExecutor instance.
+        """
+        # CRITICAL fix: Use lock to prevent race condition in executor initialization
+        # Double-checked locking pattern to avoid acquiring lock every time
+        if self._executor is None:
+            with self._execution_lock:
+                if self._executor is None:
+                    self._executor = ThreadPoolExecutor(
+                        max_workers=self.max_workers,
+                        thread_name_prefix=f"FlowWorker-{self.flow_id}"
+                    )
+        return self._executor
+
+    def _enqueue_task(self, task: Any) -> None:
+        """Enqueue a task to the execution queue.
+
+        Critical fix: This method is required by state_management.py and error_handling.py
+        for enqueueing tasks during resume and retry operations.
+
+        Args:
+            task: Task object to enqueue (typically SlotActivationTask).
+        """
+        with self._execution_lock:
+            self._task_queue.put(task)
 
     def _get_routine_id(self, routine: Routine) -> str | None:
         """Find the ID of a Routine object within this Flow.
@@ -209,7 +263,6 @@ class Flow(Serializable):
         key = (event, slot)
         return self._event_slot_connections.get(key)
 
-
     def add_routine(self, routine: Routine, routine_id: str | None = None) -> str:
         """Add a routine to the flow.
 
@@ -223,12 +276,17 @@ class Flow(Serializable):
         Raises:
             ValueError: If routine_id already exists in the flow.
         """
-        rid = routine_id or routine._id
-        if rid in self.routines:
-            raise ValueError(f"Routine ID '{rid}' already exists in flow")
+        # MEDIUM fix: Use lock to prevent race condition when multiple threads add routines
+        # CRITICAL fix: Add hasattr check for routine._id to prevent AttributeError
+        with self._config_lock:
+            rid = routine_id or (getattr(routine, '_id', None) if routine else None)
+            if rid is None:
+                raise ValueError("routine_id must be provided or routine must have _id attribute")
+            if rid in self.routines:
+                raise ValueError(f"Routine ID '{rid}' already exists in flow")
 
-        self.routines[rid] = routine
-        return rid
+            self.routines[rid] = routine
+            return rid
 
     def connect(
         self,
@@ -236,6 +294,7 @@ class Flow(Serializable):
         source_event: str,
         target_routine_id: str,
         target_slot: str,
+        param_mapping: dict[str, str] | None = None,
     ) -> Connection:
         """Connect two routines by linking a source event to a target slot.
 
@@ -244,6 +303,8 @@ class Flow(Serializable):
             source_event: Name of the event to connect from.
             target_routine_id: Identifier of the routine that receives the data.
             target_slot: Name of the slot to connect to.
+            param_mapping: Optional mapping from source parameter names to target
+                parameter names. Allows renaming/mapping parameters during data transfer.
 
         Returns:
             Connection object representing this connection.
@@ -251,31 +312,36 @@ class Flow(Serializable):
         Raises:
             ValueError: If any of the required components don't exist.
         """
-        if source_routine_id not in self.routines:
-            raise ValueError(f"Source routine '{source_routine_id}' not found in flow")
+        # MEDIUM fix: Use lock to prevent race condition when multiple threads add connections
+        with self._config_lock:
+            if source_routine_id not in self.routines:
+                raise ValueError(f"Source routine '{source_routine_id}' not found in flow")
 
-        source_routine = self.routines[source_routine_id]
-        source_event_obj = source_routine.get_event(source_event)
-        if source_event_obj is None:
-            raise ValueError(f"Event '{source_event}' not found in routine '{source_routine_id}'")
+            source_routine = self.routines[source_routine_id]
+            source_event_obj = source_routine.get_event(source_event)
+            if source_event_obj is None:
+                raise ValueError(f"Event '{source_event}' not found in routine '{source_routine_id}'")
 
-        if target_routine_id not in self.routines:
-            raise ValueError(f"Target routine '{target_routine_id}' not found in flow")
+            if target_routine_id not in self.routines:
+                raise ValueError(f"Target routine '{target_routine_id}' not found in flow")
 
-        target_routine = self.routines[target_routine_id]
-        target_slot_obj = target_routine.get_slot(target_slot)
-        if target_slot_obj is None:
-            raise ValueError(f"Slot '{target_slot}' not found in routine '{target_routine_id}'")
+            target_routine = self.routines[target_routine_id]
+            target_slot_obj = target_routine.get_slot(target_slot)
+            if target_slot_obj is None:
+                raise ValueError(f"Slot '{target_slot}' not found in routine '{target_routine_id}'")
 
-        from routilux.connection import Connection
+            from routilux.connection import Connection
 
-        connection = Connection(source_event_obj, target_slot_obj)
-        self.connections.append(connection)
+            connection = Connection(source_event_obj, target_slot_obj)
+            # HIGH fix: Apply param_mapping if provided (matches API used by builder.py:102)
+            if param_mapping:
+                connection.param_mapping = param_mapping
+            self.connections.append(connection)
 
-        key = (source_event_obj, target_slot_obj)
-        self._event_slot_connections[key] = connection
+            key = (source_event_obj, target_slot_obj)
+            self._event_slot_connections[key] = connection
 
-        return connection
+            return connection
 
     def get_connections_for_event(self, event: Event) -> list[Connection]:
         """Get all connections for a specific event.
@@ -449,7 +515,7 @@ class Flow(Serializable):
 
             job_state.status = ExecutionStatus.CANCELLED
 
-    def routine(self, routine_id: str) -> "RoutineConfig":
+    def routine(self, routine_id: str) -> RoutineConfig:
         """Get routine config helper for chaining.
 
         Args:
@@ -461,9 +527,11 @@ class Flow(Serializable):
         Examples:
             >>> flow.routine("processor").config("timeout", 30)
         """
-        if routine_id not in self.routines:
-            raise ValueError(f"Routine '{routine_id}' not found in flow")
-        return RoutineConfig(self.routines[routine_id])
+        # MEDIUM fix: Acquire lock to prevent race condition between check and access
+        with self._config_lock:
+            if routine_id not in self.routines:
+                raise ValueError(f"Routine '{routine_id}' not found in flow")
+            return RoutineConfig(self.routines[routine_id])
 
 
 class RoutineConfig:
@@ -477,7 +545,7 @@ class RoutineConfig:
         """
         self.routine = routine
 
-    def config(self, key: str, value: Any) -> "RoutineConfig":
+    def config(self, key: str, value: Any) -> RoutineConfig:
         """Set configuration value.
 
         Args:

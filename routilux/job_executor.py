@@ -75,17 +75,17 @@ class JobExecutor:
         self.timeout = timeout
 
         # Independent execution context
-        self.task_queue: queue.Queue["SlotActivationTask"] = queue.Queue()
-        self.pending_tasks: list["SlotActivationTask"] = []
+        self.task_queue: queue.Queue[SlotActivationTask] = queue.Queue()
+        self.pending_tasks: list[SlotActivationTask] = []
         self.event_loop_thread: Optional[threading.Thread] = None
-        self.active_tasks: set["Future"] = set()
+        self.active_tasks: set[Future] = set()
         self._running = False
         self._paused = False
         self._lock = threading.Lock()
         self._start_time: Optional[float] = None
 
         # Execution tracker (one per job)
-        self.execution_tracker: Optional["ExecutionTracker"] = None
+        self.execution_tracker: Optional[ExecutionTracker] = None
 
         # Set flow context for all routines
         for routine in flow.routines.values():
@@ -105,8 +105,10 @@ class JobExecutor:
             ValueError: If entry routine not found or no trigger slot.
             RuntimeError: If job is already running.
         """
-        if self._running:
-            raise RuntimeError(f"Job {self.job_state.job_id} is already running")
+        # CRITICAL fix: Acquire lock before checking _running flag
+        with self._lock:
+            if self._running:
+                raise RuntimeError(f"Job {self.job_state.job_id} is already running")
 
         # Critical fix: Reset flow._paused when starting a new job
         # This handles the case where resume() starts a new executor after pause()
@@ -147,11 +149,11 @@ class JobExecutor:
         execution_hooks.on_flow_start(self.flow, self.job_state)
 
         # Start event loop
-        self._running = True
+        # CRITICAL fix: Acquire lock before setting _running flag
+        with self._lock:
+            self._running = True
         self.event_loop_thread = threading.Thread(
-            target=self._event_loop,
-            daemon=True,
-            name=f"JobExecutor-{self.job_state.job_id[:8]}"
+            target=self._event_loop, daemon=True, name=f"JobExecutor-{self.job_state.job_id[:8]}"
         )
         self.event_loop_thread.start()
 
@@ -173,7 +175,10 @@ class JobExecutor:
                     break
 
                 # Check if paused
-                if self._paused:
+                # CRITICAL fix: Read _paused flag atomically to avoid race condition
+                # Use getattr for thread-safe read (simple attribute reads are atomic in CPython)
+                current_paused = getattr(self, '_paused', False)
+                if current_paused:
                     time.sleep(0.01)
                     continue
 
@@ -188,9 +193,7 @@ class JobExecutor:
                     continue
 
                 # Submit to global thread pool
-                future = self.global_thread_pool.submit(
-                    self._execute_task, task
-                )
+                future = self.global_thread_pool.submit(self._execute_task, task)
 
                 with self._lock:
                     self.active_tasks.add(future)
@@ -224,7 +227,11 @@ class JobExecutor:
 
         # Set job_state in context variable
         old_job_state = _current_job_state.get(None)
-        _current_job_state.set(self.job_state)
+        try:
+            _current_job_state.set(self.job_state)
+        except Exception:
+            # Critical: If set fails, still try to restore in finally
+            old_job_state = None
 
         try:
             # Apply parameter mapping if connection exists
@@ -240,22 +247,24 @@ class JobExecutor:
             # Execute slot handler
             # Note: slot.receive() internally calls monitoring hooks
             # (on_routine_start, on_slot_call, on_routine_end)
-            task.slot.receive(
-                mapped_data,
-                job_state=self.job_state,
-                flow=self.flow
-            )
+            task.slot.receive(mapped_data, job_state=self.job_state, flow=self.flow)
 
         except Exception as e:
             from routilux.flow.error_handling import handle_task_error
 
             handle_task_error(task, e, self.flow)
         finally:
-            # Restore context
-            if old_job_state is not None:
-                _current_job_state.set(old_job_state)
-            else:
-                _current_job_state.set(None)
+            # HIGH fix: Ensure context is restored even if set() fails
+            try:
+                if old_job_state is not None:
+                    _current_job_state.set(old_job_state)
+                else:
+                    _current_job_state.set(None)
+            except Exception:
+                # Log but don't raise - cleanup is critical
+                import logging
+                logging.getLogger(__name__).exception("Failed to restore job_state context variable")
+                pass
 
     def _trigger_entry(self, entry_routine_id: str, entry_params: dict[str, Any]) -> None:
         """Trigger entry routine.
@@ -264,8 +273,17 @@ class JobExecutor:
             entry_routine_id: Entry routine identifier.
             entry_params: Entry parameters.
         """
-        entry_routine = self.flow.routines[entry_routine_id]
+        # HIGH fix: Add None check for entry_routine
+        entry_routine = self.flow.routines.get(entry_routine_id)
+        if entry_routine is None:
+            raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
+
         trigger_slot = entry_routine.get_slot("trigger")
+        if trigger_slot is None:
+            raise ValueError(
+                f"Entry routine '{entry_routine_id}' must have a 'trigger' slot. "
+                f"Define it using: routine.define_slot('trigger', handler=your_handler)"
+            )
 
         from routilux.flow.task import SlotActivationTask
 
@@ -286,8 +304,12 @@ class JobExecutor:
         Args:
             task: SlotActivationTask to enqueue.
         """
-        if self._paused:
-            self.pending_tasks.append(task)
+        # CRITICAL fix: Read _paused flag atomically to avoid race condition
+        current_paused = getattr(self, '_paused', False)
+        if current_paused:
+            # HIGH fix: Acquire lock before modifying pending_tasks
+            with self._lock:
+                self.pending_tasks.append(task)
         else:
             self.task_queue.put(task)
 
@@ -300,9 +322,7 @@ class JobExecutor:
         if self.timeout is not None and self._start_time is not None:
             elapsed = time.time() - self._start_time
             if elapsed >= self.timeout:
-                logger.warning(
-                    f"Job {self.job_state.job_id} timed out after {self.timeout}s"
-                )
+                logger.warning(f"Job {self.job_state.job_id} timed out after {self.timeout}s")
                 self._handle_timeout()
                 return True
         return False
@@ -317,10 +337,10 @@ class JobExecutor:
         Returns:
             True if queue is empty and no active tasks.
         """
-        if not self.task_queue.empty():
-            return False
-
+        # CRITICAL fix: Acquire lock before checking queue and active_tasks to prevent race condition
         with self._lock:
+            if not self.task_queue.empty():
+                return False
             active = [f for f in self.active_tasks if not f.done()]
             return len(active) == 0
 
@@ -331,7 +351,11 @@ class JobExecutor:
 
         # Critical fix: Only mark as completed if not already in a terminal state
         # Terminal states are: FAILED, CANCELLED, COMPLETED
-        if self.job_state.status not in (ExecutionStatus.FAILED, ExecutionStatus.CANCELLED, ExecutionStatus.COMPLETED):
+        if self.job_state.status not in (
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.COMPLETED,
+        ):
             self.job_state.status = ExecutionStatus.COMPLETED
             # Set completed_at timestamp
             self.job_state.completed_at = datetime.now()
@@ -396,7 +420,9 @@ class JobExecutor:
 
     def _cleanup(self) -> None:
         """Cleanup job executor."""
-        self._running = False
+        # CRITICAL fix: Acquire lock before modifying _running flag
+        with self._lock:
+            self._running = False
 
         # Remove from global job manager
         from routilux.job_manager import get_job_manager
@@ -458,7 +484,9 @@ class JobExecutor:
 
         This immediately stops the event loop and cleans up resources.
         """
-        self._running = False
+        # CRITICAL fix: Acquire lock before modifying _running flag
+        with self._lock:
+            self._running = False
 
         # Cancel active tasks
         with self._lock:

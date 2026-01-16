@@ -173,8 +173,9 @@ def safe_evaluate(
     check_ast_safety(tree)
 
     # Use cross-platform timeout mechanism
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
     import platform
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FutureTimeoutError
 
     def _evaluate_in_thread(expression_code, safe_builtins, variables):
         """Evaluate expression in a separate thread."""
@@ -189,9 +190,11 @@ def safe_evaluate(
         try:
             old_handler = signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(int(timeout))
-            
-            result = eval(compile(tree, "<string>", "eval"), {"__builtins__": SAFE_BUILTINS}, variables)
-            
+
+            result = eval(
+                compile(tree, "<string>", "eval"), {"__builtins__": SAFE_BUILTINS}, variables
+            )
+
             signal.alarm(0)
             return {"value": result, "type": type(result).__name__}
         except TimeoutError:
@@ -209,10 +212,7 @@ def safe_evaluate(
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(
-                    _evaluate_in_thread,
-                    compile(tree, "<string>", "eval"),
-                    SAFE_BUILTINS,
-                    variables
+                    _evaluate_in_thread, compile(tree, "<string>", "eval"), SAFE_BUILTINS, variables
                 )
                 result = future.result(timeout=timeout)
                 return {"value": result, "type": type(result).__name__}

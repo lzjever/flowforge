@@ -341,9 +341,7 @@ class TestSlotThreadSafety:
 
         def enqueue_data(i):
             try:
-                slot.enqueue(
-                    data={"value": i}, emitted_from=f"r{i}", emitted_at=datetime.now()
-                )
+                slot.enqueue(data={"value": i}, emitted_from=f"r{i}", emitted_at=datetime.now())
                 results.append(i)
             except Exception as e:
                 errors.append((i, e))
@@ -407,9 +405,7 @@ class TestSlotThreadSafety:
 
         def enqueue_worker():
             for i in range(10):
-                slot.enqueue(
-                    data={"value": i}, emitted_from="r1", emitted_at=datetime.now()
-                )
+                slot.enqueue(data={"value": i}, emitted_from="r1", emitted_at=datetime.now())
                 enqueued.append(i)
                 time.sleep(0.01)
 

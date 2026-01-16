@@ -28,11 +28,14 @@ Routilux uses an **event queue architecture** (v0.9.0+) with these key concepts:
 routilux/
 ├── routilux/              # Main package
 │   ├── routine.py         # Routine base class
+│   ├── runtime.py         # Runtime execution context
+│   ├── activation_policies.py # Slot activation policies
 │   ├── flow/              # Flow management subsystem (refactored in v0.9.0)
 │   │   ├── flow.py        # Main Flow class
 │   │   ├── execution.py   # Sequential/concurrent execution
 │   │   ├── event_loop.py  # Event loop and task queue
 │   │   ├── state_management.py  # Pause/resume/cancel
+│   │   ├── job_state_management.py  # JobState operations
 │   │   ├── completion.py  # Event loop completion utilities
 │   │   ├── task.py        # TaskPriority, SlotActivationTask
 │   │   ├── builder.py     # FlowBuilder for fluent API
@@ -45,13 +48,34 @@ routilux/
 │   ├── connection.py      # Connection management
 │   ├── error_handler.py   # Error handling strategies
 │   ├── job_state.py       # Execution state tracking
+│   ├── job_executor.py    # Job execution orchestration
+│   ├── job_manager.py     # Job lifecycle management
 │   ├── execution_tracker.py # Performance metrics
 │   ├── status.py          # ExecutionStatus and RoutineStatus enums
 │   ├── output_handler.py  # OutputHandler utilities (Queue, Callback, Null)
 │   ├── analysis/          # Workflow analysis tools
 │   ├── api/               # FastAPI server (monitoring/debugging)
+│   │   ├── main.py        # FastAPI app entry point
+│   │   ├── config.py      # API configuration
+│   │   ├── security.py    # Security utilities
+│   │   ├── validators.py  # Request validators
+│   │   ├── middleware/    # Middleware (auth, rate limiting, error handling)
+│   │   ├── models/        # Pydantic models (flows, jobs, breakpoints, etc.)
+│   │   └── routes/        # API endpoints (flows, jobs, debug, websocket, etc.)
 │   ├── dsl/               # YAML/JSON DSL loader
 │   ├── monitoring/        # Debug/breakpoint system
+│   │   ├── registry.py    # MonitoringRegistry for metrics
+│   │   ├── monitor_collector.py  # Event/data collection
+│   │   ├── breakpoint_manager.py # Breakpoint management
+│   │   ├── breakpoint_condition.py  # Condition evaluation
+│   │   ├── debug_session.py  # Debug session state
+│   │   ├── hooks.py       # Execution hooks
+│   │   ├── event_manager.py  # Event streaming
+│   │   ├── storage.py     # Debug session persistence
+│   │   ├── storage_backend.py  # Storage backend abstraction
+│   │   ├── websocket_manager.py  # WebSocket connection management
+│   │   ├── flow_registry.py  # Flow registry
+│   │   └── job_registry.py  # Job registry
 │   └── testing/           # Testing utilities
 ├── tests/                 # Core test suite (45+ test files)
 ├── examples/              # Usage examples (14 demos)
@@ -120,9 +144,12 @@ make pre-commit-run        # Run pre-commit hooks manually
 
 ```bash
 make build                 # Build source and wheel distributions
+make sdist                 # Build source distribution only
+make wheel                 # Build wheel distribution only
 make check-package         # Validate package with twine
 make upload                # Upload to PyPI (requires PYPI_TOKEN)
 make upload-test           # Upload to TestPyPI (requires TEST_PYPI_TOKEN)
+make install-tools         # Install additional development tools (pre-commit, bandit, pip-audit, coverage)
 ```
 
 ### Documentation
@@ -137,7 +164,7 @@ cd docs && make html       # Direct sphinx build
 ```bash
 make clean                 # Remove build artifacts
 make clean-docs            # Clean documentation build
-make clean-all             # Clean all build artifacts and cache files
+make clean-all             # Clean all build artifacts and cache files (including .ruff_cache, .coverage, htmlcov)
 ```
 
 ## Critical Architectural Constraints
@@ -467,12 +494,11 @@ All part of the Agentsmith open-source ecosystem.
 
 ## File Locations
 
-- Main package: `/home/percy/works/mygithub/routilux/routilux/`
-- Core tests: `/home/percy/works/mygithub/routilux/tests/`
-- Examples: `/home/percy/works/mygithub/routilux/examples/`
-- API server: `/home/percy/works/mygithub/routilux/routilux/api/`
-- Documentation: `/home/percy/works/mygithub/routilux/docs/`
-- Playground: `/home/percy/works/mygithub/routilux/playground/` (experimental features)
+- Main package: `/home/percy/works/mygithub/routilux-family/routilux/routilux/`
+- Core tests: `/home/percy/works/mygithub/routilux-family/routilux/tests/`
+- Examples: `/home/percy/works/mygithub/routilux-family/routilux/examples/`
+- API server: `/home/percy/works/mygithub/routilux-family/routilux/routilux/api/`
+- Documentation: `/home/percy/works/mygithub/routilux-family/routilux/docs/`
 
 ## CI/CD
 

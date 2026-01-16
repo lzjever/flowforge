@@ -85,7 +85,7 @@ class TestRoutineBasic:
 
         routine = Routine()
         flow = Flow("test_flow")
-        routine_id = flow.add_routine(routine, "test_routine")
+        flow.add_routine(routine, "test_routine")
 
         # Create job_state
         job_state = JobState(flow_id=flow.flow_id)
@@ -150,6 +150,7 @@ class TestRoutineActivationPolicy:
         routine.set_activation_policy(policy)
 
         from datetime import datetime
+
         from routilux.job_state import JobState
 
         # Create job_state
@@ -175,13 +176,14 @@ class TestRoutineActivationPolicy:
         """Test: Activation policy - not ready"""
         routine = Routine()
         slot1 = routine.define_slot("input1")
-        slot2 = routine.define_slot("input2")
+        routine.define_slot("input2")
 
         # Set activation policy
         policy = all_slots_ready_policy()
         routine.set_activation_policy(policy)
 
         from datetime import datetime
+
         from routilux.job_state import JobState
 
         # Create job_state
@@ -217,6 +219,7 @@ class TestRoutineLogic:
         routine.set_logic(my_logic)
 
         from datetime import datetime
+
         from routilux.job_state import JobState
 
         # Create job_state

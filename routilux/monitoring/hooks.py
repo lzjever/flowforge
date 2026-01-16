@@ -320,6 +320,83 @@ class ExecutionHooks:
 
         return True
 
+    def on_slot_data_received(
+        self,
+        slot: "Slot",
+        routine_id: str,
+        job_state: Optional["JobState"] = None,
+        data: Optional[Any] = None,  # Can be any type, not just Dict
+    ) -> bool:
+        """Hook called when data is enqueued to a slot.
+
+        This replaces on_slot_call() for the new queue-based slot design.
+
+        Args:
+            slot: Slot receiving data.
+            routine_id: Routine identifier that owns the slot.
+            job_state: Optional job state.
+            data: Data being enqueued (can be any type).
+
+        Returns:
+            True if execution should continue, False if should pause.
+        """
+        from routilux.monitoring.registry import MonitoringRegistry
+
+        if not MonitoringRegistry.is_enabled() or not job_state:
+            return True
+
+        registry = MonitoringRegistry.get_instance()
+
+        # Record slot data reception
+        collector = registry.monitor_collector
+        if collector:
+            # Convert data to dict if needed for record_slot_call
+            data_dict = data if isinstance(data, dict) else {"data": data}
+            collector.record_slot_call(slot.name, routine_id, job_state.job_id, data_dict)
+
+        # Check breakpoint
+        breakpoint_mgr = registry.breakpoint_manager
+        if breakpoint_mgr:
+            context = (
+                slot.routine.get_execution_context()
+                if hasattr(slot, "routine") and slot.routine
+                else None
+            )
+            # Convert data to dict for breakpoint variables
+            variables = data if isinstance(data, dict) else {"data": data}
+            breakpoint = breakpoint_mgr.check_breakpoint(
+                job_state.job_id,
+                routine_id,
+                "slot",
+                slot_name=slot.name,
+                context=context,
+                variables=variables,
+            )
+            if breakpoint:
+                debug_store = registry.debug_session_store
+                if debug_store:
+                    session = debug_store.get_or_create(job_state.job_id)
+                    session.pause(
+                        context, reason=f"Breakpoint at {routine_id}.{slot.name}"
+                    )
+                    # Notify via event manager
+                    _publish_event_via_manager(
+                        job_state.job_id,
+                        {
+                            "type": "breakpoint_hit",
+                            "job_id": job_state.job_id,
+                            "breakpoint": {
+                                "breakpoint_id": breakpoint.breakpoint_id,
+                                "type": breakpoint.type,
+                                "routine_id": breakpoint.routine_id,
+                                "slot_name": breakpoint.slot_name,
+                            },
+                        },
+                    )
+                    return False
+
+        return True
+
     def should_pause_routine(
         self,
         routine_id: str,

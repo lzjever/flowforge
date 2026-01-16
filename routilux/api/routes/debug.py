@@ -2,6 +2,7 @@
 Debug operations API routes.
 """
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -140,11 +141,23 @@ async def get_variables(job_id: str, routine_id: str = None):
     if not session:
         raise HTTPException(status_code=404, detail=f"No debug session for job '{job_id}'")
 
+    # CRITICAL fix: Add comprehensive validation for routine_id
+    if routine_id is not None:
+        # Validate routine_id format (alphanumeric, dashes, underscores only)
+        if not routine_id or not isinstance(routine_id, str):
+            raise HTTPException(
+                status_code=400, detail="routine_id must be a non-empty string"
+            )
+        # Check if routine_id contains valid characters only
+        if not re.match(r'^[a-zA-Z0-9_-]+$', routine_id):
+            raise HTTPException(
+                status_code=400, detail="routine_id must contain only alphanumeric characters, dashes, and underscores"
+            )
+
     # Fix: Add validation for routine_id when call stack is empty
     if not routine_id and not session.call_stack:
         raise HTTPException(
-            status_code=400,
-            detail="routine_id must be specified when not paused at a breakpoint"
+            status_code=400, detail="routine_id must be specified when not paused at a breakpoint"
         )
 
     variables = session.get_variables(routine_id)
@@ -222,7 +235,11 @@ async def get_call_stack(job_id: str):
     }
 
 
-@router.post("/jobs/{job_id}/debug/evaluate", response_model=ExpressionEvalResponse, dependencies=[RequireAuth])
+@router.post(
+    "/jobs/{job_id}/debug/evaluate",
+    response_model=ExpressionEvalResponse,
+    dependencies=[RequireAuth],
+)
 async def evaluate_expression(job_id: str, request: ExpressionEvalRequest):
     """Evaluate an expression in the context of a paused job.
 

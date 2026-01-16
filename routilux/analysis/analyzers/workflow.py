@@ -49,35 +49,27 @@ class WorkflowAnalyzer:
                 files using AST. If False, only extract runtime information.
 
         Returns:
-            Dictionary containing structured workflow information:
-            {
-                "flow_id": str,
-                "execution_strategy": str,
-                "max_workers": int,
-                "execution_timeout": float,
-                "routines": [
-                    {
-                        "routine_id": str,
-                        "class_name": str,
-                        "slots": [...],
-                        "events": [...],
-                        "config": {...},
-                        "source_info": {...}  # if include_source_analysis
-                    }
-                ],
-                "connections": [
-                    {
-                        "source_routine_id": str,
-                        "source_event": str,
-                        "target_routine_id": str,
-                        "target_slot": str,
-                        "param_mapping": {...}
-                    }
-                ],
-                "dependency_graph": {...},
-                "entry_points": [...]
-            }
+            Dictionary containing structured workflow information.
+
+        Raises:
+            TypeError: If flow is not a Flow instance or missing required attributes.
         """
+        # MEDIUM fix: Add input validation
+        if not hasattr(flow, 'routines'):
+            raise TypeError(
+                f"Expected Flow object with 'routines' attribute, got {type(flow).__name__}"
+            )
+
+        if not hasattr(flow, 'connections'):
+            raise TypeError(
+                f"Expected Flow object with 'connections' attribute, got {type(flow).__name__}"
+            )
+
+        if not hasattr(flow, 'flow_id'):
+            raise TypeError(
+                f"Expected Flow object with 'flow_id' attribute, got {type(flow).__name__}"
+            )
+
         result = {
             "flow_id": flow.flow_id,
             "execution_strategy": flow.execution_strategy,
@@ -300,24 +292,44 @@ class WorkflowAnalyzer:
 
         return entry_points
 
-    def _make_json_serializable(self, obj: Any) -> Any:
+    def _make_json_serializable(self, obj: Any, visited: set | None = None) -> Any:
         """Convert object to JSON-serializable format.
+
+        Critical fix: Added cycle detection to prevent infinite recursion
+        on circular references.
 
         Args:
             obj: Object to convert.
+            visited: Set of object IDs already visited (for cycle detection).
 
         Returns:
             JSON-serializable object.
         """
-        if isinstance(obj, dict):
-            return {k: self._make_json_serializable(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._make_json_serializable(item) for item in obj]
-        elif isinstance(obj, (str, int, float, bool, type(None))):
-            return obj
-        else:
-            # Convert non-serializable objects to string
-            return str(obj)
+        # Initialize visited set on first call
+        if visited is None:
+            visited = set()
+
+        # Check for circular references
+        obj_id = id(obj)
+        if obj_id in visited:
+            return "[Circular Reference]"
+
+        # Add current object to visited set
+        visited.add(obj_id)
+
+        try:
+            if isinstance(obj, dict):
+                return {k: self._make_json_serializable(v, visited) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [self._make_json_serializable(item, visited) for item in obj]
+            elif isinstance(obj, (str, int, float, bool, type(None))):
+                return obj
+            else:
+                # Convert non-serializable objects to string
+                return str(obj)
+        finally:
+            # Remove from visited set when backtracking (allows same object in different branches)
+            visited.discard(obj_id)
 
     def to_json(self, data: dict[str, Any], indent: int = 2) -> str:
         """Convert analysis result to JSON string.
@@ -611,11 +623,13 @@ class WorkflowAnalyzer:
         # Add docstring summary (first line, max 50 chars)
         if docstring:
             doc_lines = docstring.strip().split("\n")
-            first_line = doc_lines[0].strip()
-            if len(first_line) > 50:
-                first_line = first_line[:47] + "..."
-            if first_line:
-                label_parts.append(f"\\n{first_line}")
+            # HIGH fix: Check if doc_lines is not empty before accessing [0]
+            if doc_lines:
+                first_line = doc_lines[0].strip()
+                if len(first_line) > 50:
+                    first_line = first_line[:47] + "..."
+                if first_line:
+                    label_parts.append(f"\\n{first_line}")
 
         # Add key config items in compact format
         if config:
@@ -836,8 +850,10 @@ class WorkflowAnalyzer:
         # Assign levels for other routines
         max_level = 0
         remaining = set(dependency_graph.keys()) - processed
+        iteration_count = 0
+        max_iterations = 100  # MEDIUM fix: Prevent infinite loops
 
-        while remaining:
+        while remaining and iteration_count < max_iterations:
             level = max_level + 1
             found_any = False
 
@@ -853,10 +869,26 @@ class WorkflowAnalyzer:
                 max_level = level
             else:
                 # Handle circular dependencies
+                # MEDIUM fix: Add warning when circular dependencies detected
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Circular dependencies detected in workflow. "
+                    f"Remaining routines: {remaining}"
+                )
                 for routine_id in remaining:
                     levels.setdefault(level, []).append(routine_id)
                     processed.add(routine_id)
                 break
+
+            iteration_count += 1
+
+        # MEDIUM fix: Check if we hit max iterations
+        if iteration_count >= max_iterations and remaining:
+            import logging
+            logging.getLogger(__name__).error(
+                f"Failed to resolve dependency levels after {max_iterations} iterations. "
+                f"Remaining routines: {remaining}"
+            )
 
         # Add comment about levels
         if len(levels) > 1:

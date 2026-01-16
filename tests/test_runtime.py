@@ -22,7 +22,6 @@ from routilux.activation_policies import immediate_policy
 from routilux.job_state import JobState
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.runtime import Runtime
-from routilux.slot import SlotQueueFullError
 from routilux.status import ExecutionStatus
 
 
@@ -221,9 +220,7 @@ class TestRuntimeEventRouting:
         runtime = Runtime()
 
         # Fill queue to capacity
-        target_slot.enqueue(
-            data={"value": 1}, emitted_from="other", emitted_at=datetime.now()
-        )
+        target_slot.enqueue(data={"value": 1}, emitted_from="other", emitted_at=datetime.now())
         assert target_slot.get_total_count() == 1
 
         event_data = {
@@ -546,7 +543,7 @@ class TestRuntimeJobManagement:
         running_jobs = runtime.list_jobs(status="running")
         assert len(running_jobs) == 1
         assert running_jobs[0].job_id == job1.job_id
-        
+
         # Test with status enum value
         running_jobs2 = runtime.list_jobs(status=ExecutionStatus.RUNNING.value)
         assert len(running_jobs2) == 1
@@ -688,10 +685,10 @@ class TestRuntimeEdgeCases:
         # Empty flow will fail when trying to find entry routine
         # Runtime catches the exception and marks job as failed
         job_state = runtime.exec("empty_flow")
-        
+
         # Wait a bit for execution to complete
         runtime.wait_until_all_jobs_finished(timeout=1.0)
-        
+
         # Job should be marked as failed
         assert job_state.status == ExecutionStatus.FAILED
 
@@ -728,7 +725,7 @@ class TestRuntimeEdgeCases:
         FlowRegistry.get_instance().register_by_name("test_flow", flow)
 
         runtime = Runtime()
-        job_state = runtime.exec("test_flow")
+        runtime.exec("test_flow")
 
         # Shutdown with timeout (should not wait for long-running job)
         start = time.time()

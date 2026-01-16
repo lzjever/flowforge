@@ -6,7 +6,6 @@ import pytest
 
 from routilux import Flow, Routine
 from routilux.activation_policies import immediate_policy
-from routilux.job_state import JobState
 from routilux.runtime import Runtime
 
 
@@ -175,7 +174,9 @@ class TestFlowExecution:
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify
-        assert job_state.status.value in ["completed", "failed", "running"] or str(job_state.status) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["completed", "failed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
         # Note: result checking would need proper completion detection
 
     def test_branch_flow(self):
@@ -246,7 +247,9 @@ class TestFlowExecution:
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify both branches executed
-        assert job_state.status.value in ["completed", "failed", "running"] or str(job_state.status) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["completed", "failed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
 
     def test_converge_flow(self):
         """测试用例 6: 汇聚流程 (A, B) -> C"""
@@ -317,7 +320,9 @@ class TestFlowExecution:
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # 验证执行完成（数据验证需要更完善的完成检测机制）
-        assert job_state.status.value in ["completed", "failed", "running"] or str(job_state.status) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["completed", "failed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
 
     def test_empty_flow(self):
         """测试用例 8: 空 Flow"""
@@ -344,7 +349,7 @@ class TestFlowExecution:
                 self.set_activation_policy(immediate_policy())
 
         routine = SimpleRoutine()
-        routine_id = flow.add_routine(routine, "single")
+        flow.add_routine(routine, "single")
 
         # Register and execute
         from routilux.monitoring.flow_registry import FlowRegistry
@@ -357,7 +362,9 @@ class TestFlowExecution:
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify
-        assert job_state.status.value in ["completed", "failed", "running"] or str(job_state.status) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["completed", "failed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
         # Note: called flag checking would need proper completion detection
 
 
@@ -375,7 +382,7 @@ class TestFlowErrorHandling:
         flow_registry.register_by_name("test_flow", flow)
 
         # Try to execute with nonexistent routine (handled by Runtime)
-        runtime = Runtime()
+        Runtime()
         # Runtime will handle this when it tries to find entry routine
         # For now, this test verifies flow structure validation
         assert "nonexistent_routine" not in flow.routines
@@ -396,7 +403,7 @@ class TestFlowErrorHandling:
                 self.set_activation_policy(immediate_policy())
 
         routine = FailingRoutine()
-        routine_id = flow.add_routine(routine, "failing")
+        flow.add_routine(routine, "failing")
 
         # Register flow
         from routilux.monitoring.flow_registry import FlowRegistry
@@ -410,5 +417,7 @@ class TestFlowErrorHandling:
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify error state is recorded
-        assert job_state.status.value in ["failed", "completed", "running"] or str(job_state.status) in ["ExecutionStatus.FAILED", "ExecutionStatus.COMPLETED", "ExecutionStatus.RUNNING"]
+        assert job_state.status.value in ["failed", "completed", "running"] or str(
+            job_state.status
+        ) in ["ExecutionStatus.FAILED", "ExecutionStatus.COMPLETED", "ExecutionStatus.RUNNING"]
         # Error handling is managed by Runtime

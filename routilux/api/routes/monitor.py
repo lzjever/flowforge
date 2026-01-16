@@ -20,7 +20,9 @@ from routilux.monitoring.storage import flow_store, job_store
 router = APIRouter()
 
 
-@router.get("/jobs/{job_id}/metrics", response_model=ExecutionMetricsResponse, dependencies=[RequireAuth])
+@router.get(
+    "/jobs/{job_id}/metrics", response_model=ExecutionMetricsResponse, dependencies=[RequireAuth]
+)
 async def get_job_metrics(job_id: str):
     """Get execution metrics for a job."""
     # Verify job exists
@@ -81,7 +83,9 @@ async def get_job_metrics(job_id: str):
     )
 
 
-@router.get("/jobs/{job_id}/trace", response_model=ExecutionTraceResponse, dependencies=[RequireAuth])
+@router.get(
+    "/jobs/{job_id}/trace", response_model=ExecutionTraceResponse, dependencies=[RequireAuth]
+)
 async def get_job_trace(job_id: str, limit: Optional[int] = Query(None, ge=1, le=10000)):
     """Get execution trace for a job."""
     # Verify job exists

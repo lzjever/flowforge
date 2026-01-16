@@ -66,12 +66,14 @@ class ExecutionRecord(Serializable):
             data["timestamp"] = data["timestamp"].isoformat()
         return data
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(
+        self, data: Dict[str, Any], strict: bool = False, registry: Optional[Any] = None
+    ) -> None:
         """Deserialize, handling datetime conversion."""
         # Convert string to datetime
         if isinstance(data.get("timestamp"), str):
             data["timestamp"] = datetime.fromisoformat(data["timestamp"])
-        super().deserialize(data)
+        super().deserialize(data, strict=strict, registry=registry)
 
 
 @register_serializable
@@ -139,7 +141,9 @@ class JobState(Serializable):
         self.routine_states: Dict[str, Dict[str, Any]] = {}
         self.execution_history: List[ExecutionRecord] = []
         # Critical fix: Reduce default limit to prevent memory issues in long-running workflows
+        # Also add validation to ensure minimum value
         self._max_execution_history: int = 1000  # Prevent unbounded memory growth (min 10)
+        self._validate_max_execution_history()
         self.pending_tasks: List[Dict[str, Any]] = []  # Serialized pending tasks
         self.created_at: datetime = datetime.now()
         self.updated_at: datetime = datetime.now()
@@ -161,6 +165,18 @@ class JobState(Serializable):
 
         # Critical fix: Add lock for execution_history to prevent race conditions
         self._execution_history_lock: threading.RLock = threading.RLock()
+
+        # Critical fix: Add lock for pause_points to prevent race conditions
+        self._pause_points_lock: threading.RLock = threading.RLock()
+
+        # CRITICAL fix: Add lock for pending_tasks to prevent race conditions
+        self._pending_tasks_lock: threading.RLock = threading.RLock()
+
+        # Critical fix: Add lock for status updates to prevent race conditions
+        self._status_lock: threading.RLock = threading.RLock()
+
+        # HIGH fix: Add lock for output_log to prevent race conditions
+        self._output_log_lock: threading.RLock = threading.RLock()
 
         # Output handler for this execution (not serialized)
         self.output_handler: Optional[Any] = None  # OutputHandler, but avoid circular import
@@ -195,6 +211,54 @@ class JobState(Serializable):
     def __repr__(self) -> str:
         """Return string representation of the JobState."""
         return f"JobState[{self.job_id}:{self.status}]"
+
+    def _validate_max_execution_history(self) -> None:
+        """Validate _max_execution_history is within acceptable range.
+
+        Raises:
+            ValueError: If _max_execution_history is less than 10.
+        """
+        if self._max_execution_history < 10:
+            raise ValueError(
+                f"_max_execution_history must be at least 10, got {self._max_execution_history}. "
+                "Values below 10 can cause issues with execution tracking."
+            )
+
+    @property
+    def max_execution_history(self) -> int:
+        """Get the maximum execution history size."""
+        return self._max_execution_history
+
+    @max_execution_history.setter
+    def max_execution_history(self, value: int) -> None:
+        """Set the maximum execution history size with validation.
+
+        Args:
+            value: New maximum size (must be >= 10).
+
+        Raises:
+            ValueError: If value is less than 10.
+        """
+        if value < 10:
+            raise ValueError(
+                f"max_execution_history must be at least 10, got {value}. "
+                "Values below 10 can cause issues with execution tracking."
+            )
+        old_value = self._max_execution_history
+        self._max_execution_history = value
+
+        # MEDIUM fix: Trim existing history if new limit is smaller
+        if value < old_value:
+            with self._execution_history_lock:
+                excess = len(self.execution_history) - value
+                if excess > 0:
+                    # Remove oldest entries (from the beginning)
+                    self.execution_history = self.execution_history[excess:]
+                    logger = logging.getLogger(__name__)
+                    logger.info(
+                        f"Trimmed execution_history from {old_value} to {value}, "
+                        f"removed {excess} oldest entries"
+                    )
 
     def update_routine_state(self, routine_id: str, state: Dict[str, Any]) -> None:
         """Update state for a specific routine.
@@ -237,9 +301,7 @@ class JobState(Serializable):
         """
         # Critical fix: Validate state is a dict to prevent AttributeError
         if not isinstance(state, dict):
-            raise TypeError(
-                f"state must be a dict, got {type(state).__name__}"
-            )
+            raise TypeError(f"state must be a dict, got {type(state).__name__}")
 
         # Critical fix: Use lock to prevent race conditions in concurrent mode
         # Fix: Move updated_at inside lock to prevent race condition
@@ -410,7 +472,9 @@ class JobState(Serializable):
         # Critical fix: Use lock to prevent race conditions when reading execution_history
         with self._execution_history_lock:
             if routine_id is None:
-                history = self.execution_history.copy()  # Return a copy to avoid external modification
+                history = (
+                    self.execution_history.copy()
+                )  # Return a copy to avoid external modification
             else:
                 history = [r for r in self.execution_history if r.routine_id == routine_id]
 
@@ -424,21 +488,24 @@ class JobState(Serializable):
             reason: Reason for pausing.
             checkpoint: Checkpoint data.
         """
-        self.status = ExecutionStatus.PAUSED
+        with self._status_lock:
+            self.status = ExecutionStatus.PAUSED
         pause_point = {
             "timestamp": datetime.now().isoformat(),
             "reason": reason,
             "current_routine_id": self.current_routine_id,
             "checkpoint": checkpoint or {},
         }
-        self.pause_points.append(pause_point)
+        with self._pause_points_lock:
+            self.pause_points.append(pause_point)
         self.updated_at = datetime.now()
 
     def _set_running(self) -> None:
         """Internal method: Set running state (called by Flow)."""
-        if self.status in (ExecutionStatus.PAUSED, "paused"):
-            self.status = ExecutionStatus.RUNNING
-            self.updated_at = datetime.now()
+        with self._status_lock:
+            if self.status in (ExecutionStatus.PAUSED, "paused"):
+                self.status = ExecutionStatus.RUNNING
+                self.updated_at = datetime.now()
 
     def _set_cancelled(self, reason: str = "") -> None:
         """Internal method: Set cancelled state (called by Flow).
@@ -446,10 +513,12 @@ class JobState(Serializable):
         Args:
             reason: Reason for cancellation.
         """
-        self.status = ExecutionStatus.CANCELLED
+        with self._status_lock:
+            self.status = ExecutionStatus.CANCELLED
         self.updated_at = datetime.now()
         if reason:
-            self.routine_states.setdefault("_cancellation", {})["reason"] = reason
+            with self._routine_states_lock:
+                self.routine_states.setdefault("_cancellation", {})["reason"] = reason
 
     def save(self, filepath: str) -> None:
         """Persist state to file.
@@ -530,7 +599,9 @@ class JobState(Serializable):
             data["updated_at"] = data["updated_at"].isoformat()
         return data
 
-    def deserialize(self, data: Dict[str, Any]) -> None:
+    def deserialize(
+        self, data: Dict[str, Any], strict: bool = False, registry: Optional[Any] = None
+    ) -> None:
         """Deserialize, handling datetime and ExecutionRecord."""
         # Handle datetime
         if isinstance(data.get("created_at"), str):
@@ -566,7 +637,7 @@ class JobState(Serializable):
                     records.append(record)
             data["execution_history"] = records
 
-        super().deserialize(data)
+        super().deserialize(data, strict=strict, registry=registry)
 
     def add_deferred_event(self, routine_id: str, event_name: str, data: Dict[str, Any]) -> None:
         """Add a deferred event to be emitted on resume.
@@ -670,15 +741,18 @@ class JobState(Serializable):
                 warnings.warn(f"Output handler failed: {e}")
 
         # Optionally save to output_log for persistence
-        self.output_log.append(
-            {
-                "routine_id": routine_id,
-                "output_type": output_type,
-                "data": data,
-                "timestamp": timestamp.isoformat(),
-            }
-        )
-        self.updated_at = timestamp
+        # HIGH fix: Acquire lock before modifying output_log
+        with self._output_log_lock:
+            self.output_log.append(
+                {
+                    "routine_id": routine_id,
+                    "output_type": output_type,
+                    "data": data,
+                    "timestamp": timestamp.isoformat(),
+                }
+            )
+            # MEDIUM fix: Set updated_at inside lock to ensure timestamp consistency
+            self.updated_at = timestamp
 
     @staticmethod
     def wait_for_completion(
@@ -741,8 +815,16 @@ class JobState(Serializable):
                     # Critical fix: Use lock-protected access to prevent check-then-use race condition
                     try:
                         with flow._execution_lock:
-                            queue_size = flow._task_queue.qsize() if hasattr(flow, '_task_queue') and flow._task_queue else "N/A"
-                            active_tasks = len([f for f in flow._active_tasks if not f.done()]) if hasattr(flow, '_active_tasks') else "N/A"
+                            queue_size = (
+                                flow._task_queue.qsize()
+                                if hasattr(flow, "_task_queue") and flow._task_queue
+                                else "N/A"
+                            )
+                            active_tasks = (
+                                len([f for f in flow._active_tasks if not f.done()])
+                                if hasattr(flow, "_active_tasks")
+                                else "N/A"
+                            )
                     except (AttributeError, RuntimeError):
                         # Flow may have been shutdown or modified by another thread
                         queue_size = "N/A"
@@ -768,7 +850,10 @@ class JobState(Serializable):
 
                     # Check routine states for critical failure status
                     # Only "failed" or "error" (not "error_continued") indicate critical failures
-                    for routine_id, routine_state in job_state.routine_states.items():
+                    # Critical fix: Copy dict under lock to prevent race condition during iteration
+                    with job_state._routine_states_lock:
+                        routine_states_copy = job_state.routine_states.copy()
+                    for routine_id, routine_state in routine_states_copy.items():
                         if isinstance(routine_state, dict):
                             status = routine_state.get("status")
                             # "error_continued" means error was tolerated (CONTINUE strategy)
@@ -795,9 +880,14 @@ class JobState(Serializable):
             if progress_callback is not None:
                 current_time = time.time()
                 if current_time - last_progress_time >= progress_interval:
-                    queue_size = flow._task_queue.qsize()
-                    with flow._execution_lock:
-                        active_count = len([f for f in flow._active_tasks if not f.done()])
+                    # Critical fix: Check if flow and its attributes exist before accessing
+                    queue_size = 0
+                    active_count = 0
+                    if flow and hasattr(flow, "_task_queue") and flow._task_queue is not None:
+                        queue_size = flow._task_queue.qsize()
+                    if flow and hasattr(flow, "_execution_lock") and hasattr(flow, "_active_tasks"):
+                        with flow._execution_lock:
+                            active_count = len([f for f in flow._active_tasks if not f.done()])
                     progress_callback(queue_size, active_count, job_state.status)
                     last_progress_time = current_time
 
@@ -919,17 +1009,38 @@ class _ExecutionCompletionChecker:
         self.stability_delay = stability_delay
 
     def is_complete(self) -> bool:
-        """Check if execution is complete."""
+        """Check if execution is complete.
+
+        Critical fix: Added None checks for flow and its attributes to prevent
+        AttributeError in edge cases where flow becomes None during execution.
+        """
         if self.job_state.status in ["paused", "cancelled"]:
             return True
 
         if self.job_state.status in (ExecutionStatus.FAILED, "failed"):
             return True
 
+        # Critical fix: Check if flow exists and has required attributes
+        if self.flow is None:
+            # If flow is None, consider complete if status is terminal
+            return self.job_state.status in ["completed", "failed", "paused", "cancelled"]
+
+        if not hasattr(self.flow, "_task_queue") or self.flow._task_queue is None:
+            # If task queue doesn't exist, consider complete if status is terminal
+            return self.job_state.status in ["completed", "failed", "paused", "cancelled"]
+
         queue_empty = self.flow._task_queue.empty()
-        with self.flow._execution_lock:
-            active_tasks = [f for f in self.flow._active_tasks if not f.done()]
-            active_count = len(active_tasks)
+
+        # Critical fix: Safely access _active_tasks with lock and attribute checks
+        active_count = 0
+        if hasattr(self.flow, "_execution_lock") and hasattr(self.flow, "_active_tasks"):
+            try:
+                with self.flow._execution_lock:
+                    active_tasks = [f for f in self.flow._active_tasks if not f.done()]
+                    active_count = len(active_tasks)
+            except (AttributeError, RuntimeError):
+                # Flow may have been modified or shutdown
+                active_count = 0
 
         if queue_empty and active_count == 0:
             if self.job_state.status in ["completed", "failed", "paused", "cancelled"]:

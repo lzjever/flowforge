@@ -47,5 +47,11 @@ class SlotActivationTask:
             self.created_at = datetime.now()
 
     def __lt__(self, other):
-        """For priority queue sorting."""
+        """For priority queue sorting.
+
+        LOW fix: Add type checking to prevent AttributeError when comparing
+        with non-SlotActivationTask objects.
+        """
+        if not isinstance(other, SlotActivationTask):
+            return NotImplemented
         return self.priority.value < other.priority.value
