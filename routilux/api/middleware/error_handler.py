@@ -33,14 +33,23 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def http_exception_handler(request: Request, exc):
     """Handle HTTP exceptions."""
     # Extract error details from exception
+    error_code = "http_error"
+    message = str(exc.detail)
+    details = None
+
+    # Safely handle dict detail
     if isinstance(exc.detail, dict):
         error_code = exc.detail.get("error", "http_error")
-        message = exc.detail.get("message", str(exc.detail))
+        msg_val = exc.detail.get("message", exc.detail)
+        # Convert to string if needed
+        if not isinstance(msg_val, str):
+            try:
+                message = str(msg_val)
+            except Exception:
+                message = "Validation error"
+        else:
+            message = msg_val
         details = exc.detail.get("details")
-    else:
-        error_code = "http_error"
-        message = str(exc.detail)
-        details = None
 
     return JSONResponse(
         status_code=exc.status_code,

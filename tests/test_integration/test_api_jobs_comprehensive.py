@@ -8,27 +8,21 @@ They challenge the API to ensure it correctly uses Runtime and handles all edge 
 import pytest
 import time
 
-try:
-    import httpx
-    from fastapi.testclient import TestClient
-    from routilux.api.main import app
-    from routilux import Flow, Routine
-    from routilux.activation_policies import immediate_policy
-    from routilux.monitoring.flow_registry import FlowRegistry
-    from routilux.monitoring.storage import flow_store, job_store
-    from routilux.runtime import Runtime
-    from routilux.status import ExecutionStatus
-
-    API_AVAILABLE = True
-except (ImportError, RuntimeError) as e:
-    API_AVAILABLE = False
-    pytest.skip(
-        f"API dependencies not available: {e}. Install with: pip install routilux[api]",
-        allow_module_level=True,
-    )
+import httpx
+from fastapi.testclient import TestClient
+from routilux.api.main import app
+from routilux import Flow, Routine
+from routilux.activation_policies import immediate_policy
+from routilux.monitoring.flow_registry import FlowRegistry
+from routilux.monitoring.storage import flow_store, job_store
+from routilux.runtime import Runtime
+from routilux.status import ExecutionStatus
 
 # Import Mock for testing (always available in Python 3.3+)
 from unittest.mock import Mock
+
+# Integration tests marker
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

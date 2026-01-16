@@ -24,6 +24,12 @@ router = APIRouter()
 
 def _job_to_response(job_state: JobState) -> JobResponse:
     """Convert JobState to response model."""
+
+    def dt_to_int(dt: Optional[datetime]) -> Optional[int]:
+        if dt is None:
+            return None
+        return int(dt.timestamp())
+
     # Extract error from job_state.error or execution history
     error = None
     if hasattr(job_state, "error") and job_state.error:
@@ -44,9 +50,9 @@ def _job_to_response(job_state: JobState) -> JobResponse:
         status=job_state.status.value
         if hasattr(job_state.status, "value")
         else str(job_state.status),
-        created_at=int(datetime.now().timestamp()),
-        started_at=getattr(job_state, "started_at", None),
-        completed_at=getattr(job_state, "completed_at", None),
+        created_at=dt_to_int(getattr(job_state, "created_at", datetime.now())),
+        started_at=dt_to_int(getattr(job_state, "started_at", None)),
+        completed_at=dt_to_int(getattr(job_state, "completed_at", None)),
         error=error,
     )
 

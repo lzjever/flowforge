@@ -6,26 +6,21 @@ Tests that API correctly uses Runtime.exec() instead of flow.start().
 
 import pytest
 
-try:
-    import httpx  # Check for httpx first
-    from fastapi.testclient import TestClient
-    from routilux.api.main import app
-    from routilux import Flow, Routine
-    from routilux.activation_policies import immediate_policy
-    from routilux.monitoring.flow_registry import FlowRegistry
-    from routilux.monitoring.storage import flow_store, job_store
+import httpx
+from fastapi.testclient import TestClient
+from routilux.api.main import app
+from routilux import Flow, Routine
+from routilux.activation_policies import immediate_policy
+from routilux.monitoring.flow_registry import FlowRegistry
+from routilux.monitoring.storage import flow_store, job_store
 
-    API_AVAILABLE = True
-except (ImportError, RuntimeError):
-    API_AVAILABLE = False
-    pytestmark = pytest.mark.skip("API dependencies not available (httpx required)")
-
+# Integration tests marker
+pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def api_client():
     """Create FastAPI test client."""
     return TestClient(app)
-
 
 @pytest.fixture
 def test_flow():
@@ -38,8 +33,20 @@ def test_flow():
         pass
 
     routine.set_logic(my_logic)
-    routine.set_activation_policy(immediate_policy())
+
     flow.add_routine(routine, "entry")
+
+    # Register in FlowRegistry
+    FlowRegistry.get_instance().register_by_name("test_flow", flow)
+
+    # Also add to flow_store for API
+    flow_store.add(flow)
+
+    yield flow
+
+    # Cleanup
+    flow_store.remove(flow.flow_id)
+    FlowRegistry.get_instance().clear()
 
     # Register in FlowRegistry
     FlowRegistry.get_instance().register_by_name("test_flow", flow)

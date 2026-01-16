@@ -19,23 +19,11 @@ class JobStartRequest(BaseModel):
     @field_validator("timeout")
     @classmethod
     def validate_timeout(cls, v: Optional[float]) -> Optional[float]:
-        """Validate timeout parameter.
-
-        Args:
-            v: Timeout value in seconds.
-
-        Returns:
-            Validated timeout value.
-
-        Raises:
-            ValueError: If timeout is negative or too large.
-        """
         if v is not None:
-            # MEDIUM fix: Add timeout validation
             if v < 0:
-                raise ValueError(f"timeout must be non-negative, got {v}")
-            if v > 86400:  # 24 hours
-                raise ValueError(f"timeout must be <= 86400 seconds (24 hours), got {v}")
+                raise ValueError("timeout must be non-negative")
+            if v > 86400:
+                raise ValueError("timeout must be <= 86400 seconds (24 hours)")
         return v
 
 
@@ -45,7 +33,7 @@ class JobResponse(BaseModel):
     job_id: str
     flow_id: str
     status: str
-    created_at: int
+    created_at: Optional[int] = None
     started_at: Optional[int] = None
     completed_at: Optional[int] = None
     error: Optional[str] = None
