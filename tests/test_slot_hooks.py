@@ -57,9 +57,14 @@ class TestSlotDataReceivedHook:
 
         with patch.object(execution_hooks, "on_slot_data_received") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Post data to trigger execution
+            runtime.post("test_flow", "routine_a", "trigger", {"data": "test"}, job_id=job_state.job_id)
+            # Wait for event routing and execution
+            import time
+            time.sleep(0.5)
             runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-            # Verify hook was called
+            # Verify hook was called (on_slot_data_received is still called for breakpoint checking)
             assert mock_hook.called, "on_slot_data_received should be called"
             call_args = mock_hook.call_args
             # Check routine_id (second positional arg)

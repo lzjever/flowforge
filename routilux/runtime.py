@@ -533,9 +533,9 @@ class Runtime:
                 If None, consumes all new data from all slots.
             policy_message: Optional message from activation policy.
         """
-        # Import hooks at method level to avoid circular imports
+        # Import hooks at method level to avoid circular imports (needed for error handling)
         from routilux.monitoring.hooks import execution_hooks
-
+        
         # Get routine_id
         routine_id = self._get_routine_id(routine, job_state)
         if routine_id is None:
@@ -565,7 +565,7 @@ class Runtime:
             for slot_name, slot in routine.slots.items():
                 data_slice[slot_name] = slot.consume_all_new()
 
-        # Record routine start
+        # Record routine start (for job_state execution history)
         job_state.record_execution(
             routine_id,
             "start",
@@ -575,12 +575,10 @@ class Runtime:
             },
         )
 
-        # Call routine start hook
-        try:
-            execution_hooks.on_routine_start(routine, routine_id, job_state)
-        except Exception as e:
-            # Hook exceptions should not crash Runtime
-            logger.warning(f"Exception in on_routine_start hook for {routine_id}: {e}", exc_info=True)
+        # Note: We no longer call on_routine_start hook for data collection.
+        # In the concurrent model, tracking individual instance lifecycles is meaningless.
+        # We track thread counts instead, which is already done above.
+        # Hooks are still called for event publishing (WebSocket), but not for state tracking.
 
         # Prepare slot_data_lists in order of slot definition
         slot_data_lists = [
@@ -590,12 +588,19 @@ class Runtime:
         # Execute logic
         if routine._logic is None:
             logger.warning(f"Routine {routine_id} has no logic set, skipping execution")
-            # Call routine end hook even if no logic
+            # Update aggregate metrics for skipped execution
+            duration = 0.0
             try:
-                execution_hooks.on_routine_end(routine, routine_id, job_state, status="skipped")
+                from routilux.monitoring.registry import MonitoringRegistry
+                if MonitoringRegistry.is_enabled():
+                    registry = MonitoringRegistry.get_instance()
+                    collector = registry.monitor_collector
+                    if collector:
+                        collector.record_routine_execution(
+                            routine_id, job_state.job_id, duration, "skipped"
+                        )
             except Exception as e:
-                # Hook exceptions should not crash Runtime
-                logger.warning(f"Exception in on_routine_end hook for {routine_id}: {e}", exc_info=True)
+                logger.warning(f"Exception recording routine execution metrics: {e}", exc_info=True)
             return
 
         start_time = time.time()
@@ -719,12 +724,21 @@ class Runtime:
                             if not self._active_thread_counts[job_state.job_id]:
                                 del self._active_thread_counts[job_state.job_id]
             
-            # Call routine end hook
+            # Update aggregate metrics (for statistics)
+            # Note: We no longer call on_routine_end hook for data collection.
+            # In the concurrent model, we track thread counts instead of instance lifecycles.
             try:
-                execution_hooks.on_routine_end(routine, routine_id, job_state, status=status, error=error)
+                from routilux.monitoring.registry import MonitoringRegistry
+                if MonitoringRegistry.is_enabled():
+                    registry = MonitoringRegistry.get_instance()
+                    collector = registry.monitor_collector
+                    if collector:
+                        collector.record_routine_execution(
+                            routine_id, job_state.job_id, duration, status, error
+                        )
             except Exception as e:
-                # Hook exceptions should not crash Runtime
-                logger.warning(f"Exception in on_routine_end hook for {routine_id}: {e}", exc_info=True)
+                # Metrics recording should not crash Runtime
+                logger.warning(f"Exception recording routine execution metrics: {e}", exc_info=True)
 
     def _get_routine_id(self, routine: Routine, job_state: JobState) -> str | None:
         """Get routine_id for a routine.

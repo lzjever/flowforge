@@ -111,24 +111,36 @@ class MonitorService:
             if not job_state:
                 raise ValueError(f"Job '{job_id}' not found")
 
-        # Check if currently executing
-        active_routines = self.get_active_routines(job_id)
-        is_active = routine_id in active_routines
+        # Get active thread count (primary source of truth in concurrent model)
+        active_thread_count = self.get_active_thread_count(job_id, routine_id)
+        
+        # Determine is_active based on thread count
+        is_active = active_thread_count > 0
 
-        # Get routine state
-        routine_state = job_state.get_routine_state(routine_id)
+        # Get queue status to determine if routine has pending data
+        try:
+            queue_status = self.get_routine_queue_status(job_id, routine_id)
+            has_pending_data = any(slot.unconsumed_count > 0 for slot in queue_status)
+        except Exception:
+            # If queue status unavailable, assume no pending data
+            has_pending_data = False
 
-        # Determine status - ensure it's always a string
-        if routine_state:
-            status_value = routine_state.get("status", "pending")
-            # Convert to string if it's an enum or other type
-            status = str(status_value) if status_value is not None else "pending"
-        elif is_active:
+        # Determine status based on thread count and queue state
+        # In concurrent model: thread_count > 0 means running, otherwise check queue
+        if active_thread_count > 0:
             status = "running"
+        elif has_pending_data:
+            status = "idle"  # Has data but not currently executing
         else:
-            status = "pending"
+            # No threads and no pending data - check if routine was ever executed
+            routine_state = job_state.get_routine_state(routine_id)
+            if routine_state:
+                status_value = routine_state.get("status", "idle")
+                status = str(status_value) if status_value is not None else "idle"
+            else:
+                status = "idle"  # Default to idle in new design
 
-        # Get metrics
+        # Get aggregate metrics (for statistics)
         # Lazy import to avoid circular dependency
         from routilux.api.models.monitor import RoutineExecutionStatus
 
@@ -144,9 +156,6 @@ class MonitorService:
                 execution_count = rm.execution_count
                 error_count = rm.error_count
                 last_execution_time = rm.last_execution
-
-        # Get active thread count
-        active_thread_count = self.get_active_thread_count(job_id, routine_id)
 
         return RoutineExecutionStatus(
             routine_id=routine_id,

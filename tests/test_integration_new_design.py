@@ -36,7 +36,8 @@ class TestCompleteExecutionFlow:
                 self.output_event = self.define_event("output", ["data"])
 
                 def my_logic(trigger_data, policy_message, job_state):
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data="A")
 
@@ -51,7 +52,8 @@ class TestCompleteExecutionFlow:
 
                 def my_logic(input_data, policy_message, job_state):
                     data = input_data[0].get("data", "") if input_data else ""
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data=f"B({data})")
 
@@ -101,7 +103,7 @@ class TestCompleteExecutionFlow:
         
         # Wait for completion - need to wait longer for event routing and routine execution
         import time
-        time.sleep(0.2)  # Give time for event routing
+        time.sleep(0.5)  # Give time for event routing
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify execution - job should be IDLE (new design) or completed
@@ -109,9 +111,15 @@ class TestCompleteExecutionFlow:
             job_state.status
         ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING", "ExecutionStatus.IDLE"]
         # Verify results were produced - wait a bit more if needed
-        if len(results) == 0:
-            time.sleep(0.3)  # Give more time for routine C to execute
-        assert len(results) > 0, "Routine C should have executed and produced results"
+        # Give multiple chances for async execution to complete
+        max_attempts = 10
+        for attempt in range(max_attempts):
+            if len(results) > 0:
+                break
+            time.sleep(0.2)
+        
+        # Verify results were produced
+        assert len(results) > 0, f"Routine C should have executed and produced results. Job status: {job_state.status}, Results: {results}"
 
         runtime.shutdown(wait=True)
 
@@ -128,7 +136,8 @@ class TestCompleteExecutionFlow:
                 self.output_event = self.define_event("output", ["data"])
 
                 def my_logic(trigger_data, policy_message, job_state):
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data="A")
 
@@ -200,7 +209,8 @@ class TestCompleteExecutionFlow:
                 self.output_event = self.define_event("output", ["data"])
 
                 def my_logic(trigger_data, policy_message, job_state):
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data="A")
 
@@ -214,7 +224,8 @@ class TestCompleteExecutionFlow:
                 self.output_event = self.define_event("output", ["data"])
 
                 def my_logic(trigger_data, policy_message, job_state):
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data="B")
 
@@ -279,7 +290,8 @@ class TestActivationPolicyIntegration:
                 self.output_event = self.define_event("output", ["data"])
 
                 def my_logic(trigger_data, policy_message, job_state):
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data="A")
 
@@ -293,7 +305,8 @@ class TestActivationPolicyIntegration:
                 self.output_event = self.define_event("output", ["data"])
 
                 def my_logic(trigger_data, policy_message, job_state):
-                    runtime = getattr(self, "_current_runtime", None)
+                    # Get runtime from job_state (set by JobExecutor)
+                    runtime = getattr(job_state, "_current_runtime", None)
                     if runtime:
                         self.emit("output", runtime=runtime, job_state=job_state, data="B")
 
@@ -426,15 +439,14 @@ class TestRuntimeIntegrationEdgeCases:
 
         runtime = Runtime()
 
-        # Empty flow will fail when trying to find entry routine
-        # Runtime catches the exception and marks job as failed
+        # Empty flow starts idle (new design - no entry routine needed)
         job_state = runtime.exec("empty_flow")
 
-        # Wait a bit for execution to complete
+        # Wait a bit for initialization
         runtime.wait_until_all_jobs_finished(timeout=1.0)
 
-        # Job should be marked as failed
-        assert job_state.status == ExecutionStatus.FAILED
+        # Job should start as idle (new design)
+        assert job_state.status == ExecutionStatus.IDLE
 
         runtime.shutdown(wait=True)
 

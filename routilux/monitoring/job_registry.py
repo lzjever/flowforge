@@ -237,11 +237,20 @@ class JobRegistry:
         cutoff_time = now - timedelta(seconds=self._cleanup_interval)
 
         with self._lock:
-            jobs_to_remove = [
-                job_id
-                for job_id, completed_at in self._completed_jobs.items()
-                if completed_at < cutoff_time
-            ]
+            jobs_to_remove = []
+            for job_id, completed_at in self._completed_jobs.items():
+                try:
+                    # Handle invalid data gracefully (e.g., corrupted timestamps)
+                    if not isinstance(completed_at, datetime):
+                        logger.warning(f"Invalid completed_at for job {job_id}: {type(completed_at)}, removing")
+                        jobs_to_remove.append(job_id)
+                        continue
+                    if completed_at < cutoff_time:
+                        jobs_to_remove.append(job_id)
+                except (TypeError, ValueError) as e:
+                    # Handle comparison errors gracefully
+                    logger.warning(f"Error comparing completed_at for job {job_id}: {e}, removing")
+                    jobs_to_remove.append(job_id)
 
             for job_id in jobs_to_remove:
                 # Remove from registry

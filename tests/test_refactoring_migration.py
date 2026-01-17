@@ -31,17 +31,21 @@ class TestMigrationScenarios:
         received_data = []
 
         source = Routine()
+        source.define_slot("trigger")  # Add trigger slot for posting data
         source.define_event("output", ["result", "status"])
 
         def source_logic(trigger_data, policy_message, job_state):
             # Emit with field names that target expects (no mapping needed)
-            source.emit(
-                "output",
-                runtime=job_state._current_runtime,
-                job_state=job_state,
-                result="success",
-                status="ok",
-            )
+            # Get runtime from job_state (set by JobExecutor)
+            runtime = getattr(job_state, "_current_runtime", None)
+            if runtime:
+                source.emit(
+                    "output",
+                    runtime=runtime,
+                    job_state=job_state,
+                    result="success",
+                    status="ok",
+                )
 
         source.set_logic(source_logic)
         source.set_activation_policy(immediate_policy())

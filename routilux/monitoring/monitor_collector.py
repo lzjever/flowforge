@@ -204,9 +204,9 @@ class MonitorCollector:
         self._events: Dict[
             str, Deque[ExecutionEvent]
         ] = {}  # job_id -> Deque[ExecutionEvent] (ring buffer)
-        self._routine_starts: Dict[
-            str, Dict[str, datetime]
-        ] = {}  # job_id -> {routine_id -> start_time}
+        # Note: _routine_starts removed - in concurrent model, we track thread counts instead
+        # of individual instance lifecycles. This dictionary was causing data corruption
+        # when multiple instances of the same routine executed concurrently.
         self._lock = threading.RLock()
         self._event_counter = 0
 
@@ -266,7 +266,6 @@ class MonitorCollector:
                 )
                 # Use deque with maxlen as ring buffer
                 self._events[job_id] = deque(maxlen=self._max_events_per_job)
-                self._routine_starts[job_id] = {}
 
     def record_flow_end(self, job_id: str, status: str = "completed") -> None:
         """Record flow execution end.
@@ -283,19 +282,19 @@ class MonitorCollector:
                     metrics.duration = (metrics.end_time - metrics.start_time).total_seconds()
 
     def record_routine_start(self, routine_id: str, job_id: str) -> None:
-        """Record routine execution start.
+        """Record routine execution start (for event publishing only).
+
+        Note: In the concurrent execution model, we no longer track individual
+        instance lifecycles. This method is kept for backward compatibility and
+        event publishing (WebSocket), but does not collect lifecycle data.
 
         Args:
             routine_id: Routine identifier.
             job_id: Job identifier.
         """
+        # Only publish event for WebSocket streaming, no data collection
         with self._lock:
-            if job_id not in self._routine_starts:
-                self._routine_starts[job_id] = {}
-
-            self._routine_starts[job_id][routine_id] = datetime.now()
-
-            # Record event
+            # Record event for WebSocket streaming
             event = ExecutionEvent(
                 event_id=f"event_{self._event_counter}",
                 job_id=job_id,
@@ -322,7 +321,12 @@ class MonitorCollector:
         status: str = "completed",
         error: Optional[Exception] = None,
     ) -> None:
-        """Record routine execution end.
+        """Record routine execution end (for event publishing only).
+
+        Note: In the concurrent execution model, we no longer track individual
+        instance lifecycles. This method is kept for backward compatibility and
+        event publishing (WebSocket), but does not collect lifecycle data.
+        Use record_routine_execution() for updating aggregate metrics.
 
         Args:
             routine_id: Routine identifier.
@@ -330,50 +334,16 @@ class MonitorCollector:
             status: Execution status.
             error: Optional error that occurred.
         """
+        # Only publish event for WebSocket streaming, no data collection
         with self._lock:
-            start_time = None
-            if job_id in self._routine_starts and routine_id in self._routine_starts[job_id]:
-                start_time = self._routine_starts[job_id].pop(routine_id)
-
-            duration = None
-            if start_time:
-                duration = (datetime.now() - start_time).total_seconds()
-
-            # Update routine metrics
-            if job_id in self._metrics:
-                metrics = self._metrics[job_id]
-                if routine_id not in metrics.routine_metrics:
-                    metrics.routine_metrics[routine_id] = RoutineMetrics(routine_id=routine_id)
-
-                routine_metrics = metrics.routine_metrics[routine_id]
-                if duration is not None:
-                    routine_metrics.update(duration, status)
-                else:
-                    routine_metrics.execution_count += 1
-                    if status in ("failed", "error"):
-                        routine_metrics.error_count += 1
-                    routine_metrics.last_execution = datetime.now()
-
-            # Record error if present
-            if error and job_id in self._metrics:
-                error_record = ErrorRecord(
-                    error_id=f"error_{self._event_counter}",
-                    job_id=job_id,
-                    routine_id=routine_id,
-                    timestamp=datetime.now(),
-                    error_type=type(error).__name__,
-                    error_message=str(error),
-                )
-                self._metrics[job_id].errors.append(error_record)
-
-            # Record event
+            # Record event for WebSocket streaming
             event = ExecutionEvent(
                 event_id=f"event_{self._event_counter}",
                 job_id=job_id,
                 routine_id=routine_id,
                 event_type="routine_end",
                 timestamp=datetime.now(),
-                duration=duration,
+                duration=None,  # Duration not available without lifecycle tracking
                 status=status,
             )
             self._event_counter += 1
@@ -387,6 +357,65 @@ class MonitorCollector:
 
         # Publish event for WebSocket streaming (outside lock)
         self._publish_event(event)
+
+    def record_routine_execution(
+        self,
+        routine_id: str,
+        job_id: str,
+        duration: float,
+        status: str = "completed",
+        error: Optional[Exception] = None,
+    ) -> None:
+        """Record a routine execution for aggregate metrics (statistics only).
+
+        This method is used in the new concurrent monitoring model where we track
+        thread counts instead of individual instance lifecycles. This method only
+        updates aggregate metrics (execution count, total duration, etc.) and does
+        not track instance start/end times.
+
+        Args:
+            routine_id: Routine identifier.
+            job_id: Job identifier.
+            duration: Execution duration in seconds.
+            status: Execution status (completed, failed, error_continued, skipped).
+            error: Optional error that occurred.
+        """
+        with self._lock:
+            # Ensure metrics exist
+            if job_id not in self._metrics:
+                # Try to get flow_id from job_state if available
+                from routilux.monitoring.storage import job_store
+                job_state = job_store.get(job_id)
+                flow_id = job_state.flow_id if job_state else "unknown"
+                self._metrics[job_id] = ExecutionMetrics(
+                    job_id=job_id,
+                    flow_id=flow_id,
+                    start_time=datetime.now(),
+                )
+
+            metrics = self._metrics[job_id]
+            
+            # Initialize routine metrics if needed
+            if routine_id not in metrics.routine_metrics:
+                metrics.routine_metrics[routine_id] = RoutineMetrics(routine_id=routine_id)
+            
+            # Update aggregate metrics
+            routine_metrics = metrics.routine_metrics[routine_id]
+            routine_metrics.update(duration, status)
+            routine_metrics.last_execution = datetime.now()
+
+            # Record error if present
+            if error:
+                error_record = ErrorRecord(
+                    error_id=f"error_{self._event_counter}",
+                    job_id=job_id,
+                    routine_id=routine_id,
+                    timestamp=datetime.now(),
+                    error_type=type(error).__name__,
+                    error_message=str(error),
+                )
+                metrics.errors.append(error_record)
+                self._event_counter += 1
 
     def record_slot_call(
         self,

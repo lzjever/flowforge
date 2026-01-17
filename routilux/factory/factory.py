@@ -81,6 +81,10 @@ class ObjectFactory:
             if name in self._registry:
                 raise ValueError(f"Prototype '{name}' is already registered")
 
+            # Validate prototype is not None
+            if prototype is None:
+                raise ValueError("Prototype cannot be None")
+
             # Determine if prototype is a class or instance
             if isinstance(prototype, type):
                 # Class prototype
@@ -115,11 +119,14 @@ class ObjectFactory:
                         "metadata": metadata or ObjectMetadata(name=name, description=description),
                     }
                 else:
-                    # Routine instance - extract config, policy, logic
+                    # Routine instance - extract config, policy, logic, slots, events
                     config = getattr(prototype, "_config", {}).copy()
                     activation_policy = getattr(prototype, "_activation_policy", None)
                     logic = getattr(prototype, "_logic", None)
                     error_handler = getattr(prototype, "_error_handler", None)
+                    # Preserve slots and events for cloning
+                    slots = getattr(prototype, "_slots", {}).copy()
+                    events = getattr(prototype, "_events", {}).copy()
 
                     self._registry[name] = {
                         "type": "instance",
@@ -128,6 +135,8 @@ class ObjectFactory:
                         "activation_policy": activation_policy,
                         "logic": logic,
                         "error_handler": error_handler,
+                        "slots": slots,
+                        "events": events,
                         "metadata": metadata or ObjectMetadata(name=name, description=description),
                     }
 
@@ -172,6 +181,31 @@ class ObjectFactory:
                     # Routine instance - create new and apply config
                     instance = proto_class()
                     instance._config = proto["config"].copy()
+
+                    # Clone slots from prototype
+                    if "slots" in proto:
+                        for slot_name, slot in proto["slots"].items():
+                            # Clone slot by redefining it with same parameters
+                            from routilux.slot import Slot
+                            cloned_slot = Slot(
+                                slot.name,
+                                instance,
+                                max_queue_length=slot.max_queue_length,
+                                watermark=slot.watermark,
+                            )
+                            instance._slots[slot_name] = cloned_slot
+
+                    # Clone events from prototype
+                    if "events" in proto:
+                        for event_name, event in proto["events"].items():
+                            # Clone event by redefining it with same parameters
+                            from routilux.event import Event
+                            cloned_event = Event(
+                                event.name,
+                                instance,
+                                output_params=event.output_params.copy() if event.output_params else None,
+                            )
+                            instance._events[event_name] = cloned_event
 
                     # Apply prototype policy/logic if not overridden
                     if override_policy is None and proto.get("activation_policy"):

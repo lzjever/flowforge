@@ -113,6 +113,10 @@ class TestCompleteFlowWithMonitoring:
 
         runtime = Runtime(thread_pool_size=2)
         job_state = runtime.exec("test_flow")
+        
+        # Post data to trigger execution - routines start in IDLE state
+        runtime.post("test_flow", "entry", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify execution history in job_state

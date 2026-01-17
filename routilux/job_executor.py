@@ -385,6 +385,7 @@ class JobExecutor:
 
         This marks the job as IDLE but keeps the event loop running to wait for new tasks.
         """
+        from routilux.monitoring.hooks import execution_hooks
         from routilux.status import ExecutionStatus
 
         # Only mark as idle if not already in a terminal state
@@ -396,6 +397,22 @@ class JobExecutor:
             # Check if all routines are idle
             if self._all_routines_idle() and self._is_complete():
                 if self.job_state.status != ExecutionStatus.IDLE:
+                    # Check if any routine was ever executed
+                    any_executed = False
+                    for routine_id in self.flow.routines.keys():
+                        routine_state = self.job_state.get_routine_state(routine_id)
+                        if routine_state and routine_state.get("status") not in ("idle", None):
+                            any_executed = True
+                            break
+                    
+                    # If no routine was executed and job is going idle immediately after start,
+                    # call on_flow_end to signal that flow execution ended without any work
+                    if not any_executed:
+                        try:
+                            execution_hooks.on_flow_end(self.flow, self.job_state, "completed")
+                        except Exception as e:
+                            logger.warning(f"Exception in on_flow_end hook: {e}", exc_info=True)
+                    
                     self.job_state.status = ExecutionStatus.IDLE
                     logger.debug(f"Job {self.job_state.job_id} is now IDLE")
 

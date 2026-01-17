@@ -103,11 +103,25 @@ class TestFlowStaticBehavior:
 
         # Create routines
         source1 = Routine()
-        source1.define_event("output1", ["data1"])
+        source1.define_slot("trigger")
+        event1 = source1.define_event("output1", ["data1"])
         source2 = Routine()
-        source2.define_event("output2", ["data2"])
+        source2.define_slot("trigger")
+        event2 = source2.define_event("output2", ["data2"])
         target = Routine()
         target.define_slot("input")
+
+        def source1_logic(trigger_data, policy_message, job_state):
+            # Get runtime from job_state (set by JobExecutor)
+            runtime = getattr(job_state, "_current_runtime", None)
+            if runtime:
+                event1.emit(runtime=runtime, job_state=job_state, data1={"value": 1})
+
+        def source2_logic(trigger_data, policy_message, job_state):
+            # Get runtime from job_state (set by JobExecutor)
+            runtime = getattr(job_state, "_current_runtime", None)
+            if runtime:
+                event2.emit(runtime=runtime, job_state=job_state, data2={"value": 2})
 
         def target_logic(input_data, policy_message, job_state):
             # Store received data
@@ -116,11 +130,15 @@ class TestFlowStaticBehavior:
             if input_data:
                 target_logic.received.append(input_data[0])
 
+        source1.set_logic(source1_logic)
+        source1.set_activation_policy(immediate_policy())
+        source2.set_logic(source2_logic)
+        source2.set_activation_policy(immediate_policy())
         target.set_logic(target_logic)
         target.set_activation_policy(immediate_policy())
 
         flow.add_routine(source1, "source1")
-        flow.add_routine(source2, "target")
+        flow.add_routine(source2, "source2")
         flow.add_routine(target, "target")
 
         # Initially connect source1

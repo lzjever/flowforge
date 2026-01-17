@@ -144,13 +144,10 @@ class ExecutionHooks:
         if not MonitoringRegistry.is_enabled() or not job_state:
             return
 
-        registry = MonitoringRegistry.get_instance()
-        collector = registry.monitor_collector
-
-        if collector:
-            # Note: MonitorCollector._publish_event() will automatically
-            # publish routine_start events via JobEventManager
-            collector.record_routine_start(routine_id, job_state.job_id)
+        # Note: In the concurrent execution model, we no longer collect lifecycle data
+        # for individual routine instances. We track thread counts instead.
+        # This hook is kept for backward compatibility and event publishing only.
+        # No data collection is performed here.
 
         # Publish routine status change event
         _publish_event_via_manager(
@@ -207,11 +204,10 @@ class ExecutionHooks:
         if not MonitoringRegistry.is_enabled() or not job_state:
             return
 
-        registry = MonitoringRegistry.get_instance()
-        collector = registry.monitor_collector
-
-        if collector:
-            collector.record_routine_end(routine_id, job_state.job_id, status, error)
+        # Note: In the concurrent execution model, we no longer collect lifecycle data
+        # for individual routine instances. We track thread counts instead.
+        # This hook is kept for backward compatibility and event publishing only.
+        # No data collection is performed here.
 
         # Publish routine status change event
         _publish_event_via_manager(

@@ -113,7 +113,8 @@ class TestMonitorServiceRoutineExecutionStatus:
 
         assert status.routine_id == "test_routine"
         assert status.is_active is False
-        assert status.status == "pending"
+        # In new design, routines start as idle, not pending
+        assert status.status == "idle"
         assert status.execution_count == 0
         assert status.error_count == 0
         
@@ -153,8 +154,8 @@ class TestMonitorServiceRoutineExecutionStatus:
 
         assert status.routine_id == "test_routine"
         assert status.is_active is False
-        # Status should be completed or pending depending on execution
-        assert status.status in ["pending", "completed", "running"]
+        # Status should be idle (new design), completed, or running depending on execution
+        assert status.status in ["idle", "pending", "completed", "running"]
         
         # Cleanup
         runtime.shutdown(wait=True)
@@ -372,8 +373,8 @@ class TestMonitorServiceCompleteData:
             for routine_id, status in statuses.items():
                 assert status.routine_id == routine_id
                 assert isinstance(status.is_active, bool)
-                # Status can be any valid routine status
-                assert status.status in ["pending", "running", "completed", "failed", "error_continued", "skipped"]
+                # Status can be any valid routine status (including "idle" in new design)
+                assert status.status in ["pending", "running", "completed", "failed", "error_continued", "skipped", "idle"]
         finally:
             # Cleanup
             job_store.remove(job_state.job_id)

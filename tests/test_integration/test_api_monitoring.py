@@ -293,7 +293,7 @@ class TestRoutineStatusAPI:
 
             # Verify value types and ranges
             assert isinstance(status["is_active"], bool)
-            assert status["status"] in ["pending", "running", "completed", "failed", "error_continued", "skipped"]
+            assert status["status"] in ["pending", "running", "completed", "failed", "error_continued", "skipped", "idle"]
             assert isinstance(status["execution_count"], int)
             assert status["execution_count"] >= 0
             assert isinstance(status["error_count"], int)
