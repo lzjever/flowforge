@@ -80,6 +80,7 @@ class RoutineExecutionStatus(BaseModel):
     last_execution_time: Optional[datetime] = Field(None, description="Last execution timestamp")
     execution_count: int = Field(0, description="Total number of executions")
     error_count: int = Field(0, description="Total number of errors")
+    active_thread_count: int = Field(0, description="Number of active threads executing this routine")
 
 
 class RoutineInfo(BaseModel):

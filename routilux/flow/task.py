@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from routilux.connection import Connection
+    from routilux.event import Event
+    from routilux.runtime import Runtime
     from routilux.slot import Slot
 
 
@@ -53,5 +55,31 @@ class SlotActivationTask:
         with non-SlotActivationTask objects.
         """
         if not isinstance(other, SlotActivationTask):
+            return NotImplemented
+        return self.priority.value < other.priority.value
+
+
+@dataclass
+class EventRoutingTask:
+    """Event routing task for queue-based message routing.
+
+    This task is used to route events to connected slots in the event loop thread,
+    ensuring that all message routing happens in a single dedicated thread per job.
+    """
+
+    event: "Event"
+    event_data: dict[str, Any]
+    job_state: Any  # JobState for this execution
+    runtime: "Runtime"
+    priority: TaskPriority = TaskPriority.NORMAL
+    created_at: datetime | None = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
+
+    def __lt__(self, other):
+        """For priority queue sorting."""
+        if not isinstance(other, EventRoutingTask):
             return NotImplemented
         return self.priority.value < other.priority.value

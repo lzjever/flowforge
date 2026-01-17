@@ -119,20 +119,31 @@ class TestEventEmission:
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
 
+        # Trigger the first routine to start execution
+        runtime.post("test_flow", "r1", "trigger", {"data": "test"}, job_id=job_state.job_id)
+
         # Wait for completion
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Verify data was received (simplified - actual implementation would track this)
-        assert job_state.status.value in ["completed", "failed", "running"]
+        # Verify data was received - job should be IDLE (all routines completed) or still running
+        assert job_state.status.value in ["idle", "completed", "failed", "running"]
 
     def test_emit_without_connections(self):
         """Test: Emit event without connections (should be discarded silently)"""
         routine = Routine()
         routine.define_event("output", ["data"])
 
-        # Create runtime and job_state
+        # Create a minimal flow and job to get proper JobExecutor setup
+        flow = Flow("test_flow")
+        flow.add_routine(routine, "r1")
+        
+        from routilux.monitoring.flow_registry import FlowRegistry
+        flow_registry = FlowRegistry.get_instance()
+        flow_registry.register_by_name("test_flow", flow)
+
+        # Create runtime and execute to get proper job_state with JobExecutor
         runtime = Runtime()
-        job_state = JobState(flow_id="test")
+        job_state = runtime.exec("test_flow")
 
         # Emit without connections (should not raise error)
         event = routine.get_event("output")
@@ -140,6 +151,9 @@ class TestEventEmission:
 
         # Verify event is defined
         assert "output" in routine._events
+        
+        # Cleanup
+        runtime.shutdown()
 
     def test_output_params(self):
         """Test: Output parameters"""
@@ -153,11 +167,22 @@ class TestEventEmission:
         assert "status" in event.output_params
 
         # Unspecified parameters should also be passable
+        # Create a minimal flow and job to get proper JobExecutor setup
+        flow = Flow("test_flow")
+        flow.add_routine(routine, "r1")
+        
+        from routilux.monitoring.flow_registry import FlowRegistry
+        flow_registry = FlowRegistry.get_instance()
+        flow_registry.register_by_name("test_flow", flow)
+
         runtime = Runtime()
-        job_state = JobState(flow_id="test")
+        job_state = runtime.exec("test_flow")
         event.emit(
             runtime=runtime, job_state=job_state, result="ok", status="success", extra="data"
         )
+        
+        # Cleanup
+        runtime.shutdown()
 
 
 class TestEventDataFlow:
@@ -168,11 +193,22 @@ class TestEventDataFlow:
         routine = Routine()
         event = routine.define_event("output", ["data"])
 
+        # Create a minimal flow and job to get proper JobExecutor setup
+        flow = Flow("test_flow")
+        flow.add_routine(routine, "r1")
+        
+        from routilux.monitoring.flow_registry import FlowRegistry
+        flow_registry = FlowRegistry.get_instance()
+        flow_registry.register_by_name("test_flow", flow)
+
         runtime = Runtime()
-        job_state = JobState(flow_id="test")
+        job_state = runtime.exec("test_flow")
 
         # Emit event
         event.emit(runtime=runtime, job_state=job_state, data="test")
 
         # Verify metadata is included (checked in Runtime.handle_event_emit)
         # This is tested indirectly through Runtime routing
+        
+        # Cleanup
+        runtime.shutdown()

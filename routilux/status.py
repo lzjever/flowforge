@@ -25,8 +25,9 @@ class ExecutionStatus(str, Enum):
 
     PENDING = "pending"
     RUNNING = "running"
+    IDLE = "idle"  # All routines completed, waiting for new tasks
     PAUSED = "paused"
-    COMPLETED = "completed"
+    COMPLETED = "completed"  # User explicitly completed
     FAILED = "failed"
     CANCELLED = "cancelled"
 
@@ -50,6 +51,7 @@ class RoutineStatus(str, Enum):
 
     PENDING = "pending"
     RUNNING = "running"
+    IDLE = "idle"  # No pending data, waiting for new data
     COMPLETED = "completed"
     FAILED = "failed"
     ERROR_CONTINUED = "error_continued"

@@ -314,7 +314,7 @@ class Routine(Serializable):
                 "Provide job_state parameter."
             )
 
-        # Emit event through Runtime
+        # Emit event through Runtime (creates routing task)
         event.emit(runtime=runtime, job_state=job_state, **kwargs)
 
     def _prepare_execution_data(self, kwargs: dict[str, Any]) -> dict[str, Any]:

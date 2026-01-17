@@ -81,6 +81,9 @@ class Runtime:
         # Track active routines for monitoring: job_id -> set[routine_id]
         self._active_routines: Dict[str, Set[str]] = {}
         self._active_routines_lock = threading.RLock()
+        # Track active thread counts for monitoring: job_id -> {routine_id -> thread_count}
+        self._active_thread_counts: Dict[str, Dict[str, int]] = {}
+        self._thread_counts_lock = threading.RLock()
 
     def __del__(self) -> None:
         """Cleanup thread pool when Runtime is garbage collected.
@@ -167,116 +170,124 @@ class Runtime:
         if job_state.started_at is None:
             job_state.started_at = datetime.now()
 
-        # Register job
+        # Set runtime reference in job_state for event routing
+        job_state._current_runtime = self
+
+        # Use GlobalJobManager to start job
+        from routilux.job_manager import get_job_manager
+
+        job_manager = get_job_manager()
+        # Note: job_manager uses its own thread pool, but we need to ensure
+        # JobExecutor can access Runtime for event routing
+        # We'll set this in JobExecutor initialization
+
+        # Start job (no entry routine - all routines start as IDLE)
+        job_state = job_manager.start_job(
+            flow=flow,
+            timeout=flow.execution_timeout,
+            job_state=job_state,
+        )
+
+        # Register job in Runtime's active jobs
         with self._job_lock:
             self._active_jobs[job_state.job_id] = job_state
 
-        # Start execution in background
-        future = self.thread_pool.submit(self._execute_flow, flow, job_state)
-        job_state._execution_future = future  # Store for cancellation
-
         return job_state
 
-    def _execute_flow(self, flow: Flow, job_state: JobState) -> None:
-        """Execute a flow (internal method, runs in thread pool).
+    def post(
+        self,
+        flow_name: str,
+        routine_name: str,
+        slot_name: str,
+        data: dict[str, Any],
+        job_id: str | None = None,
+    ) -> JobState:
+        """Send external event to a specific routine's slot.
+
+        This method allows external systems to inject data into a running job
+        or create a new job if job_id is None.
 
         Args:
-            flow: Flow to execute.
-            job_state: JobState for this execution.
+            flow_name: Name of the flow (must be registered in FlowRegistry).
+            routine_name: Name of the routine to receive the data.
+            slot_name: Name of the slot to send data to.
+            data: Data dictionary to send to the slot.
+            job_id: Optional job ID. If None, creates a new job.
+                If provided, uses existing job (must not be COMPLETED).
+
+        Returns:
+            JobState object.
+
+        Raises:
+            ValueError: If flow_name, routine_name, or slot_name not found.
+            RuntimeError: If Runtime is shut down or job is COMPLETED.
         """
-        # Import hooks at method level to avoid circular imports
-        from routilux.monitoring.hooks import execution_hooks
+        if self._shutdown:
+            raise RuntimeError("Runtime is shut down")
 
-        try:
-            # Call flow start hook
-            execution_hooks.on_flow_start(flow, job_state)
+        # Get flow from registry
+        from routilux.monitoring.flow_registry import FlowRegistry
 
-            # Set Runtime reference on Flow for thread pool access
-            flow._runtime = self
+        flow_registry = FlowRegistry.get_instance()
+        flow = flow_registry.get_by_name(flow_name)
+        if flow is None:
+            flow = flow_registry.get(flow_name)
+        if flow is None:
+            raise ValueError(f"Flow '{flow_name}' not found in registry")
 
-            # Set flow and runtime context in routines and job_state
-            for routine in flow.routines.values():
-                routine._current_flow = flow
-                routine._current_runtime = self
-            # Also set on job_state for access in logic functions
-            job_state._current_runtime = self
-            job_state._current_flow = flow
-
-            # Find entry routine (first routine or one with "trigger" slot)
-            # Check if entry_routine_id was specified in job_state
-            entry_routine_id = job_state.shared_data.get("entry_routine_id")
-            if entry_routine_id and entry_routine_id in flow.routines:
-                # Use specified entry routine
-                pass
-            else:
-                # Auto-detect entry routine
-                entry_routine_id = None
-                for rid, routine in flow.routines.items():
-                    if routine.get_slot("trigger") is not None:
-                        entry_routine_id = rid
-                        break
-
-                if entry_routine_id is None:
-                    # Use first routine as entry
-                    entry_routine_id = next(iter(flow.routines.keys()))
-
-            entry_routine = flow.routines[entry_routine_id]
-            job_state.current_routine_id = entry_routine_id
-
-            # Record execution start
-            job_state.record_execution(entry_routine_id, "start", {})
-
-            # Trigger entry routine
-            trigger_slot = entry_routine.get_slot("trigger")
-            if trigger_slot is not None:
-                # Get entry_params from job_state if available
-                entry_params = job_state.shared_data.get("entry_params", {})
-                # Create data for trigger
-                trigger_slot.enqueue(
-                    data=entry_params,
-                    emitted_from="system",
-                    emitted_at=datetime.now(),
-                )
-                # Check activation
-                self._check_routine_activation(entry_routine, job_state)
-
-            # Wait for completion
-            # TODO: Implement proper completion detection
-            # For now, we need to wait until all routines complete
-            # This is a simplified version - in production, we'd track active routines
-            import time
-
-            time.sleep(0.1)  # Brief delay to allow initial processing
-
-            # Check if job failed due to routine error (set by error handler)
-            # Only mark as completed if status is still RUNNING
-            if job_state.status == ExecutionStatus.RUNNING:
-                # Check if all routines completed
-                # In a real implementation, we'd track this properly
-                # For now, mark as completed
-                job_state.status = ExecutionStatus.COMPLETED
-                job_state.completed_at = datetime.now()
-            # If status is already FAILED (set by error handler), don't override it
-
-        except Exception as e:
-            logger.exception(f"Error executing flow {flow.flow_id}: {e}")
-            job_state.status = ExecutionStatus.FAILED
-            job_state.error = str(e)
-            job_state.completed_at = datetime.now()
-        finally:
-            # Call flow end hook
-            status = (
-                job_state.status.value
-                if hasattr(job_state.status, "value")
-                else str(job_state.status)
-            )
-            execution_hooks.on_flow_end(flow, job_state, status=status)
-
-            # Update job state
-            job_state.updated_at = datetime.now()
-            # Cleanup from active jobs to prevent memory leak
+        # Get or create job
+        if job_id:
+            # Use existing job - check both Runtime._active_jobs and JobRegistry
+            job_state = None
             with self._job_lock:
-                self._active_jobs.pop(job_state.job_id, None)
+                job_state = self._active_jobs.get(job_id)
+            
+            # If not found in Runtime, try JobRegistry
+            if job_state is None:
+                try:
+                    from routilux.monitoring.job_registry import JobRegistry
+                    job_registry = JobRegistry.get_instance()
+                    job_state = job_registry.get(job_id)
+                except (ImportError, AttributeError):
+                    # JobRegistry not available, continue
+                    pass
+            
+            if job_state is None:
+                raise ValueError(f"Job '{job_id}' not found")
+            if job_state.status == ExecutionStatus.COMPLETED:
+                raise RuntimeError(f"Job '{job_id}' is already completed")
+            # Ensure runtime is set
+            job_state._current_runtime = self
+        else:
+            # Create new job
+            job_state = self.exec(flow_name)
+
+        # Get routine and slot
+        if routine_name not in flow.routines:
+            raise ValueError(f"Routine '{routine_name}' not found in flow")
+        routine = flow.routines[routine_name]
+        slot = routine.get_slot(slot_name)
+        if slot is None:
+            raise ValueError(f"Slot '{slot_name}' not found in routine '{routine_name}'")
+
+        # Get JobExecutor
+        job_executor = getattr(job_state, "_job_executor", None)
+        if job_executor is None:
+            raise RuntimeError(f"JobExecutor not found for job {job_state.job_id}")
+
+        # Create task and submit to JobExecutor
+        from routilux.flow.task import SlotActivationTask
+
+        task = SlotActivationTask(
+            slot=slot,
+            data=data,
+            job_state=job_state,
+            connection=None,
+        )
+
+        job_executor.enqueue_task(task)
+
+        return job_state
 
     def handle_event_emit(
         self, event: Event, event_data: dict[str, Any], job_state: JobState
@@ -460,14 +471,23 @@ class Runtime:
                 },
             )
 
-        if routine._activation_policy is None:
+        # Priority: job-specific policy > routine default policy > immediate activation
+        job_specific_policy = job_state.get_routine_activation_policy(routine_id) if routine_id else None
+
+        if job_specific_policy is not None:
+            # Use job-specific policy
+            policy = job_specific_policy
+        elif routine._activation_policy is not None:
+            # Use routine's default policy
+            policy = routine._activation_policy
+        else:
             # No activation policy - activate immediately with all new data
             self._activate_routine(routine, job_state)
             return
 
         # Call activation policy
         try:
-            should_activate, data_slice, policy_message = routine._activation_policy(
+            should_activate, data_slice, policy_message = policy(
                 routine.slots, job_state
             )
         except Exception as e:
@@ -529,6 +549,14 @@ class Runtime:
             if job_state.job_id not in self._active_routines:
                 self._active_routines[job_state.job_id] = set()
             self._active_routines[job_state.job_id].add(routine_id)
+
+        # Increase thread count for monitoring
+        with self._thread_counts_lock:
+            if job_state.job_id not in self._active_thread_counts:
+                self._active_thread_counts[job_state.job_id] = {}
+            if routine_id not in self._active_thread_counts[job_state.job_id]:
+                self._active_thread_counts[job_state.job_id][routine_id] = 0
+            self._active_thread_counts[job_state.job_id][routine_id] += 1
 
         # Prepare data for logic
         if data_slice is None:
@@ -651,6 +679,17 @@ class Runtime:
                     # Clean up empty job entry
                     if not self._active_routines[job_state.job_id]:
                         del self._active_routines[job_state.job_id]
+
+            # Decrease thread count for monitoring
+            with self._thread_counts_lock:
+                if job_state.job_id in self._active_thread_counts:
+                    if routine_id in self._active_thread_counts[job_state.job_id]:
+                        self._active_thread_counts[job_state.job_id][routine_id] -= 1
+                        if self._active_thread_counts[job_state.job_id][routine_id] == 0:
+                            del self._active_thread_counts[job_state.job_id][routine_id]
+                            # Clean up empty job entry
+                            if not self._active_thread_counts[job_state.job_id]:
+                                del self._active_thread_counts[job_state.job_id]
             
             # Call routine end hook
             execution_hooks.on_routine_end(routine, routine_id, job_state, status=status, error=error)
@@ -683,6 +722,31 @@ class Runtime:
         """
         with self._active_routines_lock:
             return self._active_routines.get(job_id, set()).copy()
+
+    def get_active_thread_count(self, job_id: str, routine_id: str) -> int:
+        """Get active thread count for a specific routine.
+
+        Args:
+            job_id: Job identifier.
+            routine_id: Routine identifier.
+
+        Returns:
+            Number of active threads executing this routine (0 if not active).
+        """
+        with self._thread_counts_lock:
+            return self._active_thread_counts.get(job_id, {}).get(routine_id, 0)
+
+    def get_all_active_thread_counts(self, job_id: str) -> Dict[str, int]:
+        """Get active thread counts for all routines in a job.
+
+        Args:
+            job_id: Job identifier.
+
+        Returns:
+            Dictionary mapping routine_id to thread count.
+        """
+        with self._thread_counts_lock:
+            return self._active_thread_counts.get(job_id, {}).copy()
 
     def wait_until_all_jobs_finished(self, timeout: float | None = None) -> bool:
         """Wait until all active jobs complete.

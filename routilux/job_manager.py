@@ -71,8 +71,6 @@ class GlobalJobManager:
     def start_job(
         self,
         flow: Flow,
-        entry_routine_id: str,
-        entry_params: dict[str, Any] | None = None,
         timeout: float | None = None,
         job_state: JobState | None = None,
     ) -> JobState:
@@ -80,11 +78,10 @@ class GlobalJobManager:
 
         This method creates a JobExecutor and starts execution in the background.
         It returns immediately with a JobState that can be used to track progress.
+        All routines start in IDLE state, waiting for external events via Runtime.post().
 
         Args:
             flow: Flow to execute.
-            entry_routine_id: Entry routine identifier.
-            entry_params: Entry parameters passed to the entry routine's trigger slot.
             timeout: Execution timeout in seconds. If None, uses flow's default timeout.
             job_state: Optional existing JobState to use (for resuming execution).
 
@@ -93,12 +90,7 @@ class GlobalJobManager:
 
         Raises:
             RuntimeError: If manager is shut down.
-            ValueError: If entry_routine_id not found in flow.
         """
-        # Critical fix: Validate before creating executor to avoid TOCTOU race condition
-        if entry_routine_id not in flow.routines:
-            raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
-
         from routilux.job_executor import JobExecutor
         from routilux.job_state import JobState as JobStateClass
 
@@ -138,8 +130,8 @@ class GlobalJobManager:
                 raise RuntimeError("GlobalJobManager is shut down")
             self.running_jobs[job_state.job_id] = executor
 
-        # Start execution (non-blocking)
-        executor.start(entry_routine_id, entry_params or {})
+        # Start execution (non-blocking, no entry routine)
+        executor.start()
 
         return job_state
 

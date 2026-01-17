@@ -184,6 +184,14 @@ class JobState(Serializable):
         # Output log for persistence (optional)
         self.output_log: List[Dict[str, Any]] = []
 
+        # JobExecutor reference (not serialized, runtime only)
+        self._job_executor: Optional[Any] = None  # JobExecutor, but avoid circular import
+
+        # Job-specific activation policies (not serialized)
+        self._activation_policies: Dict[str, Any] = {}
+        # routine_id -> activation_policy (Callable)
+        self._activation_policies_lock: threading.RLock = threading.RLock()
+
         # Register serializable fields
         self.add_serializable_fields(
             [
@@ -480,6 +488,40 @@ class JobState(Serializable):
 
         # Sort by time (outside lock to minimize lock hold time)
         return sorted(history, key=lambda x: x.timestamp)
+
+    def set_routine_activation_policy(self, routine_id: str, policy: Any) -> None:
+        """Set job-specific activation policy for a routine.
+
+        This policy takes precedence over the routine's default activation policy.
+        Useful for breakpoints and job-specific behavior modifications.
+
+        Args:
+            routine_id: Routine identifier.
+            policy: Activation policy function.
+        """
+        with self._activation_policies_lock:
+            self._activation_policies[routine_id] = policy
+
+    def get_routine_activation_policy(self, routine_id: str) -> Optional[Any]:
+        """Get job-specific activation policy for a routine.
+
+        Args:
+            routine_id: Routine identifier.
+
+        Returns:
+            Job-specific activation policy if set, None otherwise.
+        """
+        with self._activation_policies_lock:
+            return self._activation_policies.get(routine_id)
+
+    def remove_routine_activation_policy(self, routine_id: str) -> None:
+        """Remove job-specific activation policy for a routine.
+
+        Args:
+            routine_id: Routine identifier.
+        """
+        with self._activation_policies_lock:
+            self._activation_policies.pop(routine_id, None)
 
     def _set_paused(self, reason: str = "", checkpoint: Optional[Dict[str, Any]] = None) -> None:
         """Internal method: Set paused state (called by Flow).

@@ -469,20 +469,17 @@ def resume_flow(flow: "Flow", job_state: "JobState") -> "JobState":
     if not hasattr(flow, "_pending_tasks") or not hasattr(flow, "_task_queue"):
         raise AttributeError("Flow is missing required attributes: _pending_tasks or _task_queue. Ensure Flow.__init__() has been called properly.")
 
-    for task in flow._pending_tasks:
-        flow._task_queue.put(task)
-    flow._pending_tasks.clear()
-
-    from routilux.flow.event_loop import start_event_loop
-
-    # CRITICAL fix: Check _running flag atomically
-    with flow._execution_lock:
-        should_restart = not flow._running or (
-            flow._execution_thread is not None and not flow._execution_thread.is_alive()
-        )
-
-    if should_restart:
-        start_event_loop(flow)
+    # TODO: Update to use JobExecutor instead of Flow runtime state
+    # Flow no longer has _pending_tasks, _task_queue, _execution_thread, etc.
+    # These should be accessed via job_state._job_executor
+    job_executor = getattr(job_state, "_job_executor", None)
+    if job_executor:
+        # Resume using JobExecutor
+        with job_executor._lock:
+            for task in job_executor.pending_tasks:
+                job_executor.task_queue.put(task)
+            job_executor.pending_tasks.clear()
+            job_executor._paused = False
 
     return job_state
 

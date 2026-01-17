@@ -159,7 +159,6 @@ def execute_flow_unified(
     """
     from routilux.execution_tracker import ExecutionTracker
     from routilux.flow.error_handling import get_error_handler_for_routine
-    from routilux.flow.event_loop import start_event_loop
     from routilux.job_state import JobState
     from routilux.status import ExecutionStatus
 
@@ -197,7 +196,8 @@ def execute_flow_unified(
 
         execution_hooks.on_flow_start(flow, job_state)
 
-        start_event_loop(flow)
+        # Note: Flow no longer has its own event loop
+        # Execution is handled by JobExecutor via Runtime
 
         trigger_slot = entry_routine.get_slot("trigger")
         if trigger_slot is None:

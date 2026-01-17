@@ -24,24 +24,11 @@ def ensure_event_loop_running(flow: "Flow") -> bool:
     Returns:
         True if event loop is running (or was restarted), False otherwise.
     """
-    from routilux.flow.event_loop import start_event_loop
-
-    # CRITICAL fix: Validate required attributes exist
-    if not hasattr(flow, "_task_queue") or not hasattr(flow, "_execution_thread"):
-        raise AttributeError("Flow is missing required attributes: _task_queue or _execution_thread. Ensure Flow.__init__() has been called properly.")
-
-    queue_size = flow._task_queue.qsize()
-    is_running = flow._execution_thread is not None and flow._execution_thread.is_alive()
-
-    # If there are tasks but event loop is not running, restart it
-    if queue_size > 0 and not is_running:
-        logger.warning(
-            f"Event loop stopped but {queue_size} tasks in queue. Restarting event loop."
-        )
-        start_event_loop(flow)
-        return True
-
-    return is_running
+    # TODO: Update to use JobExecutor instead of Flow runtime state
+    # Flow no longer has _task_queue, _execution_thread, etc.
+    # This function should check JobExecutor's event loop thread instead
+    # For now, return True as JobExecutor manages its own event loop
+    return True
 
 
 def wait_for_event_loop_completion(flow: "Flow", timeout: float | None = None) -> bool:

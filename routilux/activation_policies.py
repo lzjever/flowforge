@@ -284,3 +284,68 @@ def immediate_policy():
     policy._policy_config = {}
     policy._policy_description = "Activate immediately when any slot receives data"
     return policy
+
+
+def breakpoint_policy(routine_id: str):
+    """Create a breakpoint activation policy.
+
+    This policy:
+    1. Consumes all data from all slots
+    2. Saves data to job_state.debug_data (keyed by routine_id)
+    3. Returns should_activate=False (doesn't execute logic)
+
+    Args:
+        routine_id: Routine ID for this breakpoint.
+
+    Returns:
+        Activation policy function.
+
+    Examples:
+        >>> policy = breakpoint_policy("my_routine")
+        >>> job_state.set_routine_activation_policy("my_routine", policy)
+    """
+
+    def policy(
+        slots: dict[str, Slot], job_state: JobState
+    ) -> tuple[bool, dict[str, list[Any]], Any]:
+        """Breakpoint activation policy.
+
+        Args:
+            slots: Dictionary of slot_name -> Slot object.
+            job_state: Current job state.
+
+        Returns:
+            Tuple of (should_activate=False, data_slice, policy_message).
+        """
+        # Consume all data from all slots
+        data_slice = {}
+        slot_data_dict = {}
+        for slot_name, slot in slots.items():
+            data = slot.consume_all_new()
+            data_slice[slot_name] = data
+            # consume_all_new() returns list of data (not SlotDataPoint objects)
+            # So we can use data directly
+            slot_data_dict[slot_name] = data
+
+        # Save to job_state.debug_data
+        if not hasattr(job_state, "debug_data"):
+            job_state.debug_data = {}
+        
+        job_state.debug_data[routine_id] = {
+            "slot_data": slot_data_dict,
+            "timestamp": time.time(),
+            "routine_id": routine_id,
+        }
+
+        policy_message = {
+            "reason": "breakpoint",
+            "routine_id": routine_id,
+        }
+        # Return False to prevent routine execution
+        return False, data_slice, policy_message
+
+    # Attach metadata for monitoring
+    policy._policy_type = "breakpoint"
+    policy._policy_config = {"routine_id": routine_id}
+    policy._policy_description = f"Breakpoint policy for routine {routine_id}"
+    return policy

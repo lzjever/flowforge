@@ -75,7 +75,8 @@ class JobExecutor:
         self.timeout = timeout
 
         # Independent execution context
-        self.task_queue: queue.Queue[SlotActivationTask] = queue.Queue()
+        # Task queue can contain both SlotActivationTask and EventRoutingTask
+        self.task_queue: queue.Queue = queue.Queue()
         self.pending_tasks: list[SlotActivationTask] = []
         self.event_loop_thread: Optional[threading.Thread] = None
         self.active_tasks: set[Future] = set()
@@ -87,22 +88,23 @@ class JobExecutor:
         # Execution tracker (one per job)
         self.execution_tracker: Optional[ExecutionTracker] = None
 
+        # Set JobExecutor reference in JobState
+        job_state._job_executor = self
+
         # Set flow context for all routines
         for routine in flow.routines.values():
             routine._current_flow = flow
+            # Runtime will be set when job starts via job_state._current_runtime
 
-    def start(self, entry_routine_id: str, entry_params: dict[str, Any]) -> None:
+    def start(self) -> None:
         """Start job execution.
 
-        This method starts the event loop thread and triggers the entry routine.
+        This method starts the event loop thread. All routines start in IDLE state,
+        waiting for external events via Runtime.post().
+
         It returns immediately without waiting for execution to complete.
 
-        Args:
-            entry_routine_id: Entry routine identifier.
-            entry_params: Entry parameters.
-
         Raises:
-            ValueError: If entry routine not found or no trigger slot.
             RuntimeError: If job is already running.
         """
         # CRITICAL fix: Acquire lock before checking _running flag
@@ -110,38 +112,23 @@ class JobExecutor:
             if self._running:
                 raise RuntimeError(f"Job {self.job_state.job_id} is already running")
 
-        # Critical fix: Reset flow._paused when starting a new job
-        # This handles the case where resume() starts a new executor after pause()
-        self.flow._paused = False
-
-        if entry_routine_id not in self.flow.routines:
-            raise ValueError(f"Entry routine '{entry_routine_id}' not found")
-
-        entry_routine = self.flow.routines[entry_routine_id]
-        trigger_slot = entry_routine.get_slot("trigger")
-
-        if trigger_slot is None:
-            raise ValueError(
-                f"Entry routine '{entry_routine_id}' must have 'trigger' slot. "
-                f"Define it using: routine.define_slot('trigger', handler=your_handler)"
-            )
-
         from routilux.execution_tracker import ExecutionTracker
-        from routilux.status import ExecutionStatus
+        from routilux.status import ExecutionStatus, RoutineStatus
 
         # Update job state
         self.job_state.status = ExecutionStatus.RUNNING
-        self.job_state.current_routine_id = entry_routine_id
         # Set started_at timestamp
         self.job_state.started_at = datetime.now()
         self._start_time = time.time()
 
-        # Record execution start
-        self.job_state.record_execution(entry_routine_id, "start", entry_params)
+        # Initialize all routines to IDLE state
+        for routine_id in self.flow.routines.keys():
+            self.job_state.update_routine_state(
+                routine_id, {"status": RoutineStatus.IDLE.value}
+            )
 
         # Create execution tracker (one per job)
         self.execution_tracker = ExecutionTracker(self.flow.flow_id)
-        self.execution_tracker.record_routine_start(entry_routine_id, entry_params)
 
         # Monitoring hook: Flow start
         from routilux.monitoring.hooks import execution_hooks
@@ -157,10 +144,7 @@ class JobExecutor:
         )
         self.event_loop_thread.start()
 
-        # Trigger entry routine
-        self._trigger_entry(entry_routine_id, entry_params)
-
-        logger.debug(f"Started job {self.job_state.job_id}")
+        logger.debug(f"Started job {self.job_state.job_id}, all routines in IDLE state")
 
     def _event_loop(self) -> None:
         """Event loop main logic.
@@ -188,26 +172,49 @@ class JobExecutor:
                 except queue.Empty:
                     # Check if complete
                     if self._is_complete():
-                        self._handle_completion()
-                        break
+                        self._handle_idle()  # Changed from _handle_completion
+                        # Don't break - continue running to wait for new tasks
+                        continue
                     continue
 
-                # Submit to global thread pool
-                future = self.global_thread_pool.submit(self._execute_task, task)
+                # Check task type
+                from routilux.flow.task import EventRoutingTask, SlotActivationTask
 
-                with self._lock:
-                    self.active_tasks.add(future)
-
-                def on_done(fut: "Future" = future) -> None:
-                    with self._lock:
-                        self.active_tasks.discard(fut)
+                if isinstance(task, EventRoutingTask):
+                    # Route event in event loop thread
                     try:
+                        task.runtime.handle_event_emit(
+                            task.event, task.event_data, task.job_state
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            f"Error routing event in event loop for job {self.job_state.job_id}: {e}"
+                        )
+                    finally:
                         self.task_queue.task_done()
-                    except ValueError:
-                        # task_done() called more times than put()
-                        pass
+                elif isinstance(task, SlotActivationTask):
+                    # Submit routine execution to global thread pool
+                    future = self.global_thread_pool.submit(self._execute_task, task)
 
-                future.add_done_callback(on_done)
+                    with self._lock:
+                        self.active_tasks.add(future)
+
+                    def on_done(fut: "Future" = future) -> None:
+                        with self._lock:
+                            self.active_tasks.discard(fut)
+                        try:
+                            self.task_queue.task_done()
+                        except ValueError:
+                            # task_done() called more times than put()
+                            pass
+
+                    future.add_done_callback(on_done)
+                else:
+                    # Unknown task type - log and mark as done
+                    logger.warning(
+                        f"Unknown task type in event loop: {type(task).__name__}"
+                    )
+                    self.task_queue.task_done()
 
             except Exception as e:
                 logger.exception(f"Error in event loop for job {self.job_state.job_id}: {e}")
@@ -236,14 +243,52 @@ class JobExecutor:
         try:
             mapped_data = task.data
 
-            # Set routine._current_flow for slot.receive()
+            # Set routine context
             if task.slot.routine:
                 task.slot.routine._current_flow = self.flow
+                # Set runtime from job_state for event routing
+                runtime = getattr(self.job_state, "_current_runtime", None)
+                if runtime:
+                    task.slot.routine._current_runtime = runtime
 
-            # Execute slot handler
-            # Note: slot.receive() internally calls monitoring hooks
-            # (on_routine_start, on_slot_call, on_routine_end)
-            task.slot.receive(mapped_data, job_state=self.job_state, flow=self.flow)
+            # Enqueue data to slot
+            from datetime import datetime
+            task.slot.enqueue(
+                data=mapped_data,
+                emitted_from="external" if task.connection is None else (task.connection.source_routine_id or "external"),
+                emitted_at=datetime.now(),
+            )
+
+            # Get routine and trigger activation check
+            routine = task.slot.routine
+            if routine is not None:
+                runtime = getattr(self.job_state, "_current_runtime", None)
+                if runtime:
+                    # Trigger routine activation check
+                    runtime._check_routine_activation(routine, self.job_state)
+
+            # After slot execution, check if routine should be marked as IDLE
+            if task.slot.routine:
+                routine_id = self.flow._get_routine_id(task.slot.routine)
+                if routine_id:
+                    # Check if routine has no pending data in any slot
+                    has_pending_data = False
+                    for slot in task.slot.routine.slots.values():
+                        if slot.get_unconsumed_count() > 0:
+                            has_pending_data = True
+                            break
+
+                    if not has_pending_data:
+                        # Mark routine as IDLE
+                        from routilux.status import RoutineStatus
+
+                        self.job_state.update_routine_state(
+                            routine_id, {"status": RoutineStatus.IDLE.value}
+                        )
+
+                        # Check if all routines are IDLE
+                        if self._all_routines_idle() and self._is_complete():
+                            self._handle_idle()
 
         except Exception as e:
             from routilux.flow.error_handling import handle_task_error
@@ -262,43 +307,16 @@ class JobExecutor:
                 logging.getLogger(__name__).exception("Failed to restore job_state context variable")
                 pass
 
-    def _trigger_entry(self, entry_routine_id: str, entry_params: dict[str, Any]) -> None:
-        """Trigger entry routine.
 
-        Args:
-            entry_routine_id: Entry routine identifier.
-            entry_params: Entry parameters.
-        """
-        # HIGH fix: Add None check for entry_routine
-        entry_routine = self.flow.routines.get(entry_routine_id)
-        if entry_routine is None:
-            raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
-
-        trigger_slot = entry_routine.get_slot("trigger")
-        if trigger_slot is None:
-            raise ValueError(
-                f"Entry routine '{entry_routine_id}' must have a 'trigger' slot. "
-                f"Define it using: routine.define_slot('trigger', handler=your_handler)"
-            )
-
-        from routilux.flow.task import SlotActivationTask
-
-        task = SlotActivationTask(
-            slot=trigger_slot,
-            data=entry_params,
-            job_state=self.job_state,
-            connection=None,
-        )
-
-        self.enqueue_task(task)
-
-    def enqueue_task(self, task: "SlotActivationTask") -> None:
+    def enqueue_task(self, task: Any) -> None:
         """Enqueue a task for execution.
+
+        Supports both SlotActivationTask and EventRoutingTask.
 
         If the job is paused, the task is added to pending_tasks instead.
 
         Args:
-            task: SlotActivationTask to enqueue.
+            task: SlotActivationTask or EventRoutingTask to enqueue.
         """
         # CRITICAL fix: Read _paused flag atomically to avoid race condition
         current_paused = getattr(self, '_paused', False)
@@ -324,9 +342,9 @@ class JobExecutor:
         return False
 
     def _is_complete(self) -> bool:
-        """Check if job is complete.
+        """Check if job has no pending work.
 
-        A job is complete when:
+        A job has no pending work when:
         - Task queue is empty
         - No active tasks are running
 
@@ -340,30 +358,104 @@ class JobExecutor:
             active = [f for f in self.active_tasks if not f.done()]
             return len(active) == 0
 
-    def _handle_completion(self) -> None:
-        """Handle job completion."""
-        from routilux.monitoring.hooks import execution_hooks
+    def _all_routines_idle(self) -> bool:
+        """Check if all routines are in IDLE state.
+
+        Returns:
+            True if all routines are IDLE, False otherwise.
+        """
+        from routilux.status import RoutineStatus
+
+        for routine_id in self.flow.routines.keys():
+            routine_state = self.job_state.get_routine_state(routine_id)
+            if routine_state is None:
+                # Routine hasn't been executed yet - not idle
+                return False
+            status = routine_state.get("status")
+            if status not in (RoutineStatus.IDLE, RoutineStatus.COMPLETED):
+                return False
+        return True
+
+    def _handle_idle(self) -> None:
+        """Handle job going idle (all routines completed, waiting for new tasks).
+
+        This marks the job as IDLE but keeps the event loop running to wait for new tasks.
+        """
         from routilux.status import ExecutionStatus
 
-        # Critical fix: Only mark as completed if not already in a terminal state
-        # Terminal states are: FAILED, CANCELLED, COMPLETED
+        # Only mark as idle if not already in a terminal state
         if self.job_state.status not in (
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
             ExecutionStatus.COMPLETED,
         ):
-            self.job_state.status = ExecutionStatus.COMPLETED
-            # Set completed_at timestamp
-            self.job_state.completed_at = datetime.now()
+            # Check if all routines are idle
+            if self._all_routines_idle() and self._is_complete():
+                if self.job_state.status != ExecutionStatus.IDLE:
+                    self.job_state.status = ExecutionStatus.IDLE
+                    logger.debug(f"Job {self.job_state.job_id} is now IDLE")
 
-            # Record execution end
-            if self.execution_tracker:
-                entry_routine_id = self.job_state.current_routine_id
-                if entry_routine_id:
-                    self.execution_tracker.record_routine_end(entry_routine_id, "completed")
+    def _handle_completion(self) -> None:
+        """Handle job completion (deprecated - use _handle_idle instead).
 
-            execution_hooks.on_flow_end(self.flow, self.job_state, "completed")
-            logger.debug(f"Job {self.job_state.job_id} completed")
+        This method is kept for backward compatibility but should not be called
+        in the new model where jobs go to IDLE instead of COMPLETED automatically.
+        """
+        # This method is no longer used - jobs go to IDLE instead
+        pass
+
+    def complete(self) -> None:
+        """User-initiated job completion.
+
+        This stops the event loop thread and marks the job as COMPLETED.
+        The job will be cleaned up from the registry after the retention period.
+        """
+        from routilux.monitoring.hooks import execution_hooks
+        from routilux.status import ExecutionStatus
+
+        # Stop event loop
+        with self._lock:
+            self._running = False
+
+        # Wait for event loop thread to finish
+        if self.event_loop_thread and self.event_loop_thread.is_alive():
+            self.event_loop_thread.join(timeout=5.0)
+
+        # Mark as completed
+        with self.job_state._status_lock:
+            if self.job_state.status not in (
+                ExecutionStatus.FAILED,
+                ExecutionStatus.CANCELLED,
+            ):
+                self.job_state.status = ExecutionStatus.COMPLETED
+                self.job_state.completed_at = datetime.now()
+
+                # Record execution end
+                if self.execution_tracker:
+                    # Find any routine that was executed
+                    for routine_id in self.flow.routines.keys():
+                        routine_state = self.job_state.get_routine_state(routine_id)
+                        if routine_state:
+                            self.execution_tracker.record_routine_end(
+                                routine_id, "completed"
+                            )
+                            break
+
+                execution_hooks.on_flow_end(self.flow, self.job_state, "completed")
+                logger.debug(f"Job {self.job_state.job_id} completed by user")
+
+                # Mark as completed in registry for cleanup tracking
+                try:
+                    from routilux.monitoring.job_registry import JobRegistry
+
+                    registry = JobRegistry.get_instance()
+                    registry.mark_completed(self.job_state.job_id)
+                except Exception:
+                    # Ignore errors in registry marking
+                    pass
+
+        # Cleanup
+        self._cleanup()
 
     def _handle_timeout(self) -> None:
         """Handle job timeout."""

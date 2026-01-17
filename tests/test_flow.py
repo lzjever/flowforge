@@ -171,12 +171,16 @@ class TestFlowExecution:
         # Execute using Runtime
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger the first routine to start execution
+        runtime.post("test_flow", "A", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Verify
-        assert job_state.status.value in ["completed", "failed", "running"] or str(
+        # Verify - job should be IDLE (all routines completed) or still running
+        assert job_state.status.value in ["idle", "completed", "failed", "running"] or str(
             job_state.status
-        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        ) in ["ExecutionStatus.IDLE", "ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
         # Note: result checking would need proper completion detection
 
     def test_branch_flow(self):
@@ -244,12 +248,16 @@ class TestFlowExecution:
 
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger the first routine to start execution
+        runtime.post("test_flow", "A", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Verify both branches executed
-        assert job_state.status.value in ["completed", "failed", "running"] or str(
+        # Verify both branches executed - job should be IDLE (all routines completed) or still running
+        assert job_state.status.value in ["idle", "completed", "failed", "running"] or str(
             job_state.status
-        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        ) in ["ExecutionStatus.IDLE", "ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
 
     def test_converge_flow(self):
         """测试用例 6: 汇聚流程 (A, B) -> C"""
@@ -317,12 +325,18 @@ class TestFlowExecution:
 
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger both A and B routines to start execution
+        runtime.post("test_flow", "A", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        runtime.post("test_flow", "B", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # 验证执行完成（数据验证需要更完善的完成检测机制）
-        assert job_state.status.value in ["completed", "failed", "running"] or str(
+        # Job should be IDLE (all routines completed) or still running
+        assert job_state.status.value in ["idle", "completed", "failed", "running"] or str(
             job_state.status
-        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        ) in ["ExecutionStatus.IDLE", "ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
 
     def test_empty_flow(self):
         """测试用例 8: 空 Flow"""
@@ -359,21 +373,28 @@ class TestFlowExecution:
 
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger the routine to start execution
+        runtime.post("test_flow", "single", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Verify
-        assert job_state.status.value in ["completed", "failed", "running"] or str(
+        # Verify - job should be IDLE (routine completed) or still running
+        assert job_state.status.value in ["idle", "completed", "failed", "running"] or str(
             job_state.status
-        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        ) in ["ExecutionStatus.IDLE", "ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
         # Note: called flag checking would need proper completion detection
 
 
 class TestFlowErrorHandling:
     """Flow 错误处理测试"""
 
-    def test_nonexistent_entry_routine(self):
-        """Test: Nonexistent entry routine"""
+    def test_nonexistent_routine_in_post(self):
+        """Test: Posting to nonexistent routine raises error"""
         flow = Flow("test_flow")
+        routine = Routine()
+        routine.define_slot("input")
+        flow.add_routine(routine, "existing")
 
         # Register flow
         from routilux.monitoring.flow_registry import FlowRegistry
@@ -381,11 +402,15 @@ class TestFlowErrorHandling:
         flow_registry = FlowRegistry.get_instance()
         flow_registry.register_by_name("test_flow", flow)
 
-        # Try to execute with nonexistent routine (handled by Runtime)
-        Runtime()
-        # Runtime will handle this when it tries to find entry routine
-        # For now, this test verifies flow structure validation
-        assert "nonexistent_routine" not in flow.routines
+        # Try to post to nonexistent routine
+        runtime = Runtime()
+        job_state = runtime.exec("test_flow")
+        
+        # Should raise ValueError for nonexistent routine
+        with pytest.raises(ValueError, match="Routine 'nonexistent_routine' not found"):
+            runtime.post("test_flow", "nonexistent_routine", "input", {"data": "test"}, job_id=job_state.job_id)
+        
+        runtime.shutdown()
 
     def test_routine_execution_exception(self):
         """Test: Routine execution exception"""
@@ -414,10 +439,14 @@ class TestFlowErrorHandling:
         # Execute using Runtime
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger the routine to start execution (will raise error)
+        runtime.post("test_flow", "failing", "trigger", {"data": "test"}, job_id=job_state.job_id)
+        
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Verify error state is recorded
-        assert job_state.status.value in ["failed", "completed", "running"] or str(
+        # Verify error state is recorded - job should be IDLE (error handled) or FAILED
+        assert job_state.status.value in ["idle", "failed", "completed", "running"] or str(
             job_state.status
-        ) in ["ExecutionStatus.FAILED", "ExecutionStatus.COMPLETED", "ExecutionStatus.RUNNING"]
+        ) in ["ExecutionStatus.IDLE", "ExecutionStatus.FAILED", "ExecutionStatus.COMPLETED", "ExecutionStatus.RUNNING"]
         # Error handling is managed by Runtime

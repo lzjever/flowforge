@@ -155,8 +155,8 @@ class Event(Serializable):
     def emit(self, runtime: Runtime, job_state: JobState, **kwargs) -> None:
         """Emit the event and route data through Runtime to connected slots.
 
-        This method packs data with metadata and routes it through Runtime,
-        which handles slot enqueueing and routine activation.
+        This method packs data with metadata and creates an EventRoutingTask
+        that will be processed in the JobExecutor's event loop thread.
 
         Args:
             runtime: Runtime object for event routing.
@@ -183,5 +183,22 @@ class Event(Serializable):
             },
         }
 
-        # Route through Runtime
-        runtime.handle_event_emit(self, event_data, job_state)
+        # Get JobExecutor from job_state
+        job_executor = getattr(job_state, "_job_executor", None)
+        if job_executor is None:
+            raise RuntimeError(
+                "JobExecutor not found in job_state. "
+                "Event routing requires a JobExecutor to be set on the job_state."
+            )
+
+        # Create routing task and submit to event loop thread
+        from routilux.flow.task import EventRoutingTask
+
+        routing_task = EventRoutingTask(
+            event=self,
+            event_data=event_data,
+            job_state=job_state,
+            runtime=runtime,
+        )
+
+        job_executor.enqueue_task(routing_task)

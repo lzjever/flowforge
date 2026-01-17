@@ -7,7 +7,7 @@ Manages breakpoints at routine, slot, and event levels with optional conditions.
 import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
 if TYPE_CHECKING:
     from routilux.routine import ExecutionContext
@@ -47,6 +47,7 @@ class Breakpoint:
     condition: Optional[str] = None
     enabled: bool = True
     hit_count: int = 0
+    _original_policy: Any = None  # Store original policy for restoration (not serialized)
 
     def __post_init__(self):
         """Validate breakpoint configuration."""

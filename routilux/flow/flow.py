@@ -6,10 +6,8 @@ Flow manager responsible for managing multiple Routine nodes and execution flow.
 
 from __future__ import annotations
 
-import queue
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -97,20 +95,10 @@ class Flow(Serializable):
         self._current_flow: Flow | None = None
         self.execution_tracker: ExecutionTracker | None = None
         self.error_handler: ErrorHandler | None = None
-        self._paused: bool = False
 
-        # Critical fix: Initialize runtime attributes that are used by flow subsystem
-        # These are required by event_loop.py, completion.py, state_management.py, etc.
-        self._task_queue: queue.PriorityQueue = queue.PriorityQueue()
-        self._active_tasks: set = set()
-        self._execution_lock: threading.RLock = threading.RLock()
         # MEDIUM fix: Add lock for flow configuration operations (add_routine, connect)
+        # This lock protects connections list from concurrent modifications
         self._config_lock: threading.RLock = threading.RLock()
-        self._running: bool = False
-        self._execution_thread: threading.Thread | None = None
-        self._pending_tasks: list = []
-        # Runtime reference - set when flow is executed via Runtime
-        self._runtime: Runtime | None = None
 
         # Critical fix: Validate execution_timeout is positive
         if execution_timeout is not None:
@@ -144,7 +132,6 @@ class Flow(Serializable):
         self.add_serializable_fields(
             [
                 "flow_id",
-                "_paused",
                 "error_handler",
                 "routines",
                 "connections",
@@ -157,33 +144,6 @@ class Flow(Serializable):
         """Return string representation of the Flow."""
         return f"Flow[{self.flow_id}]"
 
-    def _get_executor(self) -> ThreadPoolExecutor:
-        """Get the thread pool executor from Runtime.
-
-        Returns:
-            ThreadPoolExecutor instance from Runtime.
-        
-        Raises:
-            RuntimeError: If Runtime is not set (flow not executed via Runtime).
-        """
-        if self._runtime is None:
-            raise RuntimeError(
-                "Flow must be executed via Runtime to access thread pool. "
-                "Use Runtime.exec() to execute flows."
-            )
-        return self._runtime.thread_pool
-
-    def _enqueue_task(self, task: Any) -> None:
-        """Enqueue a task to the execution queue.
-
-        Critical fix: This method is required by state_management.py and error_handling.py
-        for enqueueing tasks during resume and retry operations.
-
-        Args:
-            task: Task object to enqueue (typically SlotActivationTask).
-        """
-        with self._execution_lock:
-            self._task_queue.put(task)
 
     def _get_routine_id(self, routine: Routine) -> str | None:
         """Find the ID of a Routine object within this Flow.
@@ -339,6 +299,7 @@ class Flow(Serializable):
         """Get all connections for a specific event.
 
         This method is used by Runtime to route events to connected slots.
+        Thread-safe: Uses _config_lock to protect against concurrent modifications.
 
         Args:
             event: Event object.
@@ -346,7 +307,8 @@ class Flow(Serializable):
         Returns:
             List of Connection objects for this event.
         """
-        return [conn for conn in self.connections if conn.source_event == event]
+        with self._config_lock:
+            return [conn for conn in self.connections if conn.source_event == event]
 
     def set_error_handler(self, error_handler: ErrorHandler) -> None:
         """Set error handler for the flow.

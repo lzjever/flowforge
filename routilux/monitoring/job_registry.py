@@ -6,8 +6,11 @@ allowing the API to discover jobs started outside the API.
 Uses weak references to avoid preventing garbage collection.
 """
 
+import logging
 import threading
+import time
 import weakref
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -17,6 +20,8 @@ else:
 
 if TYPE_CHECKING:
     from routilux.job_state import JobState
+
+logger = logging.getLogger(__name__)
 
 
 class JobRegistry:
@@ -39,6 +44,13 @@ class JobRegistry:
         # Queue for cleanup operations to avoid GC callback locking
         self._cleanup_queue: List[str] = []
         self._cleanup_queue_lock: threading.Lock = threading.Lock()
+
+        # Completed jobs tracking for automatic cleanup
+        self._completed_jobs: Dict[str, datetime] = {}  # job_id -> completed_at
+        self._cleanup_interval: float = 600.0  # 10 minutes in seconds
+        self._cleanup_thread: Optional[threading.Thread] = None
+        self._cleanup_running: bool = False
+        self._cleanup_thread_lock: threading.Lock = threading.Lock()
 
     @classmethod
     def get_instance(cls) -> "JobRegistry":
@@ -91,6 +103,9 @@ class JobRegistry:
             if flow_id not in self._flow_jobs:
                 self._flow_jobs[flow_id] = []
             self._flow_jobs[flow_id].append(job_state.job_id)
+
+            # Start cleanup thread if not already running
+            self._start_cleanup_thread()
 
     def _process_cleanup_queue(self) -> None:
         """Process queued cleanup operations.
@@ -185,8 +200,71 @@ class JobRegistry:
 
             return jobs
 
+    def mark_completed(self, job_id: str) -> None:
+        """Mark a job as completed for cleanup tracking.
+
+        Args:
+            job_id: Job identifier.
+        """
+        with self._lock:
+            self._completed_jobs[job_id] = datetime.now()
+            logger.debug(f"Marked job {job_id} as completed for cleanup tracking")
+
+    def _start_cleanup_thread(self) -> None:
+        """Start the cleanup thread if not already running."""
+        with self._cleanup_thread_lock:
+            if self._cleanup_running:
+                return
+            self._cleanup_running = True
+            self._cleanup_thread = threading.Thread(
+                target=self._cleanup_loop, daemon=True, name="JobRegistryCleanup"
+            )
+            self._cleanup_thread.start()
+            logger.debug("Started JobRegistry cleanup thread")
+
+    def _cleanup_loop(self) -> None:
+        """Background thread loop for cleaning up completed jobs."""
+        while self._cleanup_running:
+            try:
+                time.sleep(self._cleanup_interval)
+                self._cleanup_completed_jobs()
+            except Exception as e:
+                logger.exception(f"Error in cleanup loop: {e}")
+
+    def _cleanup_completed_jobs(self) -> None:
+        """Clean up completed jobs that have exceeded retention period."""
+        now = datetime.now()
+        cutoff_time = now - timedelta(seconds=self._cleanup_interval)
+
+        with self._lock:
+            jobs_to_remove = [
+                job_id
+                for job_id, completed_at in self._completed_jobs.items()
+                if completed_at < cutoff_time
+            ]
+
+            for job_id in jobs_to_remove:
+                # Remove from registry
+                self._jobs.pop(job_id, None)
+                self._completed_jobs.pop(job_id, None)
+
+                # Clean up flow_jobs mapping
+                for flow_id, job_list in list(self._flow_jobs.items()):
+                    if job_id in job_list:
+                        job_list.remove(job_id)
+                        if not job_list:
+                            self._flow_jobs.pop(flow_id, None)
+
+            if jobs_to_remove:
+                logger.debug(f"Cleaned up {len(jobs_to_remove)} completed jobs from registry")
+
     def clear(self) -> None:
         """Clear all registered jobs (for testing only)."""
         with self._lock:
             self._jobs.clear()
             self._flow_jobs.clear()
+            self._completed_jobs.clear()
+
+        # Stop cleanup thread
+        with self._cleanup_thread_lock:
+            self._cleanup_running = False

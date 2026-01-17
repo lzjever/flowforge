@@ -68,6 +68,31 @@ class MonitorService:
         runtime = self._get_runtime()
         return runtime.get_active_routines(job_id)
 
+    def get_active_thread_count(self, job_id: str, routine_id: str) -> int:
+        """Get active thread count for a specific routine.
+
+        Args:
+            job_id: Job identifier.
+            routine_id: Routine identifier.
+
+        Returns:
+            Number of active threads executing this routine.
+        """
+        runtime = self._get_runtime()
+        return runtime.get_active_thread_count(job_id, routine_id)
+
+    def get_all_active_thread_counts(self, job_id: str) -> Dict[str, int]:
+        """Get active thread counts for all routines in a job.
+
+        Args:
+            job_id: Job identifier.
+
+        Returns:
+            Dictionary mapping routine_id to thread count.
+        """
+        runtime = self._get_runtime()
+        return runtime.get_all_active_thread_counts(job_id)
+
     def get_routine_execution_status(
         self, job_id: str, routine_id: str, job_state: Optional[JobState] = None
     ) -> "RoutineExecutionStatus":
@@ -120,6 +145,9 @@ class MonitorService:
                 error_count = rm.error_count
                 last_execution_time = rm.last_execution
 
+        # Get active thread count
+        active_thread_count = self.get_active_thread_count(job_id, routine_id)
+
         return RoutineExecutionStatus(
             routine_id=routine_id,
             is_active=is_active,
@@ -127,6 +155,7 @@ class MonitorService:
             last_execution_time=last_execution_time,
             execution_count=execution_count,
             error_count=error_count,
+            active_thread_count=active_thread_count,
         )
 
     def get_routine_queue_status(
