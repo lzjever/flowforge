@@ -24,6 +24,12 @@ async def lifespan(app: FastAPI):
 
     MonitoringRegistry.enable()
 
+    # Initialize default runtime in registry
+    from routilux.monitoring.runtime_registry import RuntimeRegistry
+    runtime_registry = RuntimeRegistry.get_instance()
+    # Create default runtime if it doesn't exist
+    runtime_registry.get_or_create_default(thread_pool_size=0)  # Use GlobalJobManager's pool
+
     if os.getenv("ROUTILUX_DEBUGGER_MODE") == "true":
         print("🔧 Debugger mode enabled - registering test flows...")
         await register_debugger_flows()
@@ -162,6 +168,11 @@ app.include_router(monitor.router, prefix="/api", tags=["monitor"])
 app.include_router(websocket.router, prefix="/api", tags=["websocket"])
 app.include_router(discovery.router, prefix="/api", tags=["discovery"])
 app.include_router(objects.router, prefix="/api/factory", tags=["factory"])
+
+# Runtime management router
+from routilux.api.routes import runtimes
+
+app.include_router(runtimes.router, prefix="/api", tags=["runtimes"])
 
 
 @app.get("/", dependencies=[RequireAuth])

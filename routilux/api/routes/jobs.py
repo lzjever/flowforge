@@ -144,8 +144,22 @@ async def start_job(request: JobStartRequest):
         if hasattr(flow, "name") and flow.name:
             flow_registry.register_by_name(flow.name, flow)
 
-    # Use shared Runtime instance (get_runtime_instance)
-    runtime = get_runtime_instance()
+    # Get Runtime from registry based on runtime_id
+    from routilux.monitoring.runtime_registry import RuntimeRegistry
+    
+    runtime_registry = RuntimeRegistry.get_instance()
+    
+    # If no runtime_id specified, use default runtime (create if needed)
+    if request.runtime_id is None:
+        runtime = runtime_registry.get_or_create_default()
+    else:
+        # Get specified runtime
+        runtime = runtime_registry.get(request.runtime_id)
+        if runtime is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Runtime '{request.runtime_id}' not found. Use GET /api/runtimes to see available runtimes."
+            )
 
     # Start flow execution asynchronously using Runtime.exec()
     # This returns immediately without blocking

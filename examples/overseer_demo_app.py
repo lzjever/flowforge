@@ -809,10 +809,23 @@ def main():
         flow_store.add(flow)
         FlowRegistry.get_instance().register(flow)
         flows.append((name, flow, entry))
+        
+        # Register flow in factory for API discovery
+        flow_metadata = ObjectMetadata(
+            name=flow.flow_id,
+            description=f"{name} - {flow.flow_id}",
+            category="demo",
+            tags=["demo", "flow", flow.flow_id.split("_")[0]],
+            example_config={},
+            version="1.0.0"
+        )
+        factory.register(flow.flow_id, flow, metadata=flow_metadata)
+        
         print(f"     ✓ Flow ID: {flow.flow_id}")
         print(f"     ✓ Routines: {len(flow.routines)} ({', '.join(flow.routines.keys())})")
         print(f"     ✓ Connections: {len(flow.connections)}")
         print(f"     ✓ Entry Point: {entry}")
+        print(f"     ✓ Registered in factory")
 
     print("\n" + "=" * 80)
     print("[4/5] All flows created successfully!")
@@ -883,9 +896,12 @@ def main():
     print("   Monitor: Processing from multiple input slots")
     print("   API: GET /api/jobs/{job_id}/routines/multi-processor/status")
     print("\n📦 Factory Objects - Registered routines")
-    print("   List: GET /api/objects")
-    print("   Details: GET /api/objects/{name}")
-    print("   Categories: GET /api/objects?category=data_generation")
+    print("   List: GET /api/factory/objects")
+    print("   Details: GET /api/factory/objects/{name}")
+    print("   Interface: GET /api/factory/objects/{name}/interface")
+    print("   Filter by category: GET /api/factory/objects?category=data_generation")
+    print("   Filter by type: GET /api/factory/objects?object_type=routine")
+    print("   Combined filter: GET /api/factory/objects?category=data_generation&object_type=routine")
 
     # Start API server
     print("\n" + "=" * 80)
