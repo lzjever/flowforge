@@ -576,7 +576,11 @@ class Runtime:
         )
 
         # Call routine start hook
-        execution_hooks.on_routine_start(routine, routine_id, job_state)
+        try:
+            execution_hooks.on_routine_start(routine, routine_id, job_state)
+        except Exception as e:
+            # Hook exceptions should not crash Runtime
+            logger.warning(f"Exception in on_routine_start hook for {routine_id}: {e}", exc_info=True)
 
         # Prepare slot_data_lists in order of slot definition
         slot_data_lists = [
@@ -587,7 +591,11 @@ class Runtime:
         if routine._logic is None:
             logger.warning(f"Routine {routine_id} has no logic set, skipping execution")
             # Call routine end hook even if no logic
-            execution_hooks.on_routine_end(routine, routine_id, job_state, status="skipped")
+            try:
+                execution_hooks.on_routine_end(routine, routine_id, job_state, status="skipped")
+            except Exception as e:
+                # Hook exceptions should not crash Runtime
+                logger.warning(f"Exception in on_routine_end hook for {routine_id}: {e}", exc_info=True)
             return
 
         start_time = time.time()
@@ -631,6 +639,16 @@ class Runtime:
                             "duration": duration,
                         },
                     )
+                    # Call on_flow_end when job fails due to STOP strategy
+                    try:
+                        execution_hooks.on_flow_end(
+                            getattr(routine, "_current_flow", None),
+                            job_state,
+                            "failed"
+                        )
+                    except Exception as hook_error:
+                        # Hook exceptions should not crash Runtime
+                        logger.warning(f"Exception in on_flow_end hook: {hook_error}", exc_info=True)
                 elif error_handler.strategy == ErrorStrategy.CONTINUE:
                     status = "error_continued"
                     job_state.record_execution(
@@ -671,6 +689,16 @@ class Runtime:
                         "duration": duration,
                     },
                 )
+                # Call on_flow_end when job fails (default behavior)
+                try:
+                    execution_hooks.on_flow_end(
+                        getattr(routine, "_current_flow", None),
+                        job_state,
+                        "failed"
+                    )
+                except Exception as hook_error:
+                    # Hook exceptions should not crash Runtime
+                    logger.warning(f"Exception in on_flow_end hook: {hook_error}", exc_info=True)
         finally:
             # Mark routine as inactive for monitoring
             with self._active_routines_lock:
@@ -692,7 +720,11 @@ class Runtime:
                                 del self._active_thread_counts[job_state.job_id]
             
             # Call routine end hook
-            execution_hooks.on_routine_end(routine, routine_id, job_state, status=status, error=error)
+            try:
+                execution_hooks.on_routine_end(routine, routine_id, job_state, status=status, error=error)
+            except Exception as e:
+                # Hook exceptions should not crash Runtime
+                logger.warning(f"Exception in on_routine_end hook for {routine_id}: {e}", exc_info=True)
 
     def _get_routine_id(self, routine: Routine, job_state: JobState) -> str | None:
         """Get routine_id for a routine.

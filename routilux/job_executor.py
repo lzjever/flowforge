@@ -133,7 +133,11 @@ class JobExecutor:
         # Monitoring hook: Flow start
         from routilux.monitoring.hooks import execution_hooks
 
-        execution_hooks.on_flow_start(self.flow, self.job_state)
+        try:
+            execution_hooks.on_flow_start(self.flow, self.job_state)
+        except Exception as e:
+            # Hook exceptions should not crash Runtime
+            logger.warning(f"Exception in on_flow_start hook: {e}", exc_info=True)
 
         # Start event loop
         # CRITICAL fix: Acquire lock before setting _running flag
@@ -441,7 +445,11 @@ class JobExecutor:
                             )
                             break
 
-                execution_hooks.on_flow_end(self.flow, self.job_state, "completed")
+                try:
+                    execution_hooks.on_flow_end(self.flow, self.job_state, "completed")
+                except Exception as e:
+                    # Hook exceptions should not crash Runtime
+                    logger.warning(f"Exception in on_flow_end hook: {e}", exc_info=True)
                 logger.debug(f"Job {self.job_state.job_id} completed by user")
 
                 # Mark as completed in registry for cleanup tracking
@@ -476,7 +484,11 @@ class JobExecutor:
                     entry_routine_id, "failed", error=f"Timeout after {self.timeout}s"
                 )
 
-        execution_hooks.on_flow_end(self.flow, self.job_state, "failed")
+        try:
+            execution_hooks.on_flow_end(self.flow, self.job_state, "failed")
+        except Exception as e:
+            # Hook exceptions should not crash Runtime
+            logger.warning(f"Exception in on_flow_end hook: {e}", exc_info=True)
         logger.warning(f"Job {self.job_state.job_id} failed due to timeout")
 
     def _handle_error(self, error: Exception) -> None:
@@ -503,7 +515,11 @@ class JobExecutor:
                     entry_routine_id, "failed", error=str(error)
                 )
 
-        execution_hooks.on_flow_end(self.flow, self.job_state, "failed")
+        try:
+            execution_hooks.on_flow_end(self.flow, self.job_state, "failed")
+        except Exception as e:
+            # Hook exceptions should not crash Runtime
+            logger.warning(f"Exception in on_flow_end hook: {e}", exc_info=True)
         logger.error(f"Job {self.job_state.job_id} failed with error: {error}")
 
     def _cleanup(self) -> None:

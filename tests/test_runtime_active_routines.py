@@ -79,6 +79,8 @@ class TestRuntimeActiveRoutinesTracking:
         # Use get_runtime_instance() to ensure the same instance is used
         runtime = get_runtime_instance()
         job_state = runtime.exec("test_flow")
+        # Trigger routine execution by posting data to trigger slot
+        runtime.post("test_flow", "test_routine", "trigger", {"data": "test"}, job_id=job_state.job_id)
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify routine was tracked during execution
@@ -175,6 +177,8 @@ class TestRuntimeActiveRoutinesTracking:
         # Use get_runtime_instance() to ensure the same instance is used
         runtime = get_runtime_instance()
         job_state = runtime.exec("test_flow")
+        # Trigger routine A execution by posting data to trigger slot
+        runtime.post("test_flow", "A", "trigger", {"data": "test"}, job_id=job_state.job_id)
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # Verify both routines were tracked
@@ -220,6 +224,8 @@ class TestRuntimeActiveRoutinesTracking:
         # Use get_runtime_instance() to ensure the same instance is used
         runtime = get_runtime_instance()
         job_state = runtime.exec("test_flow")
+        # Trigger routine execution by posting data to trigger slot
+        runtime.post("test_flow", "test_routine", "trigger", {"data": "test"}, job_id=job_state.job_id)
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # All checks should have seen the routine as active

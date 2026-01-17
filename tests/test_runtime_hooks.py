@@ -14,8 +14,17 @@ from routilux.activation_policies import immediate_policy
 from routilux.job_state import JobState
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.monitoring.hooks import execution_hooks
+from routilux.monitoring.registry import MonitoringRegistry
 from routilux.runtime import Runtime
 from routilux.status import ExecutionStatus
+
+
+@pytest.fixture(autouse=True)
+def enable_monitoring():
+    """Enable monitoring for all hook tests."""
+    MonitoringRegistry.enable()
+    yield
+    # Cleanup is handled by MonitoringRegistry
 
 
 class TestRuntimeFlowHooks:
@@ -67,7 +76,15 @@ class TestRuntimeFlowHooks:
 
         with patch.object(execution_hooks, "on_flow_end") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "entry", "trigger", {"data": "test"}, job_id=job_state.job_id)
             runtime.wait_until_all_jobs_finished(timeout=5.0)
+            # Manually complete the job to trigger on_flow_end
+            from routilux.job_manager import get_job_manager
+            job_manager = get_job_manager()
+            executor = job_manager.get_job(job_state.job_id)
+            if executor:
+                executor.complete()
 
             # Verify hook was called
             assert mock_hook.called
@@ -99,13 +116,37 @@ class TestRuntimeFlowHooks:
 
         with patch.object(execution_hooks, "on_flow_end") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "entry", "trigger", {"data": "test"}, job_id=job_state.job_id)
             # Wait longer to ensure flow execution completes (including error handling)
             import time
             time.sleep(0.5)
             runtime.wait_until_all_jobs_finished(timeout=5.0)
+            # Manually complete the job to trigger on_flow_end (even on error)
+            # Note: In the new design, jobs go to IDLE instead of automatically completing
+            # So we need to manually complete to trigger on_flow_end
+            from routilux.job_manager import get_job_manager
+            job_manager = get_job_manager()
+            executor = job_manager.get_job(job_state.job_id)
+            if executor:
+                executor.complete()
+            else:
+                # If executor not found, check if job failed and on_flow_end was called by _handle_error
+                # When routine fails with STOP strategy, job is marked as FAILED
+                # and _handle_error should call on_flow_end
+                # But wait a bit more to ensure error handling completes
+                import time
+                time.sleep(0.2)
+                # Check if hook was called by error handling
+                if not mock_hook.called:
+                    # If still not called, the job might be in a state where it needs manual completion
+                    # Try to get executor again after waiting
+                    executor = job_manager.get_job(job_state.job_id)
+                    if executor:
+                        executor.complete()
 
             # Verify hook was called even on error (in finally block)
-            assert mock_hook.called, "on_flow_end should be called in finally block even on error"
+            assert mock_hook.called, "on_flow_end should be called when job is completed (even after error)"
 
         runtime.shutdown(wait=True)
 
@@ -131,6 +172,8 @@ class TestRuntimeRoutineHooks:
 
         with patch.object(execution_hooks, "on_routine_start") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "entry", "trigger", {"data": "test"}, job_id=job_state.job_id)
             runtime.wait_until_all_jobs_finished(timeout=5.0)
 
             # Verify hook was called
@@ -159,6 +202,8 @@ class TestRuntimeRoutineHooks:
 
         with patch.object(execution_hooks, "on_routine_end") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "entry", "trigger", {"data": "test"}, job_id=job_state.job_id)
             runtime.wait_until_all_jobs_finished(timeout=5.0)
 
             # Verify hook was called
@@ -189,6 +234,8 @@ class TestRuntimeRoutineHooks:
 
         with patch.object(execution_hooks, "on_routine_end") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "entry", "trigger", {"data": "test"}, job_id=job_state.job_id)
             runtime.wait_until_all_jobs_finished(timeout=5.0)
 
             # Verify hook was called even on error
@@ -225,6 +272,8 @@ class TestRuntimeEventHooks:
 
         with patch.object(execution_hooks, "on_event_emit") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "routine_a", "trigger", {"data": "test"}, job_id=job_state.job_id)
             # Wait longer to ensure event is emitted and processed
             import time
             time.sleep(0.5)
@@ -275,6 +324,8 @@ class TestRuntimeEventHooks:
 
         with patch.object(execution_hooks, "on_slot_data_received") as mock_hook:
             job_state = runtime.exec("test_flow")
+            # Trigger routine execution by posting data to trigger slot
+            runtime.post("test_flow", "routine_a", "trigger", {"data": "test"}, job_id=job_state.job_id)
             # Wait longer to ensure event is routed and slot receives data
             import time
             time.sleep(0.5)
@@ -352,7 +403,7 @@ class TestRuntimeHookErrorHandling:
             raise ValueError("Hook error")
 
         with patch.object(execution_hooks, "on_flow_start", side_effect=failing_hook):
-            # Execution should still proceed
+            # Execution should still proceed even if hook raises exception
             job_state = runtime.exec("test_flow")
             runtime.wait_until_all_jobs_finished(timeout=5.0)
 

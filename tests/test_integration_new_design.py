@@ -64,8 +64,18 @@ class TestCompleteExecutionFlow:
                 self.input_slot = self.define_slot("input")
 
                 def my_logic(input_data, policy_message, job_state):
-                    data = input_data[0].get("data", "") if input_data else ""
-                    results.append(f"C({data})")
+                    # input_data is a list of data points from the slot
+                    if input_data and len(input_data) > 0:
+                        # Get data from first item (could be dict or direct value)
+                        first_item = input_data[0]
+                        if isinstance(first_item, dict):
+                            data = first_item.get("data", "")
+                        else:
+                            data = str(first_item)
+                        results.append(f"C({data})")
+                    else:
+                        # No data received
+                        results.append("C(no_data)")
 
                 self.set_logic(my_logic)
                 self.set_activation_policy(immediate_policy())
@@ -86,15 +96,22 @@ class TestCompleteExecutionFlow:
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
 
-        # Wait for completion
+        # Trigger execution by posting data to trigger slot
+        runtime.post("test_flow", "A", "trigger", {"data": "start"}, job_id=job_state.job_id)
+        
+        # Wait for completion - need to wait longer for event routing and routine execution
+        import time
+        time.sleep(0.2)  # Give time for event routing
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Verify execution
-        assert job_state.status.value in ["completed", "failed", "running"] or str(
+        # Verify execution - job should be IDLE (new design) or completed
+        assert job_state.status.value in ["completed", "failed", "running", "idle"] or str(
             job_state.status
-        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
-        # Results may be empty if execution hasn't completed yet
-        # This is a simplified test - proper completion detection would verify results
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING", "ExecutionStatus.IDLE"]
+        # Verify results were produced - wait a bit more if needed
+        if len(results) == 0:
+            time.sleep(0.3)  # Give more time for routine C to execute
+        assert len(results) > 0, "Routine C should have executed and produced results"
 
         runtime.shutdown(wait=True)
 
@@ -157,12 +174,16 @@ class TestCompleteExecutionFlow:
 
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger execution by posting data to trigger slot
+        runtime.post("test_flow", "A", "trigger", {"data": "start"}, job_id=job_state.job_id)
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        assert job_state.status.value in ["completed", "failed", "running"] or str(
+        # Verify execution - job should be IDLE (new design) or completed
+        assert job_state.status.value in ["completed", "failed", "running", "idle"] or str(
             job_state.status
-        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING"]
+        ) in ["ExecutionStatus.COMPLETED", "ExecutionStatus.FAILED", "ExecutionStatus.RUNNING", "ExecutionStatus.IDLE"]
 
         runtime.shutdown(wait=True)
 
@@ -305,12 +326,17 @@ class TestActivationPolicyIntegration:
         FlowRegistry.get_instance().register_by_name("test_flow", flow)
 
         runtime = Runtime(thread_pool_size=5)
-        runtime.exec("test_flow")
+        job_state = runtime.exec("test_flow")
+        
+        # Trigger both A and B by posting data
+        runtime.post("test_flow", "A", "trigger", {"data": "A"}, job_id=job_state.job_id)
+        runtime.post("test_flow", "B", "trigger", {"data": "B"}, job_id=job_state.job_id)
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
         # C should only activate when both inputs have data
         # (all_slots_ready_policy)
+        assert len(logic_calls) > 0, "Routine C should have executed when both inputs are ready"
 
         runtime.shutdown(wait=True)
 
@@ -341,6 +367,9 @@ class TestErrorHandlingIntegration:
 
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger execution by posting data to trigger slot
+        runtime.post("test_flow", "failing", "trigger", {"data": "test"}, job_id=job_state.job_id)
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
@@ -373,10 +402,13 @@ class TestErrorHandlingIntegration:
 
         runtime = Runtime(thread_pool_size=5)
         job_state = runtime.exec("test_flow")
+        
+        # Trigger execution by posting data to trigger slot
+        runtime.post("test_flow", "failing", "trigger", {"data": "test"}, job_id=job_state.job_id)
 
         runtime.wait_until_all_jobs_finished(timeout=5.0)
 
-        # Job should continue (not failed)
+        # Job should continue (not failed) - with CONTINUE strategy, job goes to IDLE
         assert job_state.status != ExecutionStatus.FAILED and job_state.status.value != "failed"
         # Error should be recorded
         assert len(job_state.execution_history) > 0
