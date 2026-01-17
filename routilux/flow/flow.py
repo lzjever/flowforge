@@ -512,52 +512,6 @@ class Flow(Serializable):
 
             job_state.status = ExecutionStatus.CANCELLED
 
-    def routine(self, routine_id: str) -> RoutineConfig:
-        """Get routine config helper for chaining.
-
-        Args:
-            routine_id: Routine identifier.
-
-        Returns:
-            RoutineConfig helper object.
-
-        Examples:
-            >>> flow.routine("processor").config("timeout", 30)
-        """
-        # MEDIUM fix: Acquire lock to prevent race condition between check and access
-        with self._config_lock:
-            if routine_id not in self.routines:
-                raise ValueError(f"Routine '{routine_id}' not found in flow")
-            return RoutineConfig(self.routines[routine_id])
-
-
-class RoutineConfig:
-    """Helper class for routine configuration chaining."""
-
-    def __init__(self, routine: Routine):
-        """Initialize RoutineConfig.
-
-        Args:
-            routine: Routine object to configure.
-        """
-        self.routine = routine
-
-    def config(self, key: str, value: Any) -> RoutineConfig:
-        """Set configuration value.
-
-        Args:
-            key: Configuration key.
-            value: Configuration value.
-
-        Returns:
-            Self for method chaining.
-
-        Examples:
-            >>> flow.routine("processor").config("timeout", 30).config("retries", 3)
-        """
-        self.routine.set_config(**{key: value})
-        return self
-
     def validate(self) -> list[str]:
         """Validate flow structure and return list of issues.
 
@@ -694,3 +648,49 @@ class RoutineConfig:
             raise ValueError("YAML string is empty or invalid")
 
         return cls.from_dict(spec)
+
+    def routine(self, routine_id: str) -> RoutineConfig:
+        """Get routine config helper for chaining.
+
+        Args:
+            routine_id: Routine identifier.
+
+        Returns:
+            RoutineConfig helper object.
+
+        Examples:
+            >>> flow.routine("processor").config("timeout", 30)
+        """
+        # MEDIUM fix: Acquire lock to prevent race condition between check and access
+        with self._config_lock:
+            if routine_id not in self.routines:
+                raise ValueError(f"Routine '{routine_id}' not found in flow")
+            return RoutineConfig(self.routines[routine_id])
+
+
+class RoutineConfig:
+    """Helper class for routine configuration chaining."""
+
+    def __init__(self, routine: Routine):
+        """Initialize RoutineConfig.
+
+        Args:
+            routine: Routine object to configure.
+        """
+        self.routine = routine
+
+    def config(self, key: str, value: Any) -> RoutineConfig:
+        """Set configuration value.
+
+        Args:
+            key: Configuration key.
+            value: Configuration value.
+
+        Returns:
+            Self for method chaining.
+
+        Examples:
+            >>> flow.routine("processor").config("timeout", 30).config("retries", 3)
+        """
+        self.routine.set_config(**{key: value})
+        return self

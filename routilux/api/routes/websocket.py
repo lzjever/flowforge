@@ -464,3 +464,239 @@ async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
                 logger.info(f"Flow WebSocket unsubscribed from job {job_id} ({sub_id})")
             except Exception as e:
                 logger.error(f"Error unsubscribing from job {job_id}: {e}")
+
+
+@router.websocket("/ws")
+async def generic_websocket(websocket: WebSocket):
+    """Generic WebSocket endpoint for subscribing to multiple jobs/flows.
+
+    This endpoint allows clients to:
+    - Connect without specifying a specific job/flow
+    - Subscribe to multiple jobs via messages
+    - Receive events from all subscribed jobs
+
+    Client messages:
+    - {"type": "subscribe", "job_id": "..."} - Subscribe to a job
+    - {"type": "unsubscribe", "job_id": "..."} - Unsubscribe from a job
+    - {"type": "ping"} - Keep-alive ping
+    """
+    event_manager = get_event_manager()
+    subscribers: Dict[str, str] = {}  # job_id -> subscriber_id
+    subscriptions: Dict[str, bool] = {}
+
+    try:
+        # Accept WebSocket connection
+        await websocket.accept()
+        logger.info("Generic WebSocket connection accepted")
+
+        # Send welcome message
+        await safe_send_json(
+            websocket,
+            {
+                "type": "connected",
+                "message": "Connected to generic WebSocket endpoint. Send subscribe messages to receive events.",
+            },
+            "welcome message",
+        )
+
+        # Handle both incoming messages and events
+        async def message_handler():
+            """Handle incoming client messages."""
+            while True:
+                try:
+                    message = await asyncio.wait_for(
+                        websocket.receive_json(), timeout=WS_IDLE_TIMEOUT
+                    )
+
+                    msg_type = message.get("type")
+                    job_id = message.get("job_id")
+
+                    if msg_type == "subscribe" and job_id:
+                        # Subscribe to a job
+                        if job_id not in subscribers:
+                            # Verify job exists
+                            job_state = job_store.get(job_id)
+                            if not job_state:
+                                await safe_send_json(
+                                    websocket,
+                                    {
+                                        "type": "error",
+                                        "message": f"Job '{job_id}' not found",
+                                    },
+                                    "error message",
+                                )
+                                continue
+
+                            # Subscribe to job events
+                            try:
+                                subscriber_id = await event_manager.subscribe(job_id)
+                                subscribers[job_id] = subscriber_id
+                                logger.info(
+                                    f"Generic WebSocket subscribed to job {job_id} as {subscriber_id}"
+                                )
+                                await safe_send_json(
+                                    websocket,
+                                    {
+                                        "type": "subscribed",
+                                        "job_id": job_id,
+                                        "subscriber_id": subscriber_id,
+                                    },
+                                    "subscription confirmation",
+                                )
+                            except Exception as e:
+                                logger.error(f"Error subscribing to job {job_id}: {e}")
+                                await safe_send_json(
+                                    websocket,
+                                    {
+                                        "type": "error",
+                                        "message": f"Failed to subscribe to job '{job_id}': {e}",
+                                    },
+                                    "error message",
+                                )
+                        else:
+                            await safe_send_json(
+                                websocket,
+                                {
+                                    "type": "already_subscribed",
+                                    "job_id": job_id,
+                                },
+                                "already subscribed",
+                            )
+
+                    elif msg_type == "unsubscribe" and job_id:
+                        # Unsubscribe from a job
+                        if job_id in subscribers:
+                            subscriber_id = subscribers.pop(job_id)
+                            try:
+                                await event_manager.unsubscribe(subscriber_id)
+                                logger.info(
+                                    f"Generic WebSocket unsubscribed from job {job_id} ({subscriber_id})"
+                                )
+                                await safe_send_json(
+                                    websocket,
+                                    {
+                                        "type": "unsubscribed",
+                                        "job_id": job_id,
+                                    },
+                                    "unsubscription confirmation",
+                                )
+                            except Exception as e:
+                                logger.error(f"Error unsubscribing from job {job_id}: {e}")
+                        else:
+                            await safe_send_json(
+                                websocket,
+                                {
+                                    "type": "not_subscribed",
+                                    "job_id": job_id,
+                                },
+                                "not subscribed",
+                            )
+
+                    elif msg_type == "pong":
+                        # Handle pong response
+                        pass
+
+                    else:
+                        logger.warning(f"Unknown message type from client: {msg_type}")
+
+                except asyncio.TimeoutError:
+                    # Send ping to keep connection alive
+                    await safe_send_json(websocket, {"type": "ping"}, "ping")
+                except WebSocketDisconnect:
+                    break
+                except Exception as e:
+                    logger.error(f"Error handling client message: {e}", exc_info=True)
+
+        # Track event handler tasks
+        event_tasks: Dict[str, asyncio.Task] = {}  # job_id -> task
+
+        async def _handle_job_events(
+            websocket: WebSocket, job_id: str, subscriber_id: str
+        ):
+            """Handle events for a specific job."""
+            try:
+                async for event in event_manager.iter_events(subscriber_id):
+                    # Add job_id to event if not present
+                    if "job_id" not in event:
+                        event["job_id"] = job_id
+
+                    success = await safe_send_json(
+                        websocket, event, f"event for job {job_id}"
+                    )
+                    if not success:
+                        logger.warning(
+                            f"Failed to send event, removing subscription for job {job_id}"
+                        )
+                        break
+            except asyncio.CancelledError:
+                logger.debug(f"Event handler cancelled for job {job_id}")
+            except Exception as e:
+                logger.error(f"Error in event handler for job {job_id}: {e}")
+
+        # Start message handler
+        message_task = asyncio.create_task(message_handler())
+
+        # Monitor subscribers and start/stop event handlers
+        async def monitor_subscriptions():
+            """Monitor subscribers and manage event handler tasks."""
+            while True:
+                try:
+                    # Start event handlers for new subscriptions
+                    for job_id, subscriber_id in subscribers.items():
+                        if job_id not in event_tasks:
+                            task = asyncio.create_task(
+                                _handle_job_events(websocket, job_id, subscriber_id)
+                            )
+                            event_tasks[job_id] = task
+                            logger.debug(f"Started event handler for job {job_id}")
+
+                    # Stop event handlers for removed subscriptions
+                    for job_id in list(event_tasks.keys()):
+                        if job_id not in subscribers:
+                            task = event_tasks.pop(job_id)
+                            task.cancel()
+                            try:
+                                await task
+                            except asyncio.CancelledError:
+                                pass
+                            logger.debug(f"Stopped event handler for job {job_id}")
+
+                    await asyncio.sleep(0.5)  # Check every 500ms
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.error(f"Error in subscription monitor: {e}")
+
+        monitor_task = asyncio.create_task(monitor_subscriptions())
+
+        # Wait for message handler to complete (disconnect)
+        try:
+            await message_task
+        finally:
+            # Cancel monitor and all event tasks
+            monitor_task.cancel()
+            for task in event_tasks.values():
+                task.cancel()
+            # Wait for cancellation
+            await asyncio.gather(
+                monitor_task, *event_tasks.values(), return_exceptions=True
+            )
+
+    except WebSocketDisconnect as e:
+        logger.debug(f"Generic WebSocket disconnected: code={e.code}")
+    except asyncio.CancelledError:
+        logger.debug("Generic WebSocket task cancelled")
+    except asyncio.TimeoutError:
+        logger.warning("Generic WebSocket timeout")
+    except Exception as e:
+        logger.error(f"Unexpected error in generic WebSocket: {e}", exc_info=True)
+    finally:
+        # Unsubscribe from all jobs
+        for job_id, subscriber_id in subscribers.items():
+            try:
+                await event_manager.unsubscribe(subscriber_id)
+                logger.info(
+                    f"Generic WebSocket unsubscribed from job {job_id} ({subscriber_id})"
+                )
+            except Exception as e:
+                logger.error(f"Error unsubscribing from job {job_id}: {e}")

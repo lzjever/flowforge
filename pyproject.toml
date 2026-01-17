@@ -34,7 +34,7 @@ dependencies = [
 [project.optional-dependencies]
 api = [
     "fastapi",
-    "uvicorn",
+    "uvicorn[standard]",
     "slowapi",
 ]
 dev = [
