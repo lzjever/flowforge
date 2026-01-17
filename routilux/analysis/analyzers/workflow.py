@@ -21,7 +21,7 @@ class WorkflowAnalyzer:
     """Analyzer for Flow objects to generate structured workflow descriptions.
 
     This class analyzes Flow objects to extract:
-    - Flow metadata (flow_id, execution_strategy, etc.)
+    - Flow metadata (flow_id, execution_timeout, etc.)
     - Routine information (combining with routine_analyzer)
     - Connection information (links between routines)
     - Dependency graph
@@ -72,8 +72,6 @@ class WorkflowAnalyzer:
 
         result = {
             "flow_id": flow.flow_id,
-            "execution_strategy": flow.execution_strategy,
-            "max_workers": flow.max_workers,
             "execution_timeout": flow.execution_timeout,
             "routines": [],
             "connections": [],
@@ -235,7 +233,6 @@ class WorkflowAnalyzer:
             "source_event": connection.source_event.name,
             "target_routine_id": target_routine_id,
             "target_slot": connection.target_slot.name,
-            "param_mapping": dict(connection.param_mapping) if connection.param_mapping else {},
         }
 
         return conn_info
@@ -426,8 +423,6 @@ class WorkflowAnalyzer:
             target_slot = conn["target_slot"]
 
             label = f"{source_event} -> {target_slot}"
-            if conn.get("param_mapping"):
-                label += f" (mapping: {conn['param_mapping']})"
 
             lines.append(f'{source_id}.{source_event} -> {target_id}.{target_slot}: "{label}"')
 
@@ -462,16 +457,12 @@ class WorkflowAnalyzer:
         lines.append("")
 
         # Workflow metadata as comments
-        execution_strategy = data.get("execution_strategy", "sequential")
-        max_workers = data.get("max_workers", 1)
         execution_timeout = data.get("execution_timeout", 0)
         routines_count = len(data.get("routines", []))
         connections_count = len(data.get("connections", []))
         entry_points = data.get("entry_points", [])
 
         lines.append("# Workflow Metadata")
-        lines.append(f"# Execution Strategy: {execution_strategy}")
-        lines.append(f"# Max Workers: {max_workers}")
         if execution_timeout > 0:
             lines.append(f"# Execution Timeout: {execution_timeout}s")
         lines.append(f"# Total Routines: {routines_count}")
@@ -744,19 +735,12 @@ class WorkflowAnalyzer:
         source_event = conn.get("source_event", "unknown")
         target_id = conn.get("target_routine_id", "unknown")
         target_slot = conn.get("target_slot", "unknown")
-        param_mapping = conn.get("param_mapping", {})
 
         # Build connection path
         connection_path = f"{source_id}.events.{source_event} -> {target_id}.slots.{target_slot}"
 
         # Build label
         label = f"{source_event} → {target_slot}"
-        if param_mapping:
-            mapping_items = list(param_mapping.items())[:2]
-            mapping_str = ", ".join(f"{k}→{v}" for k, v in mapping_items)
-            if len(param_mapping) > 2:
-                mapping_str += f" (+{len(param_mapping) - 2})"
-            label += f"\\n[{mapping_str}]"
 
         # Determine connection style based on event/slot names and types
         event_lower = source_event.lower()

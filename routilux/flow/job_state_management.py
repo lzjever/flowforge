@@ -241,7 +241,6 @@ def _serialize_pending_tasks(executor: "JobExecutor") -> None:
             "connection_target_slot_name": (
                 connection.target_slot.name if connection and connection.target_slot else None
             ),
-            "param_mapping": connection.param_mapping if connection else {},
             "priority": task.priority.value if task.priority else TaskPriority.NORMAL.value,
             "retry_count": task.retry_count,
             "max_retries": task.max_retries,

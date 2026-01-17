@@ -23,7 +23,7 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
                     }
                 },
                 "connections": [
-                    {"from": "r1.output", "to": "r2.input", "param_mapping": {...}}
+                    {"from": "r1.output", "to": "r2.input"}
                 ],
                 "execution": {
                     "strategy": "sequential",
@@ -57,17 +57,34 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
         if "class" not in routine_info:
             raise KeyError(
                 f"Missing required 'class' key in routine specification for '{routine_id}'. "
-                f"Each routine must specify a 'class' field with the routine class or import path."
+                f"Each routine must specify a 'class' field with the routine class, import path, or factory name."
             )
         routine_class = routine_info["class"]
 
-        # Critical fix: Validate that routine_class is callable
-        if not callable(routine_class):
-            raise TypeError(
-                f"Routine class for '{routine_id}' must be callable (a class or callable that returns Routine instances), got {type(routine_class).__name__}"
-            )
+        # If class is a string, try factory first, then class path
+        if isinstance(routine_class, str):
+            from routilux.factory.factory import ObjectFactory
 
-        routine = routine_class()
+            factory = ObjectFactory.get_instance()
+            # Check if it's a registered factory name by trying to get metadata
+            metadata = factory.get_metadata(routine_class)
+            if metadata is not None:
+                # Use factory to create
+                config = routine_info.get("config")
+                routine = factory.create(routine_class, config=config)
+            else:
+                # Try loading as class path
+                from routilux.dsl.spec_parser import _load_class
+
+                loaded_class = _load_class(routine_class)
+                routine = loaded_class()
+        else:
+            # Class object - validate and instantiate
+            if not callable(routine_class):
+                raise TypeError(
+                    f"Routine class for '{routine_id}' must be callable (a class or callable that returns Routine instances), got {type(routine_class).__name__}"
+                )
+            routine = routine_class()
 
         # Apply config
         config = routine_info.get("config")
@@ -136,18 +153,10 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
         target_id = to_path[0]
         target_slot = to_path[1]
 
-        flow.connect(source_id, source_event, target_id, target_slot, conn.get("param_mapping"))
+        flow.connect(source_id, source_event, target_id, target_slot)
 
     # Apply execution settings
     execution = parsed.get("execution", {})
-    if "strategy" in execution:
-        # Note: execution_strategy and max_workers are set in Flow.__init__()
-        # We need to update them directly since set_execution_strategy() doesn't exist
-        flow.execution_strategy = execution["strategy"]
-        flow.max_workers = execution.get("max_workers", flow.max_workers)
-        # Update worker count based on strategy
-        if flow.execution_strategy == "sequential":
-            flow.max_workers = 1
     if "timeout" in execution:
         flow.execution_timeout = execution["timeout"]
 

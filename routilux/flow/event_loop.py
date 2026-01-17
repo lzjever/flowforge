@@ -125,10 +125,7 @@ def execute_task(task: "SlotActivationTask", flow: "Flow") -> None:
         flow: Flow object.
     """
     try:
-        if task.connection:
-            mapped_data = task.connection._apply_mapping(task.data)
-        else:
-            mapped_data = task.data
+        mapped_data = task.data
 
         # CRITICAL fix: Add comprehensive None checks for task.slot.routine
         if task.slot is None:

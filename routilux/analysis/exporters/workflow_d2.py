@@ -45,13 +45,8 @@ class WorkflowD2Formatter(BaseFormatter):
         lines.append("")
 
         # Metadata comment
-        execution_strategy = data.get("execution_strategy", "sequential")
-        max_workers = data.get("max_workers", 1)
         routines_count = len(data.get("routines", []))
         connections_count = len(data.get("connections", []))
-
-        lines.append(f"# Execution Strategy: {execution_strategy}")
-        lines.append(f"# Max Workers: {max_workers}")
         lines.append(f"# Routines: {routines_count}")
         lines.append(f"# Connections: {connections_count}")
         lines.append("")
@@ -165,16 +160,9 @@ class WorkflowD2Formatter(BaseFormatter):
         source_event = conn.get("source_event", "unknown")
         target_id = conn.get("target_routine_id", "unknown")
         target_slot = conn.get("target_slot", "unknown")
-        param_mapping = conn.get("param_mapping", {})
 
         # Build connection string
-        if param_mapping:
-            mapping_str = ", ".join(f"{k}→{v}" for k, v in list(param_mapping.items())[:2])
-            if len(param_mapping) > 2:
-                mapping_str += "..."
-            label = f"{source_event} → {target_slot}\\n(mapping: {mapping_str})"
-        else:
-            label = f"{source_event} → {target_slot}"
+        label = f"{source_event} → {target_slot}"
 
         # Use full path to events and slots within routines
         # Format: routine_id.events.event_name -> routine_id.slots.slot_name

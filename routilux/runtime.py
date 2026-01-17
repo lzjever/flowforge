@@ -191,6 +191,9 @@ class Runtime:
             # Call flow start hook
             execution_hooks.on_flow_start(flow, job_state)
 
+            # Set Runtime reference on Flow for thread pool access
+            flow._runtime = self
+
             # Set flow and runtime context in routines and job_state
             for routine in flow.routines.values():
                 routine._current_flow = flow

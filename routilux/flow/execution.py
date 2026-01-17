@@ -17,7 +17,6 @@ def execute_flow(
     flow: "Flow",
     entry_routine_id: str,
     entry_params: Optional[Dict[str, Any]] = None,
-    execution_strategy: Optional[str] = None,
     timeout: Optional[float] = None,
     job_state: Optional["JobState"] = None,
 ) -> "JobState":
@@ -29,7 +28,6 @@ def execute_flow(
         flow: Flow object.
         entry_routine_id: Identifier of the routine to start execution from.
         entry_params: Optional dictionary of parameters to pass to the entry routine's trigger slot.
-        execution_strategy: Optional execution strategy override.
         timeout: Optional timeout for execution completion in seconds.
             If None, uses flow.execution_timeout (default: 300.0 seconds).
         job_state: Optional existing JobState to use. If None, creates a new one.
@@ -43,24 +41,17 @@ def execute_flow(
     if entry_routine_id not in flow.routines:
         raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
 
-    strategy = execution_strategy or flow.execution_strategy
     execution_timeout = timeout if timeout is not None else flow.execution_timeout
 
-    if strategy == "concurrent":
-        return execute_concurrent(
-            flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state
-        )
-    else:
-        return execute_sequential(
-            flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state
-        )
+    return execute_flow_unified(
+        flow, entry_routine_id, entry_params, timeout=execution_timeout, job_state=job_state
+    )
 
 
 def start_flow_execution(
     flow: "Flow",
     entry_routine_id: str,
     entry_params: Optional[Dict[str, Any]] = None,
-    execution_strategy: Optional[str] = None,
     timeout: Optional[float] = None,
     job_state: Optional["JobState"] = None,
 ) -> "JobState":
@@ -74,7 +65,6 @@ def start_flow_execution(
         flow: Flow object.
         entry_routine_id: Identifier of the routine to start execution from.
         entry_params: Optional dictionary of parameters to pass to the entry routine's trigger slot.
-        execution_strategy: Optional execution strategy override.
         timeout: Optional timeout for execution completion in seconds.
         job_state: Optional existing JobState to use. If None, creates a new one.
 
@@ -105,25 +95,15 @@ def start_flow_execution(
         try:
             # Use the synchronous execute, but we won't wait for it
             # The execution will complete in the background
-            strategy = execution_strategy or flow.execution_strategy
             execution_timeout = timeout if timeout is not None else flow.execution_timeout
 
-            if strategy == "concurrent":
-                execute_concurrent(
-                    flow,
-                    entry_routine_id,
-                    entry_params,
-                    timeout=execution_timeout,
-                    job_state=job_state,
-                )
-            else:
-                execute_sequential(
-                    flow,
-                    entry_routine_id,
-                    entry_params,
-                    timeout=execution_timeout,
-                    job_state=job_state,
-                )
+            execute_flow_unified(
+                flow,
+                entry_routine_id,
+                entry_params,
+                timeout=execution_timeout,
+                job_state=job_state,
+            )
         except Exception as e:
             import logging
 
@@ -155,7 +135,7 @@ def start_flow_execution(
     return job_state
 
 
-def execute_sequential(
+def execute_flow_unified(
     flow: "Flow",
     entry_routine_id: str,
     entry_params: Optional[Dict[str, Any]] = None,
@@ -163,6 +143,9 @@ def execute_sequential(
     job_state: Optional["JobState"] = None,
 ) -> "JobState":
     """Execute Flow using unified queue-based mechanism.
+
+    All execution uses the same event queue mechanism. Tasks are executed
+    using Runtime's thread pool for non-blocking concurrent execution.
 
     Args:
         flow: Flow object.
@@ -368,28 +351,3 @@ def execute_sequential(
     return job_state
 
 
-def execute_concurrent(
-    flow: "Flow",
-    entry_routine_id: str,
-    entry_params: Optional[Dict[str, Any]] = None,
-    timeout: Optional[float] = None,
-    job_state: Optional["JobState"] = None,
-) -> "JobState":
-    """Execute Flow concurrently using unified queue-based mechanism.
-
-    In concurrent mode, max_workers > 1, allowing parallel task execution.
-    The queue-based mechanism handles concurrency automatically.
-
-    Args:
-        flow: Flow object.
-        entry_routine_id: Entry routine identifier.
-        entry_params: Entry parameters.
-        timeout: Optional timeout for execution completion in seconds.
-        job_state: Optional existing JobState to use. If None, creates a new one.
-
-    Returns:
-        JobState object.
-    """
-    return execute_sequential(
-        flow, entry_routine_id, entry_params, timeout=timeout, job_state=job_state
-    )

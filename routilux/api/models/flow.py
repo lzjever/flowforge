@@ -14,8 +14,6 @@ class FlowCreateRequest(BaseModel):
     flow_id: Optional[str] = None
     dsl: Optional[str] = None  # YAML string
     dsl_dict: Optional[Dict[str, Any]] = None  # JSON dict
-    execution_strategy: Optional[str] = "sequential"
-    max_workers: Optional[int] = 5
 
 
 class RoutineInfo(BaseModel):
@@ -36,7 +34,6 @@ class ConnectionInfo(BaseModel):
     source_event: str
     target_routine: str
     target_slot: str
-    param_mapping: Optional[Dict[str, str]] = None
 
 
 class FlowResponse(BaseModel):
@@ -45,8 +42,6 @@ class FlowResponse(BaseModel):
     flow_id: str
     routines: Dict[str, RoutineInfo]
     connections: List[ConnectionInfo]
-    execution_strategy: str
-    max_workers: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

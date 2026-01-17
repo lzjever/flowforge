@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from routilux.api.routes import breakpoints, debug, discovery, flows, jobs, monitor, websocket
+from routilux.api.routes import breakpoints, debug, discovery, flows, jobs, monitor, objects, websocket
 
 
 @asynccontextmanager
@@ -160,6 +160,7 @@ app.include_router(debug.router, prefix="/api", tags=["debug"])
 app.include_router(monitor.router, prefix="/api", tags=["monitor"])
 app.include_router(websocket.router, prefix="/api", tags=["websocket"])
 app.include_router(discovery.router, prefix="/api", tags=["discovery"])
+app.include_router(objects.router, prefix="/api", tags=["objects"])
 
 
 @app.get("/")

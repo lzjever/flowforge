@@ -68,7 +68,6 @@ def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
                 {
                     "from": conn["from"],
                     "to": conn["to"],
-                    "param_mapping": conn.get("param_mapping"),
                 }
             )
 

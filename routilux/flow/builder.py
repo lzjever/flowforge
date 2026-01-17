@@ -84,7 +84,6 @@ class FlowBuilder:
         source_event: str,
         target_id: str,
         target_slot: str,
-        param_mapping: Optional[Dict[str, str]] = None,
     ) -> "FlowBuilder":
         """Connect routines.
 
@@ -93,13 +92,11 @@ class FlowBuilder:
             source_event: Name of the event to connect from.
             target_id: Identifier of the routine that receives the data.
             target_slot: Name of the slot to connect to.
-            param_mapping: Optional dictionary mapping event parameter names to
-                slot parameter names.
 
         Returns:
             Self for method chaining.
         """
-        self.flow.connect(source_id, source_event, target_id, target_slot, param_mapping)
+        self.flow.connect(source_id, source_event, target_id, target_slot)
         return self
 
     def validate(self) -> "FlowBuilder":

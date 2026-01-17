@@ -52,7 +52,6 @@ def _flow_to_response(flow: Flow) -> FlowResponse:
                 source_event=conn.source_event.name,
                 target_routine=target_routine_id or "",
                 target_slot=conn.target_slot.name,
-                param_mapping=conn.param_mapping,
             )
         )
 
@@ -60,8 +59,6 @@ def _flow_to_response(flow: Flow) -> FlowResponse:
         flow_id=flow.flow_id,
         routines=routines,
         connections=connections,
-        execution_strategy=flow.execution_strategy,
-        max_workers=flow.max_workers,
     )
 
 
@@ -100,12 +97,6 @@ async def create_flow(request: FlowCreateRequest):
             # Create empty flow
             flow = Flow(flow_id=request.flow_id)
 
-        # Set execution strategy if provided
-        if request.execution_strategy:
-            flow.set_execution_strategy(
-                request.execution_strategy, max_workers=request.max_workers or 5
-            )
-
         # Store flow
         flow_store.add(flow)
 
@@ -136,8 +127,6 @@ async def export_flow_dsl(flow_id: str, format: str = Query("yaml", pattern="^(y
         "routines": {},
         "connections": [],
         "execution": {
-            "strategy": flow.execution_strategy,
-            "max_workers": flow.max_workers,
             "timeout": flow.execution_timeout,
         },
     }
@@ -174,8 +163,6 @@ async def export_flow_dsl(flow_id: str, format: str = Query("yaml", pattern="^(y
             "from": f"{source_routine_id}.{conn.source_event.name}",
             "to": f"{target_routine_id}.{conn.target_slot.name}",
         }
-        if conn.param_mapping:
-            conn_spec["param_mapping"] = conn.param_mapping
         dsl_dict["connections"].append(conn_spec)
 
     # Return in requested format
@@ -249,7 +236,6 @@ async def list_flow_connections(flow_id: str):
                 source_event=conn.source_event.name,
                 target_routine=target_routine_id or "",
                 target_slot=conn.target_slot.name,
-                param_mapping=conn.param_mapping,
             )
         )
 
@@ -258,39 +244,54 @@ async def list_flow_connections(flow_id: str):
 
 @router.post("/flows/{flow_id}/routines", dependencies=[RequireAuth])
 async def add_routine_to_flow(
-    flow_id: str, routine_id: str, class_path: str, config: Optional[Dict[str, Any]] = None
+    flow_id: str, routine_id: str, object_name: str, config: Optional[Dict[str, Any]] = None
 ):
-    """Add a routine to an existing flow."""
+    """Add a routine to an existing flow using factory name or class path.
+
+    Args:
+        flow_id: Flow identifier.
+        routine_id: Routine identifier in the flow.
+        object_name: Factory name or class path (module.path.ClassName).
+        config: Optional configuration dictionary.
+    """
     from routilux.api.validators import validate_flow_exists
+    from routilux.factory.factory import ObjectFactory
 
     flow = validate_flow_exists(flow_id)
     validate_routine_id_conflict(flow, routine_id)
 
-    # Fix: Validate class_path format before using
-    if "." not in class_path or class_path.startswith(".") or class_path.endswith("."):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid class_path format: '{class_path}'. Expected format: 'module.path.ClassName'",
-        )
+    # Try factory first
+    factory = ObjectFactory.get_instance()
+    metadata = factory.get_metadata(object_name)
+    
+    if metadata is not None:
+        # Use factory to create
+        routine = factory.create(object_name, config=config)
+    else:
+        # Try loading as class path
+        if "." not in object_name or object_name.startswith(".") or object_name.endswith("."):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid object_name format: '{object_name}'. Expected factory name or 'module.path.ClassName'",
+            )
 
-    # Load routine class
-    try:
-        from importlib import import_module
+        try:
+            from importlib import import_module
 
-        module_path, class_name = class_path.rsplit(".", 1)
-        if not module_path or not class_name:
-            raise ValueError("Both module_path and class_name must be non-empty")
-        module = import_module(module_path)
-        routine_class = getattr(module, class_name)
-        routine = routine_class()
-    except Exception as e:
-        raise HTTPException(
-            status_code=400, detail=f"Failed to load routine class: {str(e)}"
-        ) from e
+            module_path, class_name = object_name.rsplit(".", 1)
+            if not module_path or not class_name:
+                raise ValueError("Both module_path and class_name must be non-empty")
+            module = import_module(module_path)
+            routine_class = getattr(module, class_name)
+            routine = routine_class()
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"Failed to load routine class: {str(e)}"
+            ) from e
 
-    # Apply config
-    if config:
-        routine.set_config(**config)
+        # Apply config
+        if config:
+            routine.set_config(**config)
 
     # Add to flow
     flow.add_routine(routine, routine_id)
@@ -306,7 +307,6 @@ async def add_connection_to_flow(
     source_event: str,
     target_routine: str,
     target_slot: str,
-    param_mapping: Optional[Dict[str, str]] = None,
 ):
     """Add a connection to an existing flow."""
     flow = flow_store.get(flow_id)
@@ -314,7 +314,7 @@ async def add_connection_to_flow(
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
 
     try:
-        flow.connect(source_routine, source_event, target_routine, target_slot, param_mapping)
+        flow.connect(source_routine, source_event, target_routine, target_slot)
         flow_store.add(flow)  # Update stored flow
         return {"status": "connected"}
     except Exception as e:

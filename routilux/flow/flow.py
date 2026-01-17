@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from routilux.execution_tracker import ExecutionTracker
     from routilux.job_state import JobState
     from routilux.routine import Routine
+    from routilux.runtime import Runtime
     from routilux.slot import Slot
 
 from serilux import Serializable, register_serializable
@@ -35,17 +36,15 @@ class Flow(Serializable):
     Key Responsibilities:
         - Routine Management: Add, organize, and track routines in the workflow
         - Connection Management: Link routines via events and slots
-        - Execution Control: Execute workflows sequentially or concurrently
+        - Execution Control: Execute workflows via Runtime (non-blocking, shared thread pool)
         - Error Handling: Apply error handling strategies at flow or routine level
         - State Management: Track execution state via JobState
         - Persistence: Serialize and restore flow state for resumption
 
-    Execution Modes:
-        - Sequential: Routines execute one at a time in dependency order.
-          Suitable for workflows with dependencies or when order matters.
-        - Concurrent: Independent routines execute in parallel using threads.
-          Suitable for independent operations that can run simultaneously.
-          Use max_workers to control parallelism.
+    Execution:
+        All flows are executed via Runtime, which provides non-blocking execution
+        using a shared thread pool. The Runtime manages thread pool size and
+        execution coordination. Flows no longer manage their own execution strategy.
 
     Error Handling:
         Error handlers can be set at two levels:
@@ -64,12 +63,13 @@ class Flow(Serializable):
             >>> flow.connect(id1, "output", id2, "input")
             >>> job_state = flow.execute(id1, entry_params={"data": "test"})
 
-        Concurrent execution:
-            >>> flow = Flow(execution_strategy="concurrent", max_workers=5)
+        Execution:
+            >>> flow = Flow()
             >>> # Add routines and connections...
-            >>> job_state = flow.execute(entry_id)
-            >>> flow.wait_for_completion()  # Wait for all threads
-            >>> flow.shutdown()  # Clean up thread pool
+            >>> # Execute via Runtime for non-blocking execution
+            >>> from routilux import Runtime
+            >>> runtime = Runtime()
+            >>> job_state = runtime.exec(flow.flow_id)
 
         Error handling:
             >>> from routilux import ErrorHandler, ErrorStrategy
@@ -81,32 +81,15 @@ class Flow(Serializable):
     def __init__(
         self,
         flow_id: str | None = None,
-        execution_strategy: str = "sequential",
-        max_workers: int = 5,
         execution_timeout: float | None = None,
     ):
         """Initialize Flow.
 
         Args:
             flow_id: Flow identifier (auto-generated if None).
-            execution_strategy: Execution strategy, "sequential" or "concurrent".
-            max_workers: Maximum number of worker threads for concurrent execution.
             execution_timeout: Default timeout for execution completion in seconds.
                 None for no timeout (default: 300.0 seconds).
         """
-        # MEDIUM fix: Validate max_workers parameter
-        if not isinstance(max_workers, int):
-            raise TypeError(f"max_workers must be int, got {type(max_workers).__name__}")
-        if max_workers < 1:
-            raise ValueError(f"max_workers must be >= 1, got {max_workers}")
-
-        # MEDIUM fix: Validate execution_strategy parameter
-        valid_strategies = {"sequential", "concurrent"}
-        if execution_strategy not in valid_strategies:
-            raise ValueError(
-                f"execution_strategy must be one of {valid_strategies}, got '{execution_strategy}'"
-            )
-
         super().__init__()
         self.flow_id: str = flow_id or str(uuid.uuid4())
         self.routines: dict[str, Routine] = {}
@@ -126,10 +109,8 @@ class Flow(Serializable):
         self._running: bool = False
         self._execution_thread: threading.Thread | None = None
         self._pending_tasks: list = []
-        self._executor: ThreadPoolExecutor | None = None
-
-        self.execution_strategy: str = execution_strategy
-        self.max_workers: int = max_workers if execution_strategy == "concurrent" else 1
+        # Runtime reference - set when flow is executed via Runtime
+        self._runtime: Runtime | None = None
 
         # Critical fix: Validate execution_timeout is positive
         if execution_timeout is not None:
@@ -164,8 +145,6 @@ class Flow(Serializable):
             [
                 "flow_id",
                 "_paused",
-                "execution_strategy",
-                "max_workers",
                 "error_handler",
                 "routines",
                 "connections",
@@ -179,23 +158,20 @@ class Flow(Serializable):
         return f"Flow[{self.flow_id}]"
 
     def _get_executor(self) -> ThreadPoolExecutor:
-        """Get or create the thread pool executor.
-
-        Critical fix: This method is required by event_loop.py for task execution.
+        """Get the thread pool executor from Runtime.
 
         Returns:
-            ThreadPoolExecutor instance.
+            ThreadPoolExecutor instance from Runtime.
+        
+        Raises:
+            RuntimeError: If Runtime is not set (flow not executed via Runtime).
         """
-        # CRITICAL fix: Use lock to prevent race condition in executor initialization
-        # Double-checked locking pattern to avoid acquiring lock every time
-        if self._executor is None:
-            with self._execution_lock:
-                if self._executor is None:
-                    self._executor = ThreadPoolExecutor(
-                        max_workers=self.max_workers,
-                        thread_name_prefix=f"FlowWorker-{self.flow_id}"
-                    )
-        return self._executor
+        if self._runtime is None:
+            raise RuntimeError(
+                "Flow must be executed via Runtime to access thread pool. "
+                "Use Runtime.exec() to execute flows."
+            )
+        return self._runtime.thread_pool
 
     def _enqueue_task(self, task: Any) -> None:
         """Enqueue a task to the execution queue.
@@ -288,13 +264,34 @@ class Flow(Serializable):
             self.routines[rid] = routine
             return rid
 
+    def add_routine_by_name(
+        self, name: str, routine_id: str, config: dict[str, Any] | None = None
+    ) -> str:
+        """Add a routine to the flow by factory name.
+
+        Args:
+            name: Name of the registered routine prototype.
+            routine_id: Unique identifier for this routine in the flow.
+            config: Optional configuration dictionary to override prototype config.
+
+        Returns:
+            The routine ID used.
+
+        Raises:
+            ValueError: If routine_id already exists or prototype not found.
+        """
+        from routilux.factory.factory import ObjectFactory
+
+        factory = ObjectFactory.get_instance()
+        routine = factory.create(name, config=config)
+        return self.add_routine(routine, routine_id)
+
     def connect(
         self,
         source_routine_id: str,
         source_event: str,
         target_routine_id: str,
         target_slot: str,
-        param_mapping: dict[str, str] | None = None,
     ) -> Connection:
         """Connect two routines by linking a source event to a target slot.
 
@@ -303,8 +300,6 @@ class Flow(Serializable):
             source_event: Name of the event to connect from.
             target_routine_id: Identifier of the routine that receives the data.
             target_slot: Name of the slot to connect to.
-            param_mapping: Optional mapping from source parameter names to target
-                parameter names. Allows renaming/mapping parameters during data transfer.
 
         Returns:
             Connection object representing this connection.
@@ -332,7 +327,7 @@ class Flow(Serializable):
 
             from routilux.connection import Connection
 
-            connection = Connection(source_event_obj, target_slot_obj, param_mapping)
+            connection = Connection(source_event_obj, target_slot_obj)
             self.connections.append(connection)
 
             key = (source_event_obj, target_slot_obj)

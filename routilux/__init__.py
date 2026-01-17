@@ -32,8 +32,12 @@ from routilux.output_handler import (
     QueueOutputHandler,
 )
 from routilux.routine import ExecutionContext, Routine
+from routilux.runtime import Runtime
 from routilux.slot import Slot
 from routilux.status import ExecutionStatus, RoutineStatus
+
+# Import factory
+from routilux.factory import ObjectFactory, ObjectMetadata
 
 # Import testing utilities
 from routilux.testing import RoutineTester
@@ -60,6 +64,11 @@ __all__ = [
     # Status enums
     "ExecutionStatus",
     "RoutineStatus",
+    # Runtime
+    "Runtime",
+    # Factory
+    "ObjectFactory",
+    "ObjectMetadata",
     # Output handlers
     "OutputHandler",
     "QueueOutputHandler",

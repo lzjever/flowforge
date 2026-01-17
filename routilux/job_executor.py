@@ -234,11 +234,7 @@ class JobExecutor:
             old_job_state = None
 
         try:
-            # Apply parameter mapping if connection exists
-            if task.connection:
-                mapped_data = task.connection._apply_mapping(task.data)
-            else:
-                mapped_data = task.data
+            mapped_data = task.data
 
             # Set routine._current_flow for slot.receive()
             if task.slot.routine:
