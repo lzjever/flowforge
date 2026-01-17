@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 from serilux import Serializable, register_serializable
 
 
+class JobNotRunningError(ValueError):
+    """Raised when resume is called but the job has no active JobExecutor."""
+
+
 @register_serializable
 class Flow(Serializable):
     """Flow manager for orchestrating workflow execution.
@@ -434,12 +438,7 @@ class Flow(Serializable):
         if executor is not None:
             return executor.resume()
         else:
-            # Job not running, start it with provided job_state
-            return job_manager.start_job(
-                flow=self,
-                entry_routine_id=job_state.current_routine_id or "",
-                job_state=job_state,
-            )
+            raise JobNotRunningError("Job is not running; cannot resume.")
 
     def cancel(self, job_state: JobState, reason: str = "") -> None:
         """Cancel execution.

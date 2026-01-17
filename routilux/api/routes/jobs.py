@@ -9,12 +9,12 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.job import JobListResponse, JobResponse, JobStartRequest
-from routilux.api.validators import validate_flow_exists, validate_routine_exists
+from routilux.api.models.job import JobListResponse, JobResponse, JobStartRequest, PostToJobRequest
+from routilux.api.validators import validate_flow_exists
 from routilux.job_state import JobState
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.monitoring.storage import flow_store, job_store
-from routilux.runtime import Runtime
+from routilux.runtime import get_runtime_instance
 from routilux.status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
@@ -66,8 +66,6 @@ async def start_job(request: JobStartRequest):
     """
     # Validate flow exists
     flow = validate_flow_exists(request.flow_id)
-    # Validate entry routine exists
-    validate_routine_exists(flow, request.entry_routine_id)
 
     # Create job state immediately (before execution)
     job_state = JobState(flow.flow_id)
@@ -83,22 +81,12 @@ async def start_job(request: JobStartRequest):
         if hasattr(flow, "name") and flow.name:
             flow_registry.register_by_name(flow.name, flow)
 
-    # Get or create Runtime instance
-    # For API, we use a module-level Runtime instance for efficiency
-    # This allows sharing thread pool across requests
-    if not hasattr(start_job, "_runtime"):
-        start_job._runtime = Runtime(thread_pool_size=10)
-
-    runtime = start_job._runtime
+    # Use shared Runtime instance (get_runtime_instance)
+    runtime = get_runtime_instance()
 
     # Start flow execution asynchronously using Runtime.exec()
     # This returns immediately without blocking
     try:
-        # Store entry_params in job_state for later use by entry routine
-        if request.entry_params:
-            job_state.shared_data["entry_params"] = request.entry_params
-            job_state.shared_data["entry_routine_id"] = request.entry_routine_id
-
         # Execute via Runtime
         started_job_state = runtime.exec(
             flow_name=flow.flow_id,  # Use flow_id as flow_name
@@ -180,6 +168,53 @@ async def get_job(job_id: str):
     return _job_to_response(job_state)
 
 
+@router.post("/jobs/{job_id}/post", status_code=200, dependencies=[RequireAuth])
+async def post_to_job(job_id: str, request: PostToJobRequest):
+    """Post data to a routine slot in a running or paused job."""
+    job_state = job_store.get(job_id)
+    if not job_state:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+    if job_state.status not in (ExecutionStatus.RUNNING, ExecutionStatus.PAUSED):
+        raise HTTPException(
+            status_code=409,
+            detail="Job is not running or paused; cannot post",
+        )
+
+    flow = flow_store.get(job_state.flow_id)
+    if not flow:
+        raise HTTPException(status_code=404, detail=f"Flow '{job_state.flow_id}' not found")
+
+    routine = flow.routines.get(request.routine_id)
+    if not routine:
+        raise HTTPException(status_code=404, detail=f"Routine '{request.routine_id}' not found in flow")
+
+    slot = routine.get_slot(request.slot_name)
+    if slot is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Slot '{request.slot_name}' not found in routine '{request.routine_id}'",
+        )
+
+    data = request.data if request.data is not None else {}
+    runtime = get_runtime_instance()
+
+    try:
+        runtime.post(
+            flow_name=flow.flow_id,
+            routine_name=request.routine_id,
+            slot_name=request.slot_name,
+            data=data,
+            job_id=job_id,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return {"status": "posted", "job_id": job_id}
+
+
 @router.post("/jobs/{job_id}/pause", status_code=200, dependencies=[RequireAuth])
 async def pause_job(job_id: str):
     """Pause job execution."""
@@ -201,6 +236,8 @@ async def pause_job(job_id: str):
 @router.post("/jobs/{job_id}/resume", status_code=200, dependencies=[RequireAuth])
 async def resume_job(job_id: str):
     """Resume job execution."""
+    from routilux.flow.flow import JobNotRunningError
+
     job_state = job_store.get(job_id)
     if not job_state:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
@@ -213,6 +250,8 @@ async def resume_job(job_id: str):
         job_state = flow.resume(job_state)
         job_store.add(job_state)  # Update stored job
         return {"status": "resumed", "job_id": job_id}
+    except JobNotRunningError:
+        raise HTTPException(status_code=409, detail="Job is not running; cannot resume.")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to resume job: {str(e)}") from e
 

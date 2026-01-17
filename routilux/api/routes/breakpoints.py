@@ -9,6 +9,7 @@ from routilux.api.models.breakpoint import (
     BreakpointCreateRequest,
     BreakpointListResponse,
     BreakpointResponse,
+    BreakpointUpdateRequest,
 )
 from routilux.monitoring.breakpoint_manager import Breakpoint
 from routilux.monitoring.registry import MonitoringRegistry
@@ -188,7 +189,7 @@ async def delete_breakpoint(job_id: str, breakpoint_id: str):
     response_model=BreakpointResponse,
     dependencies=[RequireAuth],
 )
-async def update_breakpoint(job_id: str, breakpoint_id: str, enabled: bool):
+async def update_breakpoint(job_id: str, breakpoint_id: str, request: BreakpointUpdateRequest):
     """Update breakpoint (enable/disable)."""
     # Verify job exists
     job_state = job_store.get(job_id)
@@ -207,6 +208,6 @@ async def update_breakpoint(job_id: str, breakpoint_id: str, enabled: bool):
     if not breakpoint:
         raise HTTPException(status_code=404, detail=f"Breakpoint '{breakpoint_id}' not found")
 
-    breakpoint.enabled = enabled
+    breakpoint.enabled = request.enabled
 
     return _breakpoint_to_response(breakpoint)

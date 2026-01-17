@@ -10,6 +10,7 @@ import asyncio
 import logging
 import re
 from typing import Dict, Optional
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -24,6 +25,29 @@ router = APIRouter()
 WS_IDLE_TIMEOUT = 300.0  # 5 minutes
 WS_SEND_TIMEOUT = 5.0  # 5 seconds
 MAX_SEND_RETRIES = 3
+
+
+async def _check_websocket_auth(websocket: WebSocket) -> bool:
+    """Check API key from query when api_key_enabled. Close with 1008 if invalid.
+
+    Returns True if auth passed or disabled, False if closed due to auth failure.
+    """
+    from routilux.api.config import get_config
+
+    config = get_config()
+    if not config.api_key_enabled:
+        return True
+
+    query_string = websocket.scope.get("query_string") or b""
+    if isinstance(query_string, bytes):
+        query_string = query_string.decode("utf-8")
+    params = parse_qs(query_string)
+    api_key = (params.get("api_key") or [None])[0]
+
+    if not api_key or not config.is_api_key_valid(api_key):
+        await websocket.close(code=1008, reason="Invalid or missing API key")
+        return False
+    return True
 
 
 async def safe_send_json(
@@ -171,6 +195,9 @@ async def job_monitor_websocket(websocket: WebSocket, job_id: str):
             await websocket.close(code=1008, reason=f"Job '{job_id}' not found")
             return
 
+        if not await _check_websocket_auth(websocket):
+            return
+
         # Accept WebSocket connection
         await websocket.accept()
         logger.info(f"WebSocket connection accepted for job {job_id}")
@@ -276,6 +303,9 @@ async def job_debug_websocket(websocket: WebSocket, job_id: str):
             await websocket.close(code=1008, reason=f"Job '{job_id}' not found")
             return
 
+        if not await _check_websocket_auth(websocket):
+            return
+
         # Accept WebSocket connection
         await websocket.accept()
         logger.info(f"Debug WebSocket connection accepted for job {job_id}")
@@ -373,6 +403,9 @@ async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
 
         if not flow:
             await websocket.close(code=1008, reason=f"Flow '{flow_id}' not found")
+            return
+
+        if not await _check_websocket_auth(websocket):
             return
 
         # Accept WebSocket connection
@@ -485,6 +518,9 @@ async def generic_websocket(websocket: WebSocket):
     subscriptions: Dict[str, bool] = {}
 
     try:
+        if not await _check_websocket_auth(websocket):
+            return
+
         # Accept WebSocket connection
         await websocket.accept()
         logger.info("Generic WebSocket connection accepted")

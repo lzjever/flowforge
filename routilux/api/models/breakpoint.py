@@ -7,6 +7,12 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel
 
 
+class BreakpointUpdateRequest(BaseModel):
+    """Request model for updating a breakpoint (enable/disable)."""
+
+    enabled: bool
+
+
 class BreakpointCreateRequest(BaseModel):
     """Request model for creating a breakpoint."""
 

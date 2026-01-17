@@ -60,19 +60,22 @@ class Runtime:
         Raises:
             ValueError: If thread_pool_size is less than 1.
         """
-        # MEDIUM fix: Validate thread_pool_size parameter
-        if thread_pool_size < 1:
-            raise ValueError(f"thread_pool_size must be at least 1, got {thread_pool_size}")
-        if thread_pool_size > 1000:
+        # Validate thread_pool_size: allow 0 (no pool, use GlobalJobManager's) or positive
+        if thread_pool_size < 0:
+            raise ValueError(f"thread_pool_size must be >= 0, got {thread_pool_size}")
+        if thread_pool_size > 0 and thread_pool_size > 1000:
             import logging
             logging.getLogger(__name__).warning(
                 f"thread_pool_size {thread_pool_size} is unusually large, may cause resource issues"
             )
 
         self.thread_pool_size = thread_pool_size
-        self.thread_pool = ThreadPoolExecutor(
-            max_workers=thread_pool_size, thread_name_prefix="RoutiluxWorker"
-        )
+        if thread_pool_size == 0:
+            self.thread_pool = None
+        else:
+            self.thread_pool = ThreadPoolExecutor(
+                max_workers=thread_pool_size, thread_name_prefix="RoutiluxWorker"
+            )
         self._active_jobs: dict[str, JobState] = {}
         self._job_lock = threading.RLock()
         self._shutdown = False
@@ -91,9 +94,9 @@ class Runtime:
         Critical fix: Prevent thread pool leaks when Runtime objects are not
         explicitly cleaned up with shutdown().
         """
-        # Shutdown thread pool if not already shutdown
+        # Shutdown thread pool if not already shutdown and pool exists
         # Use wait=False to avoid blocking during garbage collection
-        if not self._is_shutdown and hasattr(self, "thread_pool"):
+        if not self._is_shutdown and getattr(self, "thread_pool", None) is not None:
             try:
                 self.thread_pool.shutdown(wait=False)
             except Exception:
@@ -912,7 +915,8 @@ class Runtime:
         # Shutdown thread pool - use wait=False if we already waited for jobs
         # Critical fix: Set flag before shutdown to prevent race conditions
         self._is_shutdown = True
-        self.thread_pool.shutdown(wait=wait)
+        if self.thread_pool is not None:
+            self.thread_pool.shutdown(wait=wait)
 
 
 # Global Runtime instance for API access
@@ -932,5 +936,5 @@ def get_runtime_instance() -> Runtime:
     global _runtime_instance
     with _runtime_instance_lock:
         if _runtime_instance is None:
-            _runtime_instance = Runtime(thread_pool_size=10)
+            _runtime_instance = Runtime(thread_pool_size=0)
         return _runtime_instance

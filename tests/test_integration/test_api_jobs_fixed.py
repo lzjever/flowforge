@@ -56,10 +56,7 @@ class TestAPIJobExecution:
         """Test that API starts job using Runtime."""
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
 
         assert response.status_code == 201
@@ -71,10 +68,7 @@ class TestAPIJobExecution:
         """Test that job status is tracked correctly."""
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
 
         assert response.status_code == 201
@@ -93,10 +87,7 @@ class TestAPIJobExecution:
         # Create a job
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert response.status_code == 201
 
@@ -111,10 +102,7 @@ class TestAPIJobExecution:
         """Test that job state can be serialized."""
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
 
         assert response.status_code == 201

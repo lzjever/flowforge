@@ -13,13 +13,14 @@ from fastapi.testclient import TestClient
 from routilux.api.main import app
 from routilux import Flow, Routine
 from routilux.activation_policies import immediate_policy
+from routilux.job_state import JobState
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.monitoring.storage import flow_store, job_store
 from routilux.runtime import Runtime
 from routilux.status import ExecutionStatus
 
 # Import Mock for testing (always available in Python 3.3+)
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 # Integration tests marker
 pytestmark = pytest.mark.integration
@@ -65,10 +66,7 @@ class TestAPIJobExecutionInterface:
         """Test: POST /api/jobs should return JobResponse with required fields."""
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
 
         # Verify response structure
@@ -100,10 +98,7 @@ class TestAPIJobExecutionInterface:
         """Test: Starting job via API should register job in Runtime."""
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
 
         assert response.status_code == 201
@@ -111,50 +106,40 @@ class TestAPIJobExecutionInterface:
         job_id = job_data["job_id"]
 
         # Verify job is in Runtime's active jobs
-        # Get Runtime instance (from module-level attribute)
-        from routilux.api.routes.jobs import start_job
+        from routilux.runtime import get_runtime_instance
 
-        if hasattr(start_job, "_runtime"):
-            runtime = start_job._runtime
-            runtime_job = runtime.get_job(job_id)
-            assert runtime_job is not None, "Job should be registered in Runtime"
-            assert runtime_job.job_id == job_id
+        runtime = get_runtime_instance()
+        runtime_job = runtime._active_jobs.get(job_id)
+        assert runtime_job is not None, "Job should be registered in Runtime"
+        assert runtime_job.job_id == job_id
 
-    def test_api_start_job_with_entry_params(self, api_client, test_flow):
-        """Test: API should accept entry_params and pass to Runtime."""
-        entry_params = {"param1": "value1", "param2": 42}
-
-        response = api_client.post(
+    def test_api_post_to_job_success(self, api_client, test_flow):
+        """Test: POST /api/jobs/{job_id}/post should deliver data to a routine slot."""
+        # Start job
+        start_response = api_client.post(
             "/api/jobs",
+            json={"flow_id": test_flow.flow_id},
+        )
+        assert start_response.status_code == 201
+        job_id = start_response.json()["job_id"]
+
+        # Post data to entry routine's trigger slot
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
             json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-                "entry_params": entry_params,
+                "routine_id": "entry",
+                "slot_name": "trigger",
+                "data": {"param1": "value1", "param2": 42},
             },
         )
-
-        assert response.status_code == 201
-        job_data = response.json()
-        job_id = job_data["job_id"]
-
-        # Verify entry_params are stored in job_state
-        from routilux.api.routes.jobs import start_job
-
-        if hasattr(start_job, "_runtime"):
-            runtime = start_job._runtime
-            runtime_job = runtime.get_job(job_id)
-            if runtime_job:
-                assert "entry_params" in runtime_job.shared_data
-                assert runtime_job.shared_data["entry_params"] == entry_params
+        assert post_response.status_code == 200
+        assert post_response.json() == {"status": "posted", "job_id": job_id}
 
     def test_api_start_job_with_invalid_flow_id(self, api_client):
         """Test: API should return 404 for non-existent flow."""
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "nonexistent_flow",
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": "nonexistent_flow"},
         )
 
         # Should return error (404 or 400)
@@ -162,53 +147,51 @@ class TestAPIJobExecutionInterface:
             f"Expected 400 or 404 for invalid flow_id, got {response.status_code}"
         )
 
-    def test_api_start_job_with_invalid_entry_routine(self, api_client, test_flow):
-        """Test: API should return error for invalid entry_routine_id."""
-        response = api_client.post(
+    def test_api_resume_when_not_running_returns_409(self, api_client, test_flow):
+        """Test: POST /api/jobs/{job_id}/resume returns 409 when job has no active executor."""
+        # Create a job state and add to store without starting via Runtime (no executor)
+        job_state = JobState(test_flow.flow_id)
+        job_store.add(job_state)
+
+        response = api_client.post(f"/api/jobs/{job_state.job_id}/resume")
+        assert response.status_code == 409
+        assert "not running" in response.json().get("detail", "").lower()
+
+    def test_api_post_to_job_404_nonexistent_routine(self, api_client, test_flow):
+        """Test: POST /api/jobs/{job_id}/post returns 404 for non-existent routine."""
+        start_response = api_client.post(
             "/api/jobs",
+            json={"flow_id": test_flow.flow_id},
+        )
+        assert start_response.status_code == 201
+        job_id = start_response.json()["job_id"]
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
             json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "nonexistent_routine",
+                "routine_id": "nonexistent_routine",
+                "slot_name": "trigger",
+                "data": {},
             },
         )
-
-        # Should return error (400 or 404)
-        assert response.status_code in [400, 404], (
-            f"Expected 400 or 404 for invalid entry_routine_id, got {response.status_code}"
-        )
+        assert post_response.status_code == 404
 
     def test_api_start_job_handles_runtime_errors(self, api_client, test_flow):
         """Test: API should handle Runtime.exec() errors gracefully."""
-        # Mock Runtime.exec to raise exception
-        from routilux.api.routes.jobs import start_job
-
-        original_runtime = getattr(start_job, "_runtime", None)
-
-        # Create a mock runtime that raises error
+        # Mock get_runtime_instance to return a runtime that raises on exec
         mock_runtime = Mock(spec=Runtime)
         mock_runtime.exec = Mock(side_effect=RuntimeError("Runtime execution error"))
-        start_job._runtime = mock_runtime
 
-        try:
+        with patch("routilux.api.routes.jobs.get_runtime_instance", return_value=mock_runtime):
             response = api_client.post(
                 "/api/jobs",
-                json={
-                    "flow_id": test_flow.flow_id,
-                    "entry_routine_id": "entry",
-                },
+                json={"flow_id": test_flow.flow_id},
             )
 
-            # Should return error status
-            assert response.status_code == 400, "API should return 400 when Runtime.exec() fails"
-
-            # Job should be marked as failed
-            data = response.json()
-            # Response might be error detail, not job response
-            assert "detail" in data or "error" in str(data).lower()
-        finally:
-            # Restore original runtime
-            if original_runtime:
-                start_job._runtime = original_runtime
+        # Should return error status
+        assert response.status_code == 400, "API should return 400 when Runtime.exec() fails"
+        data = response.json()
+        assert "detail" in data or "error" in str(data).lower()
 
 
 class TestAPIJobStateManagement:
@@ -219,10 +202,7 @@ class TestAPIJobStateManagement:
         # Create job first
         create_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert create_response.status_code == 201
         job_id = create_response.json()["job_id"]
@@ -271,10 +251,7 @@ class TestAPIJobStateManagement:
         for i in range(3):
             response = api_client.post(
                 "/api/jobs",
-                json={
-                    "flow_id": test_flow.flow_id,
-                    "entry_routine_id": "entry",
-                },
+                json={"flow_id": test_flow.flow_id},
             )
             if response.status_code == 201:
                 job_ids.append(response.json()["job_id"])
@@ -300,10 +277,7 @@ class TestAPIJobStateManagement:
         # Create a job
         create_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert create_response.status_code == 201
 
@@ -321,10 +295,7 @@ class TestAPIJobStateManagement:
         # Create a job
         create_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert create_response.status_code == 201
 
@@ -348,10 +319,7 @@ class TestAPIJobExecutionFlow:
         # 1. Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
@@ -387,10 +355,7 @@ class TestAPIJobExecutionFlow:
         for i in range(3):
             response = api_client.post(
                 "/api/jobs",
-                json={
-                    "flow_id": test_flow.flow_id,
-                    "entry_routine_id": "entry",
-                },
+                json={"flow_id": test_flow.flow_id},
             )
             responses.append(response)
 
@@ -415,10 +380,7 @@ class TestAPIJobExecutionFlow:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
@@ -447,18 +409,7 @@ class TestAPIJobErrorHandling:
         # Missing flow_id
         response = api_client.post(
             "/api/jobs",
-            json={
-                "entry_routine_id": "entry",
-            },
-        )
-        assert response.status_code == 422, "Should return 422 for missing required field"
-
-        # Missing entry_routine_id
-        response = api_client.post(
-            "/api/jobs",
-            json={
-                "flow_id": "test_flow",
-            },
+            json={},
         )
         assert response.status_code == 422, "Should return 422 for missing required field"
 
@@ -467,22 +418,14 @@ class TestAPIJobErrorHandling:
         # Negative timeout
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-                "timeout": -1,
-            },
+            json={"flow_id": test_flow.flow_id, "timeout": -1},
         )
         assert response.status_code == 422, "Should reject negative timeout"
 
         # Too large timeout
         response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-                "timeout": 100000,  # > 24 hours
-            },
+            json={"flow_id": test_flow.flow_id, "timeout": 100000},  # > 24 hours
         )
         assert response.status_code == 422, "Should reject timeout > 24 hours"
 
@@ -491,10 +434,7 @@ class TestAPIJobErrorHandling:
         # Create job
         create_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": test_flow.flow_id,
-                "entry_routine_id": "entry",
-            },
+            json={"flow_id": test_flow.flow_id},
         )
         assert create_response.status_code == 201
         job_id = create_response.json()["job_id"]

@@ -16,6 +16,23 @@ class FlowCreateRequest(BaseModel):
     dsl_dict: Optional[Dict[str, Any]] = None  # JSON dict
 
 
+class AddRoutineRequest(BaseModel):
+    """Request model for adding a routine to a flow."""
+
+    routine_id: str
+    object_name: str
+    config: Optional[Dict[str, Any]] = None
+
+
+class AddConnectionRequest(BaseModel):
+    """Request model for adding a connection to a flow."""
+
+    source_routine: str
+    source_event: str
+    target_routine: str
+    target_slot: str
+
+
 class RoutineInfo(BaseModel):
     """Information about a routine."""
 

@@ -2,12 +2,14 @@
 Flow management API routes.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Query
 
 from routilux.api.middleware.auth import RequireAuth
 from routilux.api.models.flow import (
+    AddConnectionRequest,
+    AddRoutineRequest,
     ConnectionInfo,
     FlowCreateRequest,
     FlowListResponse,
@@ -243,42 +245,38 @@ async def list_flow_connections(flow_id: str):
 
 
 @router.post("/flows/{flow_id}/routines", dependencies=[RequireAuth])
-async def add_routine_to_flow(
-    flow_id: str, routine_id: str, object_name: str, config: Optional[Dict[str, Any]] = None
-):
+async def add_routine_to_flow(flow_id: str, request: AddRoutineRequest):
     """Add a routine to an existing flow using factory name or class path.
 
     Args:
         flow_id: Flow identifier.
-        routine_id: Routine identifier in the flow.
-        object_name: Factory name or class path (module.path.ClassName).
-        config: Optional configuration dictionary.
+        request: AddRoutineRequest with routine_id, object_name, and optional config.
     """
     from routilux.api.validators import validate_flow_exists
     from routilux.factory.factory import ObjectFactory
 
     flow = validate_flow_exists(flow_id)
-    validate_routine_id_conflict(flow, routine_id)
+    validate_routine_id_conflict(flow, request.routine_id)
 
     # Try factory first
     factory = ObjectFactory.get_instance()
-    metadata = factory.get_metadata(object_name)
+    metadata = factory.get_metadata(request.object_name)
     
     if metadata is not None:
         # Use factory to create
-        routine = factory.create(object_name, config=config)
+        routine = factory.create(request.object_name, config=request.config)
     else:
         # Try loading as class path
-        if "." not in object_name or object_name.startswith(".") or object_name.endswith("."):
+        if "." not in request.object_name or request.object_name.startswith(".") or request.object_name.endswith("."):
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid object_name format: '{object_name}'. Expected factory name or 'module.path.ClassName'",
+                detail=f"Invalid object_name format: '{request.object_name}'. Expected factory name or 'module.path.ClassName'",
             )
 
         try:
             from importlib import import_module
 
-            module_path, class_name = object_name.rsplit(".", 1)
+            module_path, class_name = request.object_name.rsplit(".", 1)
             if not module_path or not class_name:
                 raise ValueError("Both module_path and class_name must be non-empty")
             module = import_module(module_path)
@@ -290,31 +288,30 @@ async def add_routine_to_flow(
             ) from e
 
         # Apply config
-        if config:
-            routine.set_config(**config)
+        if request.config:
+            routine.set_config(**request.config)
 
     # Add to flow
-    flow.add_routine(routine, routine_id)
+    flow.add_routine(routine, request.routine_id)
     flow_store.add(flow)  # Update stored flow
 
-    return {"routine_id": routine_id, "status": "added"}
+    return {"routine_id": request.routine_id, "status": "added"}
 
 
 @router.post("/flows/{flow_id}/connections", dependencies=[RequireAuth])
-async def add_connection_to_flow(
-    flow_id: str,
-    source_routine: str,
-    source_event: str,
-    target_routine: str,
-    target_slot: str,
-):
+async def add_connection_to_flow(flow_id: str, request: AddConnectionRequest):
     """Add a connection to an existing flow."""
     flow = flow_store.get(flow_id)
     if not flow:
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
 
     try:
-        flow.connect(source_routine, source_event, target_routine, target_slot)
+        flow.connect(
+            request.source_routine,
+            request.source_event,
+            request.target_routine,
+            request.target_slot,
+        )
         flow_store.add(flow)  # Update stored flow
         return {"status": "connected"}
     except Exception as e:

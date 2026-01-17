@@ -111,17 +111,21 @@ class TestStateTransitions:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "state_transition_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "State transition test"}
-            },
+            json={"flow_id": "state_transition_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_data = start_response.json()
         job_id = job_data["job_id"]
-        
+
+        # Post initial data to trigger the flow
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "State transition test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Initial state should be pending, running, or idle (new design)
         assert job_data["status"] in ["pending", "running", "idle"]
         
@@ -152,16 +156,19 @@ class TestStateTransitions:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "state_transition_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Pause resume test"}
-            },
+            json={"flow_id": "state_transition_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Pause resume test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait a bit for job to start
         time.sleep(0.5)
         
@@ -188,16 +195,19 @@ class TestQueuePressure:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "queue_pressure_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Queue pressure test"}
-            },
+            json={"flow_id": "queue_pressure_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Queue pressure test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait for job to start processing
         time.sleep(1.0)
         
@@ -231,19 +241,22 @@ class TestQueuePressure:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "queue_pressure_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Queue test", "index": 1}
-            },
+            json={"flow_id": "queue_pressure_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Queue test", "index": 1}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait a bit
         time.sleep(0.5)
-        
+
         # Get queue status
         response = api_client.get(
             f"/api/jobs/{job_id}/routines/processor/queue-status",
@@ -262,19 +275,22 @@ class TestMonitoringEndpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "comprehensive_demo_flow",
-                "entry_routine_id": "source1",
-                "entry_params": {"data": "Monitoring test"}
-            },
+            json={"flow_id": "comprehensive_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source1", "slot_name": "trigger", "data": {"data": "Monitoring test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait for job to start
         time.sleep(0.5)
-        
+
         # Get monitoring data
         response = api_client.get(f"/api/jobs/{job_id}/monitoring", headers=auth_headers)
         assert response.status_code == 200
@@ -296,19 +312,22 @@ class TestMonitoringEndpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "state_transition_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Routines status test"}
-            },
+            json={"flow_id": "state_transition_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Routines status test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait a bit
         time.sleep(0.5)
-        
+
         # Get routines status
         response = api_client.get(f"/api/jobs/{job_id}/routines/status", headers=auth_headers)
         assert response.status_code == 200
@@ -346,19 +365,22 @@ class TestMonitoringEndpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "state_transition_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Metrics test"}
-            },
+            json={"flow_id": "state_transition_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Metrics test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait for job to complete
         time.sleep(2.0)
-        
+
         # Get metrics
         response = api_client.get(f"/api/jobs/{job_id}/metrics", headers=auth_headers)
         # Metrics may not be available immediately, so 404 is acceptable
@@ -372,19 +394,22 @@ class TestMonitoringEndpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "state_transition_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Trace test"}
-            },
+            json={"flow_id": "state_transition_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Trace test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Wait a bit
         time.sleep(1.0)
-        
+
         # Get trace
         response = api_client.get(f"/api/jobs/{job_id}/trace", headers=auth_headers)
         # Trace may not be available immediately
@@ -402,16 +427,19 @@ class TestBreakpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "debug_demo_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Breakpoint test"}
-            },
+            json={"flow_id": "debug_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Breakpoint test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Create breakpoint
         bp_response = api_client.post(
             f"/api/jobs/{job_id}/breakpoints",
@@ -433,16 +461,19 @@ class TestBreakpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "debug_demo_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "List breakpoints test"}
-            },
+            json={"flow_id": "debug_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
-        
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "List breakpoints test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
+
         # Create breakpoint
         api_client.post(
             f"/api/jobs/{job_id}/breakpoints",
@@ -467,15 +498,18 @@ class TestBreakpoints:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "debug_demo_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Update breakpoint test"}
-            },
+            json={"flow_id": "debug_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Update breakpoint test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
         
         # Create breakpoint
         bp_response = api_client.post(
@@ -491,7 +525,8 @@ class TestBreakpoints:
         
         # Disable breakpoint
         update_response = api_client.put(
-            f"/api/jobs/{job_id}/breakpoints/{bp_id}?enabled=false",
+            f"/api/jobs/{job_id}/breakpoints/{bp_id}",
+            json={"enabled": False},
             headers=auth_headers
         )
         assert update_response.status_code == 200
@@ -507,15 +542,18 @@ class TestDebugFunctionality:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "debug_demo_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Debug session test"}
-            },
+            json={"flow_id": "debug_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Debug session test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
         
         # Wait a bit
         time.sleep(0.5)
@@ -530,15 +568,18 @@ class TestDebugFunctionality:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "debug_demo_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Variables test"}
-            },
+            json={"flow_id": "debug_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Variables test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
         
         # Wait a bit
         time.sleep(0.5)
@@ -556,15 +597,18 @@ class TestDebugFunctionality:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "debug_demo_flow",
-                "entry_routine_id": "source",
-                "entry_params": {"data": "Call stack test"}
-            },
+            json={"flow_id": "debug_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source", "slot_name": "trigger", "data": {"data": "Call stack test"}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
         
         # Wait a bit
         time.sleep(0.5)
@@ -583,15 +627,18 @@ class TestComprehensiveDemo:
         # Start job
         start_response = api_client.post(
             "/api/jobs",
-            json={
-                "flow_id": "comprehensive_demo_flow",
-                "entry_routine_id": "source1",
-                "entry_params": {"data": "Comprehensive test", "index": 1}
-            },
+            json={"flow_id": "comprehensive_demo_flow"},
             headers=auth_headers
         )
         assert start_response.status_code == 201
         job_id = start_response.json()["job_id"]
+
+        post_response = api_client.post(
+            f"/api/jobs/{job_id}/post",
+            json={"routine_id": "source1", "slot_name": "trigger", "data": {"data": "Comprehensive test", "index": 1}},
+            headers=auth_headers
+        )
+        assert post_response.status_code == 200
         
         # Wait for job to process
         time.sleep(2.0)
@@ -618,15 +665,18 @@ class TestComprehensiveDemo:
         for i in range(3):
             start_response = api_client.post(
                 "/api/jobs",
-                json={
-                    "flow_id": "state_transition_flow",
-                    "entry_routine_id": "source",
-                    "entry_params": {"data": f"Concurrent test {i}", "index": i}
-                },
+                json={"flow_id": "state_transition_flow"},
                 headers=auth_headers
             )
             assert start_response.status_code == 201
-            job_ids.append(start_response.json()["job_id"])
+            job_id = start_response.json()["job_id"]
+            job_ids.append(job_id)
+            post_response = api_client.post(
+                f"/api/jobs/{job_id}/post",
+                json={"routine_id": "source", "slot_name": "trigger", "data": {"data": f"Concurrent test {i}", "index": i}},
+                headers=auth_headers
+            )
+            assert post_response.status_code == 200
         
         # Wait a bit
         time.sleep(1.0)

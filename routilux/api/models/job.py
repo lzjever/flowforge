@@ -12,8 +12,6 @@ class JobStartRequest(BaseModel):
     """Request model for starting a job."""
 
     flow_id: str
-    entry_routine_id: str
-    entry_params: Optional[Dict[str, Any]] = None
     timeout: Optional[float] = None
 
     @field_validator("timeout")
@@ -25,6 +23,14 @@ class JobStartRequest(BaseModel):
             if v > 86400:
                 raise ValueError("timeout must be <= 86400 seconds (24 hours)")
         return v
+
+
+class PostToJobRequest(BaseModel):
+    """Request model for posting data to a routine slot in a running job."""
+
+    routine_id: str
+    slot_name: str
+    data: Optional[Dict[str, Any]] = None
 
 
 class JobResponse(BaseModel):
