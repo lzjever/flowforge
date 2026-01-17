@@ -161,7 +161,7 @@ app.include_router(debug.router, prefix="/api", tags=["debug"])
 app.include_router(monitor.router, prefix="/api", tags=["monitor"])
 app.include_router(websocket.router, prefix="/api", tags=["websocket"])
 app.include_router(discovery.router, prefix="/api", tags=["discovery"])
-app.include_router(objects.router, prefix="/api", tags=["objects"])
+app.include_router(objects.router, prefix="/api/factory", tags=["factory"])
 
 
 @app.get("/", dependencies=[RequireAuth])

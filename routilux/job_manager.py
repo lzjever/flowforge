@@ -29,11 +29,15 @@ _global_job_manager_lock = threading.Lock()
 
 
 def _cleanup_global_job_manager() -> None:
-    """Cleanup function for atexit to ensure proper shutdown."""
+    """Cleanup function for atexit to ensure proper shutdown.
+    
+    Uses fast cleanup mode to avoid blocking process exit.
+    """
     global _global_job_manager
     if _global_job_manager is not None:
         try:
-            _global_job_manager.shutdown(wait=False, timeout=1.0)
+            # Fast cleanup: don't wait for threads, let daemon threads terminate naturally
+            _global_job_manager.shutdown(wait=False, timeout=0.0, fast_cleanup=True)
         except Exception:
             pass  # Ignore errors during cleanup
         _global_job_manager = None
@@ -228,7 +232,7 @@ class GlobalJobManager:
 
             time.sleep(0.05)
 
-    def shutdown(self, wait: bool = True, timeout: float | None = None) -> None:
+    def shutdown(self, wait: bool = True, timeout: float | None = None, fast_cleanup: bool = False) -> None:
         """Shutdown global job manager.
 
         This stops all running jobs and shuts down the thread pool.
@@ -236,6 +240,8 @@ class GlobalJobManager:
         Args:
             wait: Whether to wait for jobs to complete.
             timeout: Wait timeout in seconds (only used if wait=True).
+            fast_cleanup: If True, use fast cleanup mode (don't wait for executor threads).
+                         Useful for atexit handlers to avoid blocking process exit.
         """
         with self._lock:
             if self._shutdown:
@@ -245,7 +251,11 @@ class GlobalJobManager:
 
             # Stop all running jobs
             for executor in list(self.running_jobs.values()):
-                executor.stop()
+                if fast_cleanup:
+                    # Fast cleanup: don't wait for threads
+                    executor.stop(wait_thread=False)
+                else:
+                    executor.stop(wait_thread=True)
 
             self.running_jobs.clear()
 

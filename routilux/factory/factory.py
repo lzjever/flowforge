@@ -231,26 +231,60 @@ class ObjectFactory:
 
             return instance
 
-    def list_available(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_available(
+        self, category: Optional[str] = None, object_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """List all available prototypes.
 
         Args:
-            category: Optional category filter.
+            category: Optional category filter (e.g., 'data_generation', 'transformation').
+            object_type: Optional object type filter. 'routine' or 'flow'. 
+                        If None, returns all objects.
 
         Returns:
-            List of dictionaries with prototype information.
+            List of dictionaries with prototype information, including 'object_type' field
+            that distinguishes between 'routine' and 'flow'.
         """
         with self._registry_lock:
             results = []
             for name, proto in self._registry.items():
                 metadata = proto.get("metadata", ObjectMetadata(name=name))
+                
+                # Filter by category
                 if category and metadata.category != category:
+                    continue
+
+                # Determine object type (routine or flow)
+                prototype_class = proto.get("prototype")
+                if prototype_class is None:
+                    # Fallback: try to get from original_instance
+                    original_instance = proto.get("original_instance")
+                    if original_instance:
+                        prototype_class = original_instance.__class__
+                    else:
+                        continue  # Skip if we can't determine type
+
+                # Check if it's a Flow or Routine
+                from routilux.flow.flow import Flow
+                from routilux.routine import Routine
+
+                if issubclass(prototype_class, Flow):
+                    detected_object_type = "flow"
+                elif issubclass(prototype_class, Routine):
+                    detected_object_type = "routine"
+                else:
+                    # Unknown type, skip or mark as unknown
+                    detected_object_type = "unknown"
+
+                # Filter by object_type
+                if object_type and detected_object_type != object_type:
                     continue
 
                 results.append(
                     {
                         "name": name,
-                        "type": proto["type"],
+                        "type": proto["type"],  # Prototype type: "class" or "instance"
+                        "object_type": detected_object_type,  # Object type: "routine" or "flow"
                         "description": metadata.description,
                         "category": metadata.category,
                         "tags": metadata.tags,

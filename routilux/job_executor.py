@@ -600,10 +600,15 @@ class JobExecutor:
         """
         return self._paused
 
-    def stop(self) -> None:
+    def stop(self, wait_thread: bool = True, timeout: float = 1.0) -> None:
         """Stop job execution.
 
         This immediately stops the event loop and cleans up resources.
+
+        Args:
+            wait_thread: Whether to wait for event loop thread to finish. 
+                        Set to False for fast cleanup (e.g., in atexit handlers).
+            timeout: Maximum time to wait for thread (only used if wait_thread=True).
         """
         # CRITICAL fix: Acquire lock before modifying _running flag
         with self._lock:
@@ -616,9 +621,10 @@ class JobExecutor:
                     future.cancel()
             self.active_tasks.clear()
 
-        # Wait for event loop thread
-        if self.event_loop_thread and self.event_loop_thread.is_alive():
-            self.event_loop_thread.join(timeout=1.0)
+        # Wait for event loop thread (if requested)
+        if wait_thread and self.event_loop_thread and self.event_loop_thread.is_alive():
+            self.event_loop_thread.join(timeout=timeout)
+        # Note: If wait_thread=False, the daemon thread will be terminated when process exits
 
         logger.debug(f"Stopped job {self.job_state.job_id}")
 

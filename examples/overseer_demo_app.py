@@ -28,7 +28,12 @@ import time
 from datetime import datetime
 
 from routilux import Flow, Routine
-from routilux.activation_policies import batch_size_policy, immediate_policy
+from routilux.activation_policies import (
+    all_slots_ready_policy,
+    batch_size_policy,
+    immediate_policy,
+    time_interval_policy,
+)
 from routilux.monitoring.registry import MonitoringRegistry
 
 # ===== Comprehensive Routines =====
@@ -310,6 +315,181 @@ class DataSink(Routine):
         print(f"[{name}] ✓ Final result: {received_data}")
 
 
+class RateLimitedProcessor(Routine):
+    """Processes data with rate limiting - demonstrates time_interval_policy"""
+
+    def __init__(self, name="RateLimitedProcessor", interval_seconds=2.0):
+        super().__init__()
+        self.set_config(name=name, interval_seconds=interval_seconds)
+        self.input_slot = self.define_slot("input")
+        self.output_event = self.define_event("output", ["result", "index", "rate_limited_at"])
+        self.set_activation_policy(time_interval_policy(interval_seconds))
+        self.set_logic(self.process)
+
+    def process(self, *slot_data_lists, policy_message, job_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        name = self.get_config("name", "RateLimitedProcessor")
+        
+        print(f"[{name}] Processing {len(input_data)} items (rate-limited)...")
+        
+        # Process all items in the batch
+        for data_dict in input_data:
+            if not isinstance(data_dict, dict):
+                continue
+            data = data_dict.get("data")
+            index = data_dict.get("index", 0)
+            
+            result = f"Rate-limited: {data}"
+            rate_limited_at = datetime.now().isoformat()
+            
+            self.emit("output", job_state=job_state, result=result, index=index, rate_limited_at=rate_limited_at)
+        
+        print(f"[{name}] ✓ Processed {len(input_data)} items")
+
+
+class DataAggregator(Routine):
+    """Aggregates data from multiple sources - demonstrates all_slots_ready_policy"""
+
+    def __init__(self, name="Aggregator"):
+        super().__init__()
+        self.set_config(name=name)
+        self.input1_slot = self.define_slot("input1")
+        self.input2_slot = self.define_slot("input2")
+        self.output_event = self.define_event("output", ["aggregated_data", "sources", "count"])
+        # Wait for both inputs before processing
+        self.set_activation_policy(all_slots_ready_policy())
+        self.set_logic(self.aggregate)
+
+    def aggregate(self, *slot_data_lists, policy_message, job_state):
+        input1_data = slot_data_lists[0] if slot_data_lists and len(slot_data_lists) > 0 and slot_data_lists[0] else []
+        input2_data = slot_data_lists[1] if slot_data_lists and len(slot_data_lists) > 1 and slot_data_lists[1] else []
+        
+        name = self.get_config("name", "Aggregator")
+        
+        # Extract data from both inputs
+        data1 = input1_data[0] if input1_data and isinstance(input1_data[0], dict) else {}
+        data2 = input2_data[0] if input2_data and isinstance(input2_data[0], dict) else {}
+        
+        # Aggregate
+        aggregated = {
+            "from_input1": data1.get("data") if isinstance(data1, dict) else None,
+            "from_input2": data2.get("data") if isinstance(data2, dict) else None,
+            "timestamp": datetime.now().isoformat(),
+        }
+        
+        sources = []
+        if data1:
+            sources.append("input1")
+        if data2:
+            sources.append("input2")
+        
+        print(f"[{name}] Aggregating from {len(sources)} sources: {aggregated}")
+        
+        self.emit("output", job_state=job_state, aggregated_data=aggregated, sources=sources, count=len(sources))
+
+
+class ErrorGenerator(Routine):
+    """Generates errors for testing error handling - demonstrates error scenarios"""
+
+    def __init__(self, name="ErrorGenerator", error_rate=0.3):
+        super().__init__()
+        self.set_config(name=name, error_rate=error_rate)
+        self.input_slot = self.define_slot("input")
+        self.success_event = self.define_event("success", ["result", "index"])
+        self.error_event = self.define_event("error", ["error", "index", "original_data"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self.process)
+
+    def process(self, *slot_data_lists, policy_message, job_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        name = self.get_config("name", "ErrorGenerator")
+        error_rate = self.get_config("error_rate", 0.3)
+        
+        import random
+        
+        for data_dict in input_data:
+            if not isinstance(data_dict, dict):
+                continue
+            data = data_dict.get("data")
+            index = data_dict.get("index", 0)
+            
+            # Randomly generate errors based on error_rate
+            if random.random() < error_rate:
+                error_msg = f"Simulated error processing: {data}"
+                print(f"[{name}] ✗ Error: {error_msg}")
+                self.emit("error", job_state=job_state, error=error_msg, index=index, original_data=data)
+            else:
+                result = f"Successfully processed: {data}"
+                print(f"[{name}] ✓ {result}")
+                self.emit("success", job_state=job_state, result=result, index=index)
+
+
+class MultiSlotProcessor(Routine):
+    """Processes data from multiple slots with different logic"""
+
+    def __init__(self, name="MultiSlotProcessor"):
+        super().__init__()
+        self.set_config(name=name)
+        self.primary_slot = self.define_slot("primary")
+        self.secondary_slot = self.define_slot("secondary")
+        self.output_event = self.define_event("output", ["result", "primary_data", "secondary_data"])
+        # Process when primary has data (secondary is optional)
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self.process)
+
+    def process(self, *slot_data_lists, policy_message, job_state):
+        primary_data = slot_data_lists[0] if slot_data_lists and len(slot_data_lists) > 0 and slot_data_lists[0] else []
+        secondary_data = slot_data_lists[1] if slot_data_lists and len(slot_data_lists) > 1 and slot_data_lists[1] else []
+        
+        name = self.get_config("name", "MultiSlotProcessor")
+        
+        primary = primary_data[0] if primary_data and isinstance(primary_data[0], dict) else {}
+        secondary = secondary_data[0] if secondary_data and isinstance(secondary_data[0], dict) else {}
+        
+        primary_value = primary.get("data") if isinstance(primary, dict) else None
+        secondary_value = secondary.get("data") if isinstance(secondary, dict) else None
+        
+        result = f"Processed primary: {primary_value}, secondary: {secondary_value}"
+        print(f"[{name}] {result}")
+        
+        self.emit("output", job_state=job_state, result=result, primary_data=primary_value, secondary_data=secondary_value)
+
+
+class LoopController(Routine):
+    """Controls loop execution - can emit to create loops in flows"""
+
+    def __init__(self, name="LoopController", max_iterations=5):
+        super().__init__()
+        self.set_config(name=name, max_iterations=max_iterations)
+        self.input_slot = self.define_slot("input")
+        self.continue_event = self.define_event("continue", ["iteration", "data", "should_continue"])
+        self.done_event = self.define_event("done", ["final_data", "iterations"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self.control)
+
+    def control(self, *slot_data_lists, policy_message, job_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        name = self.get_config("name", "LoopController")
+        max_iterations = self.get_config("max_iterations", 5)
+        
+        routine_state = job_state.get_routine_state(self._id) or {}
+        iteration = routine_state.get("iteration", 0) + 1
+        routine_state["iteration"] = iteration
+        job_state.update_routine_state(self._id, routine_state)
+        
+        data_dict = input_data[0] if input_data and isinstance(input_data[0], dict) else {}
+        data = data_dict.get("data") if isinstance(data_dict, dict) else None
+        
+        if iteration < max_iterations:
+            should_continue = True
+            print(f"[{name}] Iteration {iteration}/{max_iterations}: Continuing loop with {data}")
+            self.emit("continue", job_state=job_state, iteration=iteration, data=data, should_continue=should_continue)
+        else:
+            should_continue = False
+            print(f"[{name}] Iteration {iteration}/{max_iterations}: Loop complete")
+            self.emit("done", job_state=job_state, final_data=data, iterations=iteration)
+
+
 # ===== Flows =====
 
 
@@ -407,6 +587,145 @@ def create_comprehensive_demo_flow():
     return flow, src1_id
 
 
+def create_aggregator_flow():
+    """Flow demonstrating aggregator pattern with all_slots_ready_policy"""
+    flow = Flow(flow_id="aggregator_flow")
+
+    source1 = DataSource(name="Source1")
+    source2 = DataSource(name="Source2")
+    aggregator = DataAggregator(name="Aggregator")
+    sink = DataSink(name="Sink")
+
+    src1_id = flow.add_routine(source1, "source1")
+    src2_id = flow.add_routine(source2, "source2")
+    agg_id = flow.add_routine(aggregator, "aggregator")
+    sink_id = flow.add_routine(sink, "sink")
+
+    # Both sources -> aggregator (waits for both)
+    flow.connect(src1_id, "output", agg_id, "input1")
+    flow.connect(src2_id, "output", agg_id, "input2")
+    flow.connect(agg_id, "output", sink_id, "input")
+
+    return flow, src1_id
+
+
+def create_branching_flow():
+    """Flow demonstrating branching pattern - one source to multiple processors"""
+    flow = Flow(flow_id="branching_flow")
+
+    source = DataSource(name="Source")
+    transformer1 = DataTransformer(name="Transformer1", transformation="uppercase")
+    transformer2 = DataTransformer(name="Transformer2", transformation="lowercase")
+    transformer3 = DataTransformer(name="Transformer3", transformation="reverse")
+    aggregator = DataAggregator(name="FinalAggregator")
+    sink = DataSink(name="Sink")
+
+    src_id = flow.add_routine(source, "source")
+    trans1_id = flow.add_routine(transformer1, "transformer1")
+    trans2_id = flow.add_routine(transformer2, "transformer2")
+    trans3_id = flow.add_routine(transformer3, "transformer3")
+    agg_id = flow.add_routine(aggregator, "aggregator")
+    sink_id = flow.add_routine(sink, "sink")
+
+    # Source branches to three transformers
+    flow.connect(src_id, "output", trans1_id, "input")
+    flow.connect(src_id, "output", trans2_id, "input")
+    flow.connect(src_id, "output", trans3_id, "input")
+    # Two transformers -> aggregator, one goes directly to sink
+    flow.connect(trans1_id, "output", agg_id, "input1")
+    flow.connect(trans2_id, "output", agg_id, "input2")
+    flow.connect(trans3_id, "output", sink_id, "input")  # Direct path
+    flow.connect(agg_id, "output", sink_id, "input")  # Aggregated path
+
+    return flow, src_id
+
+
+def create_rate_limited_flow():
+    """Flow demonstrating rate limiting with time_interval_policy"""
+    flow = Flow(flow_id="rate_limited_flow")
+
+    source = DataSource(name="FastSource")
+    rate_limited = RateLimitedProcessor(name="RateLimited", interval_seconds=2.0)
+    sink = DataSink(name="Sink")
+
+    src_id = flow.add_routine(source, "source")
+    rate_id = flow.add_routine(rate_limited, "rate_limited")
+    sink_id = flow.add_routine(sink, "sink")
+
+    flow.connect(src_id, "output", rate_id, "input")
+    flow.connect(rate_id, "output", sink_id, "input")
+
+    return flow, src_id
+
+
+def create_error_handling_flow():
+    """Flow demonstrating error handling scenarios"""
+    flow = Flow(flow_id="error_handling_flow")
+
+    source = DataSource(name="Source")
+    error_gen = ErrorGenerator(name="ErrorGenerator", error_rate=0.4)
+    transformer = DataTransformer(name="Transformer", transformation="uppercase")
+    sink = DataSink(name="Sink")
+
+    src_id = flow.add_routine(source, "source")
+    err_id = flow.add_routine(error_gen, "error_generator")
+    trans_id = flow.add_routine(transformer, "transformer")
+    sink_id = flow.add_routine(sink, "sink")
+
+    # Source -> error generator -> transformer (success path) -> sink
+    flow.connect(src_id, "output", err_id, "input")
+    flow.connect(err_id, "success", trans_id, "input")
+    flow.connect(trans_id, "output", sink_id, "input")
+    # Error path goes directly to sink
+    flow.connect(err_id, "error", sink_id, "input")
+
+    return flow, src_id
+
+
+def create_loop_flow():
+    """Flow demonstrating loop pattern with LoopController"""
+    flow = Flow(flow_id="loop_flow")
+
+    source = DataSource(name="Source")
+    loop_controller = LoopController(name="LoopController", max_iterations=5)
+    processor = DataTransformer(name="Processor", transformation="uppercase")
+    sink = DataSink(name="Sink")
+
+    src_id = flow.add_routine(source, "source")
+    loop_id = flow.add_routine(loop_controller, "loop_controller")
+    proc_id = flow.add_routine(processor, "processor")
+    sink_id = flow.add_routine(sink, "sink")
+
+    # Source -> loop controller -> processor -> loop controller (loop) or sink (done)
+    flow.connect(src_id, "output", loop_id, "input")
+    flow.connect(loop_id, "continue", proc_id, "input")
+    flow.connect(proc_id, "output", loop_id, "input")  # Loop back
+    flow.connect(loop_id, "done", sink_id, "input")
+
+    return flow, src_id
+
+
+def create_multi_slot_flow():
+    """Flow demonstrating multi-slot processing"""
+    flow = Flow(flow_id="multi_slot_flow")
+
+    source1 = DataSource(name="PrimarySource")
+    source2 = DataSource(name="SecondarySource")
+    multi_processor = MultiSlotProcessor(name="MultiSlotProcessor")
+    sink = DataSink(name="Sink")
+
+    src1_id = flow.add_routine(source1, "primary_source")
+    src2_id = flow.add_routine(source2, "secondary_source")
+    multi_id = flow.add_routine(multi_processor, "multi_processor")
+    sink_id = flow.add_routine(sink, "sink")
+
+    flow.connect(src1_id, "output", multi_id, "primary")
+    flow.connect(src2_id, "output", multi_id, "secondary")
+    flow.connect(multi_id, "output", sink_id, "input")
+
+    return flow, src1_id
+
+
 # ===== Main =====
 
 
@@ -426,23 +745,62 @@ def main():
     print("\n" + "=" * 80)
 
     # Enable monitoring BEFORE importing flow_store
-    print("\n[1/4] Enabling monitoring...")
+    print("\n[1/5] Enabling monitoring...")
     MonitoringRegistry.enable()
 
     # Import AFTER enabling monitoring
+    from routilux.factory.factory import ObjectFactory
+    from routilux.factory.metadata import ObjectMetadata
     from routilux.monitoring.flow_registry import FlowRegistry
     from routilux.monitoring.storage import flow_store
+
+    # Register routines in factory
+    print("\n[2/5] Registering routines in factory...")
+    factory = ObjectFactory.get_instance()
+    
+    routine_registrations = [
+        ("data_source", DataSource, "Generates sample data with metadata", "data_generation", ["source", "generator"]),
+        ("data_validator", DataValidator, "Validates input data with batch processing", "validation", ["validator", "batch"]),
+        ("data_transformer", DataTransformer, "Transforms data with various transformations", "transformation", ["transformer", "processor"]),
+        ("queue_pressure_generator", QueuePressureGenerator, "Generates queue pressure for monitoring", "monitoring", ["queue", "pressure"]),
+        ("debug_target", DebugTargetRoutine, "Routine designed for debugging demonstrations", "debugging", ["debug", "inspection"]),
+        ("state_transition_demo", StateTransitionDemo, "Demonstrates job state transitions", "state_management", ["state", "transition"]),
+        ("data_sink", DataSink, "Receives and stores final results", "sink", ["sink", "collector"]),
+        ("rate_limited_processor", RateLimitedProcessor, "Processes data with rate limiting", "rate_limiting", ["rate_limit", "throttle"]),
+        ("data_aggregator", DataAggregator, "Aggregates data from multiple sources", "aggregation", ["aggregator", "merge"]),
+        ("error_generator", ErrorGenerator, "Generates errors for testing error handling", "error_handling", ["error", "testing"]),
+        ("multi_slot_processor", MultiSlotProcessor, "Processes data from multiple slots", "multi_slot", ["multi_slot", "parallel"]),
+        ("loop_controller", LoopController, "Controls loop execution in flows", "control_flow", ["loop", "control"]),
+    ]
+    
+    for name, routine_class, description, category, tags in routine_registrations:
+        metadata = ObjectMetadata(
+            name=name,
+            description=description,
+            category=category,
+            tags=tags,
+            example_config={"name": f"Example{name.title()}"},
+            version="1.0.0"
+        )
+        factory.register(name, routine_class, metadata=metadata)
+        print(f"  ✓ Registered: {name} ({category})")
 
     flows = []
 
     # Create all flows
-    print("\n[2/4] Creating demo flows...")
+    print("\n[3/5] Creating demo flows...")
 
     flows_to_create = [
         ("State Transition Flow", create_state_transition_flow),
         ("Queue Pressure Flow", create_queue_pressure_flow),
         ("Debug Demo Flow", create_debug_demo_flow),
         ("Comprehensive Demo Flow", create_comprehensive_demo_flow),
+        ("Aggregator Flow", create_aggregator_flow),
+        ("Branching Flow", create_branching_flow),
+        ("Rate Limited Flow", create_rate_limited_flow),
+        ("Error Handling Flow", create_error_handling_flow),
+        ("Loop Flow", create_loop_flow),
+        ("Multi Slot Flow", create_multi_slot_flow),
     ]
 
     for i, (name, creator) in enumerate(flows_to_create, 1):
@@ -457,7 +815,7 @@ def main():
         print(f"     ✓ Entry Point: {entry}")
 
     print("\n" + "=" * 80)
-    print("[3/4] All flows created successfully!")
+    print("[4/5] All flows created successfully!")
     print("=" * 80)
     print(f"\nTotal flows created: {len(flows)}")
     print("\nFlow Summary:")
@@ -465,9 +823,22 @@ def main():
         print(f"  • {name:25s} ({flow.flow_id})")
         print(f"    Routines: {len(flow.routines):2d} | Connections: {len(flow.connections):2d}")
 
+    # Register flows in registry by name
+    print("\n[5/5] Registering flows in registry...")
+    registry = FlowRegistry.get_instance()
+    for name, flow, entry in flows:
+        # Use a clean name for registry
+        registry_name = flow.flow_id.replace("_", "-")
+        try:
+            registry.register_by_name(registry_name, flow)
+            print(f"  ✓ Registered flow: {registry_name}")
+        except ValueError:
+            # Already registered, skip
+            pass
+
     # Print testing suggestions
     print("\n" + "=" * 80)
-    print("[4/4] Testing Scenarios")
+    print("Testing Scenarios")
     print("=" * 80)
     print("\n1️⃣  State Transition Flow - Job state transitions")
     print("   Start job from: source")
@@ -487,6 +858,34 @@ def main():
     print("   Start job from: source1 or source2")
     print("   Monitor: State transitions, queue pressure, debug capabilities")
     print("   API: GET /api/jobs/{job_id}/monitoring (complete monitoring data)")
+    print("\n5️⃣  Aggregator Flow - Multiple sources aggregation")
+    print("   Start job from: source1 or source2")
+    print("   Monitor: Aggregator waits for both inputs (all_slots_ready_policy)")
+    print("   API: GET /api/jobs/{job_id}/routines/aggregator/status")
+    print("\n6️⃣  Branching Flow - One source to multiple processors")
+    print("   Start job from: source")
+    print("   Monitor: Parallel processing in multiple transformers")
+    print("   API: GET /api/jobs/{job_id}/routines to see all routine statuses")
+    print("\n7️⃣  Rate Limited Flow - Rate limiting demonstration")
+    print("   Start job from: source")
+    print("   Monitor: Rate-limited processing (time_interval_policy)")
+    print("   API: GET /api/jobs/{job_id}/routines/rate-limited/status")
+    print("\n8️⃣  Error Handling Flow - Error scenarios")
+    print("   Start job from: source")
+    print("   Monitor: Success and error paths")
+    print("   API: GET /api/jobs/{job_id}/routines/error-generator/status")
+    print("\n9️⃣  Loop Flow - Loop pattern demonstration")
+    print("   Start job from: source")
+    print("   Monitor: Loop controller iterations")
+    print("   API: GET /api/jobs/{job_id}/routines/loop-controller/status")
+    print("\n🔟  Multi Slot Flow - Multi-slot processing")
+    print("   Start job from: primary-source or secondary-source")
+    print("   Monitor: Processing from multiple input slots")
+    print("   API: GET /api/jobs/{job_id}/routines/multi-processor/status")
+    print("\n📦 Factory Objects - Registered routines")
+    print("   List: GET /api/objects")
+    print("   Details: GET /api/objects/{name}")
+    print("   Categories: GET /api/objects?category=data_generation")
 
     # Start API server
     print("\n" + "=" * 80)
