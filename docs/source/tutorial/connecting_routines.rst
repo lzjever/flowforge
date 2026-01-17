@@ -1,9 +1,13 @@
-Connecting Routines
-====================
+Connecting Routines with Runtime
+=================================
 
 In this tutorial, you'll learn about different connection patterns in Routilux,
-including one-to-many, many-to-one, and complex branching patterns. You'll also
-understand how the event queue architecture works.
+including one-to-many, many-to-one, and complex branching patterns.
+
+.. note:: **New Architecture**
+
+   This tutorial uses the Runtime-based architecture. All execution goes through
+   Runtime, not direct Flow.execute() calls.
 
 Learning Objectives
 -------------------
@@ -13,8 +17,8 @@ By the end of this tutorial, you'll be able to:
 - Connect one event to multiple slots (fan-out)
 - Connect multiple events to one slot (fan-in)
 - Understand merge strategies for handling multiple inputs
-- Understand the event queue execution model
 - Build branching and converging workflows
+- Register and execute flows with Runtime
 
 Step 1: One-to-Many Connections (Fan-Out)
 ------------------------------------------
@@ -25,54 +29,74 @@ to send the same data to multiple processors:
 .. code-block:: python
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
    class DataSource(Routine):
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.generate)
-           self.output_event = self.define_event("output", ["data"])
-       
-       def generate(self, value=None, **kwargs):
-           value = value or kwargs.get("value", "test")
-           self.emit("output", data=value)
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["data"])
+
+           def generate(slot_data, policy_message, job_state):
+               trigger_list = slot_data.get("trigger", [])
+               value = trigger_list[0].get("value", "test") if trigger_list else "test"
+               self.emit("output", data=value)
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class ProcessorA(Routine):
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.process)
-       
-       def process(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", "")
-           print(f"Processor A received: {data_value}")
+           self.input = self.define_slot("input")
+
+           def process(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               data_value = input_list[0].get("data", "") if input_list else ""
+               print(f"Processor A received: {data_value}")
+
+           self.set_logic(process)
+           self.set_activation_policy(immediate_policy())
 
    class ProcessorB(Routine):
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.process)
-       
-       def process(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", "")
-           print(f"Processor B received: {data_value}")
+           self.input = self.define_slot("input")
+
+           def process(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               data_value = input_list[0].get("data", "") if input_list else ""
+               print(f"Processor B received: {data_value}")
+
+           self.set_logic(process)
+           self.set_activation_policy(immediate_policy())
 
    # Create flow
    flow = Flow(flow_id="fanout_flow")
-   
+
    source = DataSource()
    processor_a = ProcessorA()
    processor_b = ProcessorB()
-   
-   source_id = flow.add_routine(source, "source")
-   a_id = flow.add_routine(processor_a, "processor_a")
-   b_id = flow.add_routine(processor_b, "processor_b")
-   
+
+   flow.add_routine(source, "source")
+   flow.add_routine(processor_a, "processor_a")
+   flow.add_routine(processor_b, "processor_b")
+
    # Connect one event to multiple slots
-   flow.connect(source_id, "output", a_id, "input")
-   flow.connect(source_id, "output", b_id, "input")
-   
-   # Execute
-   job_state = flow.execute(source_id, entry_params={"value": "Hello"})
-   print(f"Status: {job_state.status}")
+   flow.connect("source", "output", "processor_a", "input")
+   flow.connect("source", "output", "processor_b", "input")
+
+   # Register and execute
+   FlowRegistry.get_instance().register_by_name("fanout_flow", flow)
+
+   with Runtime(thread_pool_size=5) as runtime:
+       job_state = runtime.exec("fanout_flow", entry_params={"value": "Hello"})
+       runtime.wait_until_all_jobs_finished(timeout=5.0)
+       print(f"Status: {job_state.status}")
 
 **Expected Output**:
 
@@ -86,438 +110,410 @@ to send the same data to multiple processors:
 
 - One event can connect to multiple slots
 - All connected slots receive the same data
-- Both processors execute (order may vary due to event queue)
+- Both processors execute when data arrives
 - This pattern is called "fan-out"
 
 Step 2: Many-to-One Connections (Fan-In)
-------------------------------------------
+----------------------------------------
 
 Multiple events can connect to the same slot. This is useful for aggregating
-data from multiple sources. By default, new data replaces old data, but you can
-use merge strategies to control how data is combined:
+data from multiple sources. By default, new data replaces old data:
 
 .. code-block:: python
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
    class SourceA(Routine):
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.generate)
-           self.output_event = self.define_event("output", ["data", "source"])
-       
-       def generate(self, **kwargs):
-           self.emit("output", data="Data from A", source="A")
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["data", "source"])
+
+           def generate(slot_data, policy_message, job_state):
+               self.emit("output", data="Data from A", source="A")
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class SourceB(Routine):
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.generate)
-           self.output_event = self.define_event("output", ["data", "source"])
-       
-       def generate(self, **kwargs):
-           self.emit("output", data="Data from B", source="B")
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["data", "source"])
+
+           def generate(slot_data, policy_message, job_state):
+               self.emit("output", data="Data from B", source="B")
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class Aggregator(Routine):
        def __init__(self):
            super().__init__()
-           # Use "append" merge strategy to accumulate data
-           self.input_slot = self.define_slot(
-               "input",
-               handler=self.aggregate,
-               merge_strategy="append"  # Accumulates data in lists
-           )
-       
-       def aggregate(self, data=None, source=None, **kwargs):
-           # With append strategy, data and source are lists (accumulated values)
-           data_value = data or kwargs.get("data", [])
-           source_value = source or kwargs.get("source", [])
-           # Convert to string for display (if it's a list, show the last item)
-           if isinstance(data_value, list) and data_value:
-               data_str = data_value[-1]
-           else:
-               data_str = data_value
-           if isinstance(source_value, list) and source_value:
-               source_str = source_value[-1]
-           else:
-               source_str = source_value
-           print(f"Aggregator received: {data_str} from {source_str}")
-           
-           # Access accumulated data
-           all_data = self.input_slot._data
-           print(f"All accumulated data: {all_data}")
+           self.input = self.define_slot("input")
+
+           def aggregate(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               for item in input_list:
+                   data = item.get("data", "")
+                   source = item.get("source", "unknown")
+                   print(f"Aggregator received: {data} from {source}")
+
+                   # Store in JobState
+                   job_state.shared_log.append({"from": source, "data": data})
+
+           self.set_logic(aggregate)
+           self.set_activation_policy(immediate_policy())
 
    # Create flow
    flow = Flow(flow_id="fanin_flow")
-   
+
    source_a = SourceA()
    source_b = SourceB()
    aggregator = Aggregator()
-   
-   a_id = flow.add_routine(source_a, "source_a")
-   b_id = flow.add_routine(source_b, "source_b")
-   agg_id = flow.add_routine(aggregator, "aggregator")
-   
+
+   flow.add_routine(source_a, "source_a")
+   flow.add_routine(source_b, "source_b")
+   flow.add_routine(aggregator, "aggregator")
+
    # Connect multiple events to one slot
-   flow.connect(a_id, "output", agg_id, "input")
-   flow.connect(b_id, "output", agg_id, "input")
-   
-   # Execute both sources (they run independently)
-   job_state_a = flow.execute(a_id)
-   job_state_b = flow.execute(b_id)
-   
-   print(f"Status A: {job_state_a.status}, Status B: {job_state_b.status}")
+   flow.connect("source_a", "output", "aggregator", "input")
+   flow.connect("source_b", "output", "aggregator", "input")
+
+   # Register and execute
+   FlowRegistry.get_instance().register_by_name("fanin_flow", flow)
+
+   with Runtime(thread_pool_size=5) as runtime:
+       job_state = runtime.exec("fanin_flow")
+       runtime.wait_until_all_jobs_finished(timeout=5.0)
+
+       print(f"Status: {job_state.status}")
+       print(f"Total records: {len(job_state.shared_log)}")
 
 **Expected Output**:
 
 .. code-block:: text
 
    Aggregator received: Data from A from A
-   All accumulated data: {'data': ['Data from A'], 'source': ['A']}
    Aggregator received: Data from B from B
-   All accumulated data: {'data': ['Data from A', 'Data from B'], 'source': ['A', 'B']}
-   Status A: completed, Status B: completed
-
-**Note**: With ``merge_strategy="append"``, the handler receives lists (accumulated values).
-In the first call, ``data`` and ``source`` are lists with one element each. In the second
-call, they contain both values. The example above shows how to extract the latest value
-for display purposes.
-
-**Important Note**: In the current event queue architecture, each ``execute()``
-call creates an independent execution with its own JobState. The aggregator in
-the example above receives data from both executions, but they are separate
-executions. For true aggregation within a single execution, see the aggregation
-pattern in :doc:`advanced_patterns`.
+   Status: completed
+   Total records: 2
 
 **Key Points**:
 
 - Multiple events can connect to the same slot
-- Use ``merge_strategy="append"`` to accumulate data in lists
-- Default strategy is "override" (new data replaces old)
-- Each ``execute()`` call is independent - slot data is NOT shared between executions
+- By default, "override" strategy (new data replaces old in slot queue)
+- Each event arrival triggers the routine
+- Use JobState.shared_log to collect all results
+
+.. warning:: **Event Ordering**
+
+   The order of event processing is not guaranteed in concurrent mode.
+   For guaranteed ordering, use sequential execution or implement
+   explicit synchronization in your logic.
 
 Step 3: Understanding Merge Strategies
 ---------------------------------------
 
-Merge strategies control how data from multiple sources is combined in a slot:
+Merge strategies control how data is handled when multiple events connect to one slot.
+With activation policies, merge behavior is handled differently - the policy
+decides what data to pass to the logic function.
 
 .. code-block:: python
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import all_slots_ready_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
    class Source1(Routine):
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.send)
-           self.output_event = self.define_event("output", ["value"])
-       
-       def send(self, **kwargs):
-           self.emit("output", value=1)
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["value"])
+
+           def generate(slot_data, policy_message, job_state):
+               self.emit("output", value=1)
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class Source2(Routine):
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.send)
-           self.output_event = self.define_event("output", ["value"])
-       
-       def send(self, **kwargs):
-           self.emit("output", value=2)
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["value"])
 
-   class Receiver(Routine):
+           def generate(slot_data, policy_message, job_state):
+               self.emit("output", value=2)
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
+
+   class AllReadyReceiver(Routine):
+       """Receives data only when all slots have data"""
        def __init__(self):
            super().__init__()
-           # Store strategy in _config (required for serialization)
-           self.set_config(strategy="override")
-           self.input_slot = self.define_slot(
-               "input",
-               handler=self.receive,
-               merge_strategy=self.get_config("strategy", "override")
-           )
-       
-       def receive(self, value=None, **kwargs):
-           val = value or kwargs.get("value", None)
-           all_data = self.input_slot._data
-           print(f"Received value: {val}, All data: {all_data}")
+           self.input1 = self.define_slot("input1")
+           self.input2 = self.define_slot("input2")
 
-   # Test with "override" strategy (default)
-   print("=== Override Strategy ===")
-   flow1 = Flow(flow_id="override_flow")
-   s1 = Source1()
-   s2 = Source2()
-   r1 = Receiver()
-   r1.set_config(strategy="override")
-   # Recreate slot with correct strategy
-   r1.input_slot = r1.define_slot("input", handler=r1.receive, merge_strategy="override")
-   
-   s1_id = flow1.add_routine(s1, "source1")
-   s2_id = flow1.add_routine(s2, "source2")
-   r1_id = flow1.add_routine(r1, "receiver")
-   
-   flow1.connect(s1_id, "output", r1_id, "input")
-   flow1.connect(s2_id, "output", r1_id, "input")
-   
-   flow1.execute(s1_id)
-   flow1.execute(s2_id)
+           def receive(slot_data, policy_message, job_state):
+               input1_list = slot_data.get("input1", [])
+               input2_list = slot_data.get("input2", [])
+
+               val1 = input1_list[0].get("value") if input1_list else None
+               val2 = input2_list[0].get("value") if input2_list else None
+
+               print(f"Received: val1={val1}, val2={val2}")
+
+               # Store in JobState
+               job_state.update_routine_state("receiver", {"received_both": True})
+
+           self.set_logic(receive)
+           self.set_activation_policy(all_slots_ready_policy())
+
+   # Create flow
+   flow = Flow(flow_id="merge_flow")
+
+   source1 = Source1()
+   source2 = Source2()
+   receiver = AllReadyReceiver()
+
+   flow.add_routine(source1, "source1")
+   flow.add_routine(source2, "source2")
+   flow.add_routine(receiver, "receiver")
+
+   # Connect: both sources -> receiver
+   flow.connect("source1", "output", "receiver", "input1")
+   flow.connect("source2", "output", "receiver", "input2")
+
+   # Register and execute
+   FlowRegistry.get_instance().register_by_name("merge_flow", flow)
+
+   with Runtime(thread_pool_size=5) as runtime:
+       job_state = runtime.exec("merge_flow")
+       runtime.wait_until_all_jobs_finished(timeout=5.0)
+
+       print(f"Status: {job_state.status}")
+       receiver_state = job_state.get_routine_state("receiver", {})
+       print(f"Receiver state: {receiver_state}")
 
 **Expected Output**:
 
 .. code-block:: text
 
-   === Override Strategy ===
-   Received value: 1, All data: {'value': 1}
-   Received value: 2, All data: {'value': 2}
-
-**Available Merge Strategies**:
-
-1. **"override"** (default): New data replaces old data
-2. **"append"**: Values are appended to lists (useful for aggregation)
-3. **Custom function**: Define your own merge logic
+   Received: val1=1, val2=2
+   Status: completed
+   Receiver state: {'received_both': True}
 
 **Key Points**:
 
-- "override" is the default and most common strategy
-- "append" is useful when you need to collect multiple values
-- Custom merge strategies allow complex data combination logic
+- Activation policies control when routines execute
+- ``all_slots_ready_policy`` waits for all slots to have data
+- Slot data is provided as a dictionary to the logic function
+- Use ``slot_data.get("slot_name", [])`` pattern to access data
 
 Step 4: Complex Branching Patterns
------------------------------------
+----------------------------------
 
 You can create complex workflows with branching and converging paths:
 
 .. code-block:: python
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
    class DataSource(Routine):
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.generate)
-           self.output_event = self.define_event("output", ["data"])
-       
-       def generate(self, value=None, **kwargs):
-           value = value or kwargs.get("value", "test")
-           self.emit("output", data=value)
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["data"])
+
+           def generate(slot_data, policy_message, job_state):
+               trigger_list = slot_data.get("trigger", [])
+               value = trigger_list[0].get("value", "test") if trigger_list else "test"
+               self.emit("output", data=value)
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class Processor1(Routine):
        def __init__(self):
            super().__init__()
-           # Store name in _config (required for serialization)
            self.set_config(name="UPPER")
-           self.input_slot = self.define_slot("input", handler=self.process)
-           self.output_event = self.define_event("output", ["result"])
-       
-       def process(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", "")
-           name = self.get_config("name", "P1")
-           result = f"{name}: {data_value.upper()}"
-           self.emit("output", result=result)
+           self.input = self.define_slot("input")
+           self.output = self.define_event("output", ["result"])
+
+           def process(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               data_value = input_list[0].get("data", "") if input_list else ""
+               name = self.get_config("name", "P1")
+               result = f"{name}: {data_value.upper()}"
+               print(f"Processor1: {result}")
+               self.emit("output", result=result)
+
+           self.set_logic(process)
+           self.set_activation_policy(immediate_policy())
 
    class Processor2(Routine):
        def __init__(self):
            super().__init__()
-           # Store name in _config (required for serialization)
            self.set_config(name="lower")
-           self.input_slot = self.define_slot("input", handler=self.process)
-           self.output_event = self.define_event("output", ["result"])
-       
-       def process(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", "")
-           name = self.get_config("name", "P2")
-           result = f"{name}: {data_value.lower()}"
-           self.emit("output", result=result)
+           self.input = self.define_slot("input")
+           self.output = self.define_event("output", ["result"])
 
-   class Aggregator(Routine):
+           def process(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               data_value = input_list[0].get("data", "") if input_list else ""
+               name = self.get_config("name", "P2")
+               result = f"{name}: {data_value.lower()}"
+               print(f"Processor2: {result}")
+               self.emit("output", result=result)
+
+           self.set_logic(process)
+           self.set_activation_policy(immediate_policy())
+
+   class FinalAggregator(Routine):
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot(
-               "input",
-               handler=self.aggregate,
-               merge_strategy="append"
-           )
-       
-       def aggregate(self, result=None, **kwargs):
-           # With append strategy, result is a list
-           result_value = result or kwargs.get("result", [])
-           # Extract the latest result for display
-           if isinstance(result_value, list):
-               for r in result_value:
-                   print(f"Aggregated: {r}")
-           else:
-               print(f"Aggregated: {result_value}")
+           self.input = self.define_slot("input")
+
+           def aggregate(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               results = []
+               for item in input_list:
+                   result = item.get("result", "")
+                   if result:
+                       results.append(result)
+                       print(f"Final Aggregator received: {result}")
+
+               # Store all results
+               job_state.update_routine_state("aggregator", {"results": results})
+
+           self.set_logic(aggregate)
+           self.set_activation_policy(immediate_policy())
 
    # Create flow with branching pattern
    flow = Flow(flow_id="branching_flow")
-   
+
    source = DataSource()
-   proc1 = Processor1()  # Name stored in _config
-   proc2 = Processor2()  # Name stored in _config
-   aggregator = Aggregator()
-   
-   source_id = flow.add_routine(source, "source")
-   p1_id = flow.add_routine(proc1, "processor1")
-   p2_id = flow.add_routine(proc2, "processor2")
-   agg_id = flow.add_routine(aggregator, "aggregator")
-   
+   proc1 = Processor1()
+   proc2 = Processor2()
+   aggregator = FinalAggregator()
+
+   flow.add_routine(source, "source")
+   flow.add_routine(proc1, "processor1")
+   flow.add_routine(proc2, "processor2")
+   flow.add_routine(aggregator, "aggregator")
+
    # Branch: source -> processor1 and processor2
-   flow.connect(source_id, "output", p1_id, "input")
-   flow.connect(source_id, "output", p2_id, "input")
-   
+   flow.connect("source", "output", "processor1", "input")
+   flow.connect("source", "output", "processor2", "input")
+
    # Converge: processor1 and processor2 -> aggregator
-   flow.connect(p1_id, "output", agg_id, "input")
-   flow.connect(p2_id, "output", agg_id, "input")
-   
-   # Execute
-   job_state = flow.execute(source_id, entry_params={"value": "Hello"})
-   print(f"Status: {job_state.status}")
+   flow.connect("processor1", "output", "aggregator", "input")
+   flow.connect("processor2", "output", "aggregator", "input")
+
+   # Register and execute
+   FlowRegistry.get_instance().register_by_name("branching_flow", flow)
+
+   with Runtime(thread_pool_size=5) as runtime:
+       job_state = runtime.exec("branching_flow", entry_params={"value": "Hello"})
+       runtime.wait_until_all_jobs_finished(timeout=5.0)
+
+       print(f"Status: {job_state.status}")
+       agg_state = job_state.get_routine_state("aggregator", {})
+       print(f"Collected {len(agg_state.get('results', []))} results")
 
 **Expected Output**:
 
 .. code-block:: text
 
-   Aggregated: UPPER: HELLO
-   Aggregated: lower: hello
+   Processor1: UPPER: HELLO
+   Processor2: lower: hello
+   Final Aggregator received: UPPER: HELLO
+   Final Aggregator received: lower: hello
    Status: completed
+   Collected 2 results
 
 **Key Points**:
 
 - You can create complex branching and converging patterns
-- Multiple processors can run in parallel (if using concurrent execution)
+- Multiple processors can execute independently
 - Aggregators can collect results from multiple sources
-- The event queue ensures all tasks are processed
-
-Step 5: Understanding the Event Queue Architecture
-----------------------------------------------------
-
-Routilux uses an event queue pattern for execution. Understanding this helps
-you write better workflows:
-
-.. code-block:: python
-   :linenos:
-
-   from routilux import Flow, Routine
-   import time
-
-   class SlowProcessor(Routine):
-       def __init__(self):
-           super().__init__()
-           # Store configuration in _config (required for serialization)
-           self.set_config(name="Slow", delay=0.1)
-           self.input_slot = self.define_slot("input", handler=self.process)
-           self.output_event = self.define_event("output", ["result"])
-       
-       def process(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", "")
-           delay = self.get_config("delay", 0.1)
-           name = self.get_config("name", "Slow")
-           time.sleep(delay)  # Simulate slow processing
-           result = f"{name} processed: {data_value}"
-           print(f"[{time.time():.2f}] {result}")
-           self.emit("output", result=result)
-
-   class FastProcessor(Routine):
-       def __init__(self):
-           super().__init__()
-           # Store configuration in _config (required for serialization)
-           self.set_config(name="Fast")
-           self.input_slot = self.define_slot("input", handler=self.process)
-       
-       def process(self, result=None, **kwargs):
-           result_value = result or kwargs.get("result", "")
-           name = self.get_config("name", "Fast")
-           print(f"[{time.time():.2f}] {name} received: {result_value}")
-
-   # Create flow
-   flow = Flow(flow_id="queue_demo")
-   
-   slow = SlowProcessor()
-   slow.set_config(name="Slow", delay=0.2)
-   fast = FastProcessor()
-   fast.set_config(name="Fast")
-   
-   slow_id = flow.add_routine(slow, "slow")
-   fast_id = flow.add_routine(fast, "fast")
-   
-   flow.connect(slow_id, "output", fast_id, "input")
-   
-   # Execute
-   print("Starting execution...")
-   job_state = flow.execute(slow_id, entry_params={"data": "test"})
-   print(f"Status: {job_state.status}")
-
-**Expected Output** (timing may vary):
-
-.. code-block:: text
-
-   Starting execution...
-   [1234567890.12] Slow processed: test
-   [1234567890.32] Fast received: Slow processed: test
-   Status: completed
-
-**Key Points**:
-
-- ``emit()`` is non-blocking - it returns immediately after enqueuing tasks
-- Tasks are processed in queue order (fair scheduling)
-- The event queue ensures all tasks complete before execution finishes
-- This architecture supports both sequential and concurrent execution modes
+- Use JobState for collecting results across executions
 
 Common Pitfalls
 ---------------
 
-**Pitfall 1: Expecting data to be shared between execute() calls**
+**Pitfall 1: Forgetting to register flows**
 
 .. code-block:: python
-   :emphasize-lines: 2-3
+   :emphasize-lines: 5
 
-   # Wrong: Each execute() creates a new JobState
-   flow.execute(source1_id)  # Creates JobState 1
-   flow.execute(source2_id)  # Creates JobState 2
-   # Aggregator won't see both messages in the same execution!
+   flow = Flow(flow_id="my_flow")
+   # ... add routines ...
 
-**Solution**: Use a single ``execute()`` with multiple ``emit()`` calls from
-the same routine, or use the aggregation pattern (see :doc:`advanced_patterns`).
+   # Missing: FlowRegistry.get_instance().register_by_name("my_flow", flow)
+   runtime = Runtime()
+   job_state = runtime.exec("my_flow")  # ValueError!
 
-**Pitfall 2: Using wrong merge strategy**
+**Solution**: Always register flows before execution.
+
+**Pitfall 2: Not using activation policy**
 
 .. code-block:: python
-   :emphasize-lines: 2
+   :emphasize-lines: 6
 
-   # Wrong: Using "override" when you need to accumulate
-   self.input_slot = self.define_slot("input", handler=self.aggregate)
-   # Later data will overwrite earlier data!
+   class MyRoutine(Routine):
+       def __init__(self):
+           super().__init__()
+           self.input = self.define_slot("input")
+           # Missing: self.set_activation_policy(...)
 
-**Solution**: Use ``merge_strategy="append"`` when you need to collect multiple
-values.
+**Solution**: Always set an activation policy.
 
-**Pitfall 3: Not understanding event queue order**
+**Pitfall 3: Wrong slot data access pattern**
 
 .. code-block:: python
    :emphasize-lines: 3
 
-   # Don't assume depth-first execution order
-   # Tasks are processed in queue order, not call-stack order
-   self.emit("event1", data="A")
-   self.emit("event2", data="B")
-   # Order may vary depending on queue processing
+   def logic(slot_data, policy_message, job_state):
+       data = slot_data["input"]  # Might return None!
+       value = data[0]["value"]  # IndexError if None!
 
-**Solution**: Don't rely on execution order unless using sequential mode with
-single worker. Use explicit synchronization if order matters.
+**Solution**: Use safe access pattern:
+
+.. code-block:: python
+
+   def logic(slot_data, policy_message, job_state):
+       input_list = slot_data.get("input", [])
+       value = input_list[0].get("value", "") if input_list else ""
 
 Best Practices
 --------------
 
-1. **Use descriptive connection patterns**: Make your workflow structure clear
-2. **Choose appropriate merge strategies**: "override" for replacement, "append" for accumulation
-3. **Understand event queue behavior**: Tasks are processed fairly, not depth-first
-4. **Test with different execution modes**: Sequential vs concurrent may behave differently
-5. **Use aggregation patterns for collecting data**: See :doc:`advanced_patterns` for proper patterns
+1. **Use descriptive routine IDs**: Makes connections clearer
+2. **Always register flows**: With FlowRegistry before execution
+3. **Always set activation policy**: Routines won't execute without it
+4. **Use safe slot data access**: ``slot_data.get("slot_name", [])``
+5. **Use JobState for results**: Store collected data in JobState
+6. **Use context manager**: ``with Runtime() as runtime:`` for cleanup
 
 Next Steps
 ----------
 
 Now that you understand connections, let's move on to :doc:`data_flow` to learn
-about parameter mapping, data extraction, and how data flows through your
+about data extraction, parameter mapping, and how data flows through your
 workflows.
-

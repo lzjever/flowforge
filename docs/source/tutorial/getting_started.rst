@@ -1,9 +1,14 @@
-Getting Started
-================
+Getting Started with Runtime
+=============================
 
 In this first tutorial, you'll learn the basics of Routilux by creating a simple
-routine and connecting it in a flow. By the end, you'll understand the core
-concepts of routines, slots, events, and flows.
+routine, connecting it in a flow, and executing it with Runtime. By the end, you'll
+understand the core concepts of routines, slots, events, flows, and Runtime.
+
+.. note:: **New Architecture**
+
+   This tutorial uses the new Runtime-based architecture with activation policies
+   and logic functions. This is the current recommended way to use Routilux.
 
 Learning Objectives
 -------------------
@@ -11,20 +16,23 @@ Learning Objectives
 By the end of this tutorial, you'll be able to:
 
 - Create a custom routine with slots and events
-- Define slot handlers to process incoming data
-- Emit events to send data to other routines
-- Create a flow and add routines to it
-- Connect routines together
-- Execute a flow and check results
+- Set activation policies to control when routines execute
+- Define logic functions for processing data
+- Create a flow and connect routines together
+- Register flows with FlowRegistry
+- Execute flows with Runtime
+- Wait for completion and check results
 
 Step 1: Understanding Routines, Slots, and Events
 --------------------------------------------------
 
-Routilux is built around three core concepts:
+Routilux is built around four core concepts:
 
 - **Routine**: A unit of work that processes data
 - **Slot**: An input mechanism that receives data (think of it as a "receiver")
 - **Event**: An output mechanism that sends data (think of it as a "sender")
+- **Activation Policy**: Controls when a routine executes
+- **Logic Function**: Contains the actual processing logic
 
 Let's create a simple routine that receives data through a slot and emits it
 through an event:
@@ -33,36 +41,47 @@ through an event:
    :linenos:
 
    from routilux import Routine
+   from routilux.activation_policies import immediate_policy
 
    class Greeter(Routine):
        """A simple routine that greets someone"""
-       
+
        def __init__(self):
            super().__init__()
-           # Define an input slot with a handler function
-           self.input_slot = self.define_slot("input", handler=self.greet)
+           # Define an input slot
+           self.input_slot = self.define_slot("input")
            # Define an output event
            self.output_event = self.define_event("output", ["message"])
-       
-       def greet(self, name=None, **kwargs):
-           """Handle incoming data and emit a greeting"""
-           # Extract the name from kwargs if not provided directly
-           name = name or kwargs.get("name", "World")
-           
-           # Create a greeting message
-           message = f"Hello, {name}!"
-           
-           # Emit the message through the output event
-           # Flow is automatically detected from routine context
-           self.emit("output", message=message)
+
+           # Define logic function
+           def greet(slot_data, policy_message, job_state):
+               # Extract data from slot_data
+               input_list = slot_data.get("input", [])
+               name = input_list[0].get("name", "World") if input_list else "World"
+
+               # Create a greeting message
+               message = f"Hello, {name}!"
+
+               # Emit the message through the output event
+               self.emit("output", message=message)
+
+           # Set logic and activation policy
+           self.set_logic(greet)
+           self.set_activation_policy(immediate_policy())
 
 **Key Points**:
 
 - All routines inherit from ``Routine`` base class
-- Slots are defined with ``define_slot()`` and require a handler function
-- Events are defined with ``define_event()`` and specify parameter names
-- The handler function receives data through keyword arguments
-- ``emit()`` automatically detects the flow from routine context (no need to pass flow parameter)
+- Slots are defined with ``define_slot()`` (no handler needed)
+- Events are defined with ``define_event()`` with parameter names
+- Logic functions receive ``slot_data``, ``policy_message``, and ``job_state``
+- Activation policies control when the routine executes
+- **Routines MUST have an activation policy set, or they will never execute**
+
+.. warning:: **Required: Activation Policy**
+
+   Routines without activation policies will never execute. Always set
+   ``set_activation_policy()`` after defining your logic function.
 
 Step 2: Creating Your First Flow
 ---------------------------------
@@ -75,62 +94,84 @@ Let's create a flow and add our Greeter routine:
 
    from routilux import Flow
 
-   # Create a flow
+   # Create a flow with a unique ID
    flow = Flow(flow_id="greeting_flow")
-   
+
    # Create a routine instance
    greeter = Greeter()
-   
-   # Add the routine to the flow
+
+   # Add the routine to the flow with an ID
    greeter_id = flow.add_routine(greeter, "greeter")
-   
+
    print(f"Added routine with ID: {greeter_id}")
 
 **Expected Output**:
 
 .. code-block:: text
 
-   Added routine with ID: <some-uuid>
+   Added routine with ID: greeter
 
 **Key Points**:
 
-- Each flow has a unique ``flow_id`` (auto-generated if not provided)
-- Routines are added to flows with ``add_routine()`` which returns a routine ID
-- The routine ID is used to reference the routine when making connections
+- Each flow has a unique ``flow_id`` (required parameter)
+- Routines are added to flows with ``add_routine()``
+- The routine ID is a string you provide (not auto-generated)
+- You use the routine ID when making connections
 
-Step 3: Executing a Flow
--------------------------
+Step 3: Registering and Executing with Runtime
+----------------------------------------------
 
-To execute a flow, we need to call ``execute()`` on an entry routine. An entry
-routine is one that has a slot we can trigger directly. Let's execute our flow:
+To execute a flow, we need to:
+1. Register it with FlowRegistry
+2. Create a Runtime
+3. Execute using Runtime
 
 .. code-block:: python
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
+   # Define routine
    class Greeter(Routine):
        def __init__(self):
            super().__init__()
-           # Use "trigger" as the slot name for entry routines
-           self.trigger_slot = self.define_slot("trigger", handler=self.greet)
+           self.input_slot = self.define_slot("input")
            self.output_event = self.define_event("output", ["message"])
-       
-       def greet(self, name=None, **kwargs):
-           name = name or kwargs.get("name", "World")
-           message = f"Hello, {name}!"
-           self.emit("output", message=message)
 
-   # Create and execute flow
+           def greet(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               name = input_list[0].get("name", "World") if input_list else "World"
+               message = f"Hello, {name}!"
+               self.emit("output", message=message)
+
+           self.set_logic(greet)
+           self.set_activation_policy(immediate_policy())
+
+   # Create flow
    flow = Flow(flow_id="greeting_flow")
    greeter = Greeter()
    greeter_id = flow.add_routine(greeter, "greeter")
-   
-   # Execute the flow with entry parameters
-   job_state = flow.execute(greeter_id, entry_params={"name": "Routilux"})
-   
+
+   # Register flow with FlowRegistry (REQUIRED!)
+   registry = FlowRegistry.get_instance()
+   registry.register_by_name("greeting_flow", flow)
+
+   # Create Runtime and execute
+   runtime = Runtime(thread_pool_size=5)
+   job_state = runtime.exec("greeting_flow", entry_params={"name": "Routilux"})
+
+   # Wait for completion
+   runtime.wait_until_all_jobs_finished(timeout=5.0)
+
    # Check execution status
    print(f"Execution status: {job_state.status}")
+
+   # Cleanup
+   runtime.shutdown(wait=True)
 
 **Expected Output**:
 
@@ -140,13 +181,18 @@ routine is one that has a slot we can trigger directly. Let's execute our flow:
 
 **Key Points**:
 
-- ``execute()`` takes a routine ID and optional ``entry_params``
-- Entry parameters are passed to the entry routine's slot handler
-- ``execute()`` returns a ``JobState`` object that tracks execution status
-- The status will be "completed" if execution succeeds
+- **Flows MUST be registered** with FlowRegistry before execution
+- ``runtime.exec()`` returns immediately with a ``JobState`` object
+- Use ``wait_until_all_jobs_finished()`` to wait for completion
+- Always call ``runtime.shutdown()`` or use context manager for cleanup
+
+.. warning:: **Common Pitfall: Not Registering Flow**
+
+   Forgetting to register the flow will cause a ``ValueError`` when calling
+   ``runtime.exec()``. Always register flows before execution.
 
 Step 4: Connecting Two Routines
----------------------------------
+--------------------------------
 
 Now let's create two routines and connect them. The first routine will send data
 to the second:
@@ -154,53 +200,68 @@ to the second:
 .. code-block:: python
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
    class DataSource(Routine):
        """A routine that generates data"""
-       
+
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.generate)
-           self.output_event = self.define_event("output", ["data"])
-       
-       def generate(self, value=None, **kwargs):
-           value = value or kwargs.get("value", "default")
-           self.emit("output", data=value)
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["data"])
+
+           def generate(slot_data, policy_message, job_state):
+               trigger_list = slot_data.get("trigger", [])
+               value = trigger_list[0].get("value", "default") if trigger_list else "default"
+               self.emit("output", data=value)
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class DataProcessor(Routine):
        """A routine that processes data"""
-       
+
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.process)
-           self.output_event = self.define_event("output", ["result"])
-       
-       def process(self, data=None, **kwargs):
-           # Extract data from kwargs
-           data_value = data or kwargs.get("data", "no data")
-           result = f"Processed: {data_value}"
-           self.emit("output", result=result)
-           print(f"Processor received: {data_value}, produced: {result}")
+           self.input = self.define_slot("input")
+           self.output = self.define_event("output", ["result"])
+
+           def process(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               data_value = input_list[0].get("data", "no data") if input_list else "no data"
+               result = f"Processed: {data_value}"
+               print(f"Processor received: {data_value}, produced: {result}")
+               self.emit("output", result=result)
+
+           self.set_logic(process)
+           self.set_activation_policy(immediate_policy())
 
    # Create flow
    flow = Flow(flow_id="data_flow")
-   
+
    # Create routines
    source = DataSource()
    processor = DataProcessor()
-   
+
    # Add to flow
-   source_id = flow.add_routine(source, "source")
-   processor_id = flow.add_routine(processor, "processor")
-   
+   flow.add_routine(source, "source")
+   flow.add_routine(processor, "processor")
+
    # Connect: source's output event -> processor's input slot
-   flow.connect(source_id, "output", processor_id, "input")
-   
-   # Execute from source
-   job_state = flow.execute(source_id, entry_params={"value": "Hello"})
-   
-   print(f"Status: {job_state.status}")
+   flow.connect("source", "output", "processor", "input")
+
+   # Register and execute
+   FlowRegistry.get_instance().register_by_name("data_flow", flow)
+
+   with Runtime(thread_pool_size=5) as runtime:
+       job_state = runtime.exec("data_flow", entry_params={"value": "Hello"})
+       runtime.wait_until_all_jobs_finished(timeout=5.0)
+
+       print(f"Status: {job_state.status}")
 
 **Expected Output**:
 
@@ -212,12 +273,13 @@ to the second:
 **Key Points**:
 
 - ``connect()`` links an event from one routine to a slot in another
-- The connection format is: ``flow.connect(source_id, "event_name", target_id, "slot_name")``
+- The connection format is: ``flow.connect("source_id", "event_name", "target_id", "slot_name")``
+- Use routine IDs (strings) instead of UUID objects
 - When the source emits an event, connected slots automatically receive the data
-- Data flows automatically through connections
+- Use context manager (``with Runtime()``) for automatic cleanup
 
 Step 5: Complete Example - A Simple Pipeline
-----------------------------------------------
+--------------------------------------------
 
 Let's create a complete example with three routines connected in a pipeline:
 
@@ -225,67 +287,88 @@ Let's create a complete example with three routines connected in a pipeline:
    :name: getting_started_complete
    :linenos:
 
-   from routilux import Flow, Routine
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+   from routilux import Flow
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
 
    class DataSource(Routine):
        """Generate data"""
-       
+
        def __init__(self):
            super().__init__()
-           self.trigger_slot = self.define_slot("trigger", handler=self.generate)
-           self.output_event = self.define_event("output", ["data"])
-       
-       def generate(self, text=None, **kwargs):
-           text = text or kwargs.get("text", "default")
-           self.emit("output", data=text)
+           self.trigger = self.define_slot("trigger")
+           self.output = self.define_event("output", ["data"])
+
+           def generate(slot_data, policy_message, job_state):
+               trigger_list = slot_data.get("trigger", [])
+               text = trigger_list[0].get("text", "default") if trigger_list else "default"
+               self.emit("output", data=text)
+
+           self.set_logic(generate)
+           self.set_activation_policy(immediate_policy())
 
    class Transformer(Routine):
        """Transform data to uppercase"""
-       
+
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.transform)
-           self.output_event = self.define_event("output", ["transformed"])
-       
-       def transform(self, data=None, **kwargs):
-           data_value = data or kwargs.get("data", "")
-           transformed = data_value.upper()
-           self.emit("output", transformed=transformed)
+           self.input = self.define_slot("input")
+           self.output = self.define_event("output", ["transformed"])
+
+           def transform(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               data_value = input_list[0].get("data", "") if input_list else ""
+               transformed = data_value.upper()
+               self.emit("output", transformed=transformed)
+
+           self.set_logic(transform)
+           self.set_activation_policy(immediate_policy())
 
    class Printer(Routine):
        """Print the final result"""
-       
+
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.print_result)
-       
-       def print_result(self, transformed=None, **kwargs):
-           result = transformed or kwargs.get("transformed", "")
-           print(f"Final result: {result}")
+           self.input = self.define_slot("input")
+
+           def print_result(slot_data, policy_message, job_state):
+               input_list = slot_data.get("input", [])
+               result = input_list[0].get("transformed", "") if input_list else ""
+               print(f"Final result: {result}")
+
+           self.set_logic(print_result)
+           self.set_activation_policy(immediate_policy())
 
    def main():
        # Create flow
        flow = Flow(flow_id="pipeline")
-       
+
        # Create routines
        source = DataSource()
        transformer = Transformer()
        printer = Printer()
-       
+
        # Add to flow
-       source_id = flow.add_routine(source, "source")
-       transformer_id = flow.add_routine(transformer, "transformer")
-       printer_id = flow.add_routine(printer, "printer")
-       
+       flow.add_routine(source, "source")
+       flow.add_routine(transformer, "transformer")
+       flow.add_routine(printer, "printer")
+
        # Connect: source -> transformer -> printer
-       flow.connect(source_id, "output", transformer_id, "input")
-       flow.connect(transformer_id, "output", printer_id, "input")
-       
+       flow.connect("source", "output", "transformer", "input")
+       flow.connect("transformer", "output", "printer", "input")
+
+       # Register
+       FlowRegistry.get_instance().register_by_name("pipeline", flow)
+
        # Execute
        print("Executing pipeline...")
-       job_state = flow.execute(source_id, entry_params={"text": "hello, routilux!"})
-       
-       print(f"Pipeline status: {job_state.status}")
+       with Runtime(thread_pool_size=5) as runtime:
+           job_state = runtime.exec("pipeline", entry_params={"text": "hello, routilux!"})
+           runtime.wait_until_all_jobs_finished(timeout=5.0)
+
+           print(f"Pipeline status: {job_state.status}")
 
    if __name__ == "__main__":
        main()
@@ -304,6 +387,7 @@ Let's create a complete example with three routines connected in a pipeline:
 - Data flows automatically from one routine to the next
 - Each routine processes data and passes it along
 - The flow executes all connected routines automatically
+- Use context manager for automatic Runtime cleanup
 
 Common Pitfalls
 ---------------
@@ -316,68 +400,93 @@ Common Pitfalls
    class MyRoutine(Routine):
        def __init__(self):
            # Missing super().__init__()!
-           self.input_slot = self.define_slot("input", handler=self.process)
+           self.input_slot = self.define_slot("input")
            # This will fail because _slots and _events are not initialized
 
 **Solution**: Always call ``super().__init__()`` first in your ``__init__`` method.
 
-**Pitfall 2: Not defining events before emitting**
+**Pitfall 2: Not Setting Activation Policy**
 
 .. code-block:: python
-   :emphasize-lines: 6
+   :emphasize-lines: 11
 
    class MyRoutine(Routine):
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.process)
-           # Forgot to define the event!
-       
-       def process(self, **kwargs):
-           self.emit("output", data="value")  # Error: event not defined!
+           self.input = self.define_slot("input")
+           self.output = self.define_event("output", ["result"])
 
-**Solution**: Always define events with ``define_event()`` before using them in ``emit()``.
+           def process(slot_data, policy_message, job_state):
+               self.emit("output", result="done")
 
-**Pitfall 3: Wrong parameter names in emit()**
+           self.set_logic(process)
+           # Missing: self.set_activation_policy(immediate_policy())!
 
-.. code-block:: python
-   :emphasize-lines: 4, 7
+**Solution**: Always set an activation policy, or the routine will never execute.
 
-   class MyRoutine(Routine):
-       def __init__(self):
-           super().__init__()
-           self.output_event = self.define_event("output", ["message"])  # Defined as "message"
-       
-       def process(self, **kwargs):
-           self.emit("output", msg="Hello")  # Wrong parameter name "msg"!
-
-**Solution**: Use the exact parameter names specified in ``define_event()``. In this case, use ``message="Hello"``.
-
-**Pitfall 4: Not handling data extraction properly**
+**Pitfall 3: Not Registering Flow**
 
 .. code-block:: python
-   :emphasize-lines: 1
+   :emphasize-lines: 4
 
-   def process(self, data, **kwargs):
-       # This assumes 'data' is always provided as a positional argument
-       # But it might come as a keyword argument instead
-       result = f"Processed: {data}"
+   flow = Flow(flow_id="my_flow")
+   # ... add routines ...
 
-**Solution**: Use the pattern ``data = data or kwargs.get("data", default_value)`` to handle both cases.
+   # Missing: FlowRegistry.get_instance().register_by_name("my_flow", flow)
+   runtime = Runtime()
+   job_state = runtime.exec("my_flow")  # ValueError: Flow not found!
+
+**Solution**: Always register flows with FlowRegistry before execution.
+
+**Pitfall 4: Not Waiting for Completion**
+
+.. code-block:: python
+   :emphasize-lines: 3
+
+   job_state = runtime.exec("my_flow")
+   print(f"Status: {job_state.status}")  # Likely "running", not "completed"!
+
+**Solution**: Always wait for completion before checking status:
+
+.. code-block:: python
+
+   job_state = runtime.exec("my_flow")
+   runtime.wait_until_all_jobs_finished(timeout=5.0)
+   print(f"Status: {job_state.status}")  # Now "completed" or "failed"
+
+**Pitfall 5: Not Using Context Manager**
+
+.. code-block:: python
+   :emphasize-lines: 5
+
+   runtime = Runtime(thread_pool_size=10)
+   job_state = runtime.exec("my_flow")
+   # Missing: runtime.shutdown(wait=True)
+   # Thread pool not cleaned up!
+
+**Solution**: Use context manager for automatic cleanup:
+
+.. code-block:: python
+
+   with Runtime(thread_pool_size=10) as runtime:
+       job_state = runtime.exec("my_flow")
+       runtime.wait_until_all_jobs_finished(timeout=5.0)
+   # Thread pool automatically cleaned up
 
 Best Practices
 --------------
 
 1. **Use descriptive names**: Choose clear names for routines, slots, and events
 2. **Define events with parameter names**: Always specify parameter names in ``define_event()``
-3. **Handle data extraction flexibly**: Use ``data or kwargs.get("data", default)`` pattern
-4. **Use "trigger" for entry slots**: Convention for slots that start execution
-5. **Print or log in handlers**: Helps with debugging during development
-6. **Check job_state.status**: Always verify execution completed successfully
+3. **Always set activation policy**: Routines won't execute without it
+4. **Always register flows**: Use FlowRegistry before execution
+5. **Always wait for completion**: Use ``wait_until_all_jobs_finished()`` or ``job.wait()``
+6. **Use context manager**: ``with Runtime() as runtime:`` for automatic cleanup
+7. **Check job_state.status**: Verify execution completed successfully
 
 Next Steps
 ----------
 
 Now that you understand the basics, let's move on to :doc:`connecting_routines`
 to learn about more complex connection patterns, multiple connections, and
-understanding the event queue architecture.
-
+understanding the event flow.

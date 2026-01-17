@@ -68,9 +68,9 @@ state management, and workflow orchestration capabilities.
    introduction
    installation
    quickstart
+   http_api
    user_guide/index
    api_reference/index
-   examples/index
    features
    testing
 

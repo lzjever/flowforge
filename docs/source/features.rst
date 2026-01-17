@@ -1,183 +1,298 @@
 Features
 ========
 
-This document provides a comprehensive overview of routilux features.
+This document provides a comprehensive overview of Routilux features.
 
-Core Features
--------------
+Core Architecture
+-----------------
 
-Routine Base Class
-~~~~~~~~~~~~~~~~~~~
+Runtime-Based Execution
+~~~~~~~~~~~~~~~~~~~~~~~
 
-* ✅ Support for defining 0-N slots (input slots)
-* ✅ Support for defining 0-N events (output events)
-* ✅ Provides ``stats()`` method returning state dictionary
-* ✅ Supports serialization
-* ✅ Automatically records emitted events to execution history
+* ✅ **Centralized Runtime**: Single execution manager with shared thread pool
+* ✅ **Non-Blocking Execution**: ``runtime.exec()`` returns immediately
+* ✅ **Job Registry**: Thread-safe tracking of all active jobs
+* ✅ **Event Routing**: Automatic delivery of events to connected slots
+* ✅ **Flow Registry**: Centralized flow registration and lookup
+
+Event-Driven Architecture
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* ✅ **Slots (Input)**: Queue-based input mechanisms for receiving data
+* ✅ **Events (Output)**: Non-blocking output mechanisms for emitting data
+* ✅ **Many-to-Many Connections**: Flexible event-to-slot wiring
+* ✅ **Activation Policies**: Declarative control over routine execution
+* ✅ **Unified Task Queue**: Fair scheduling for all executions
+
+State Management
+~~~~~~~~~~~~~~~~
+
+* ✅ **JobState**: Execution state tracking per job
+* ✅ **State Isolation**: Each execution has independent state
+* ✅ **Serialization Support**: Save/resume workflow execution
+* ✅ **Shared Data**: ``shared_data`` and ``shared_log`` for cross-routine communication
+* ✅ **Execution History**: Complete record of all routine executions
+
+Core Components
+---------------
+
+Routine
+~~~~~~~
+
+* ✅ **0-N Slots**: Define any number of input slots
+* ✅ **0-N Events**: Define any number of output events
+* ✅ **Activation Policies**: Control when routines execute
+* ✅ **Logic Functions**: Separate logic from activation control
+* ✅ **Configuration Dictionary**: ``_config`` for static parameters
+* ✅ **Serialization Support**: Full save/load capability
+
+.. warning:: **Critical Constraints**
+
+   * Routines MUST have parameterless constructors
+   * Routines MUST NOT modify instance variables during execution
+   * All execution state MUST be stored in JobState
 
 Slot (Input Slot)
 ~~~~~~~~~~~~~~~~~
 
-* ✅ Can connect to multiple events (many-to-many relationship)
-* ✅ Supports data reception and processing
-* ✅ Supports merge strategies (override, append, custom)
-* ✅ Intelligent parameter matching (supports various handler signatures)
-* ✅ Exception handling (handler exceptions don't interrupt flow)
+* ✅ **Queue-Based Storage**: Thread-safe data queuing
+* ✅ **Configurable Capacity**: Custom queue size and watermark
+* ✅ **Many-to-One Support**: Multiple events can connect to one slot
+* ✅ **Automatic Cleanup**: Data cleared based on watermark threshold
+* ✅ **Thread-Safe Operations**: All operations are thread-safe
 
 Event (Output Event)
 ~~~~~~~~~~~~~~~~~~~~
 
-* ✅ Can connect to multiple slots (many-to-many relationship)
-* ✅ Supports event triggering and data passing
-* ✅ Passes data through Connection with parameter mapping
-* ✅ Automatically recorded to execution history
+* ✅ **One-to-Many Support**: Single event connects to multiple slots
+* ✅ **Non-Blocking Emit**: Returns immediately after enqueuing
+* ✅ **Parameter Mapping**: Automatic data transformation via connections
+* ✅ **Auto-Detection**: Flow automatically detected from execution context
 
 Connection
 ~~~~~~~~~~
 
-* ✅ Connects event to slot
-* ✅ Supports parameter mapping
-* ✅ Automatically applies parameter mapping
+* ✅ **Event-to-Slot Links**: Connects event output to slot input
+* ✅ **Parameter Mapping**: Transform data between event and slot
+* ✅ **Many-to-Many Patterns**: Support complex connection topologies
+* ✅ **Validation**: Automatic validation of connection integrity
 
 Flow (Workflow Manager)
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-* ✅ Manages multiple Routine nodes
-* ✅ Manages connections between nodes
-* ✅ Executes workflows (execute)
-* ✅ Resumes execution (resume)
-* ✅ Supports serialization/deserialization
-* ✅ Execution tracking (ExecutionTracker)
+* ✅ **Routine Management**: Add, remove, and query routines
+* ✅ **Connection Management**: Create and manage event-to-slot connections
+* ✅ **Execution Template**: Flow definition is separate from execution
+* ✅ **Validation**: Built-in flow structure validation
+* ✅ **Serialization**: Save/load flow definitions
 
-JobState (Job State)
-~~~~~~~~~~~~~~~~~~~~
+Runtime (Execution Manager)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* ✅ Records flow execution state
-* ✅ Records state of each routine
-* ✅ Records execution history (ExecutionRecord)
-* ✅ Supports serialization/deserialization
+* ✅ **Thread Pool Management**: Shared worker threads for all jobs
+* ✅ **Job Lifecycle**: Start, monitor, pause, resume, cancel jobs
+* ✅ **Job Registry**: Thread-safe tracking of active jobs
+* ✅ **Wait Management**: Wait for completion with timeouts
+* ✅ **Context Manager Support**: Automatic resource cleanup
 
-ExecutionTracker
-~~~~~~~~~~~~~~~~
+JobState (Execution State)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* ✅ Tracks routine execution
-* ✅ Tracks event flow
-* ✅ Performance metrics (execution time, success rate, etc.)
-* ✅ Supports getting routine and flow performance metrics
+* ✅ **Status Tracking**: pending, running, completed, failed, cancelled
+* ✅ **Routine States**: Per-routine execution state dictionaries
+* ✅ **Execution History**: Complete record with timestamps
+* ✅ **Shared Data**: ``shared_data`` for cross-routine communication
+* ✅ **Shared Log**: ``shared_log`` for append-only logging
+* ✅ **Serialization**: Save/load for workflow resumption
 
-Advanced Features
------------------
+Activation Policies
+-------------------
 
-Event-Driven Execution
-~~~~~~~~~~~~~~~~~~~~~~~
-
-* ✅ Event-driven execution mechanism
-* ✅ Flow context automatically passed
-* ✅ Data passed through Connection with parameter mapping
-
-Intelligent Parameter Matching
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* ✅ Automatic handler parameter matching
-* ✅ Supports ``**kwargs``, single parameter, multiple parameters
-* ✅ Automatically extracts values from dictionaries
-
-Execution Tracking
-~~~~~~~~~~~~~~~~~~
-
-* ✅ Automatically records all emitted events
-* ✅ Records execution time
-* ✅ Records start/end times
-* ✅ Performance metrics statistics
-
-Error Handling
-~~~~~~~~~~~~~~
-
-* ✅ Automatic error capture and recording
-* ✅ Error information recorded to JobState
-* ✅ Errors recorded to execution history
-* ✅ Multiple error handling strategies (STOP, CONTINUE, RETRY, SKIP)
-
-Persistence
-~~~~~~~~~~~
-
-* ✅ Complete JobState persistence (serialize/deserialize)
-* ✅ Flow structure persistence (serialize/deserialize)
-* ✅ Supports JSON format
-* ✅ Full serialization support for all core classes
-
-Error Handling Strategies
--------------------------
-
-STOP Strategy
-~~~~~~~~~~~~~
-
-Stop execution immediately when an error occurs.
-
-CONTINUE Strategy
+Built-in Policies
 ~~~~~~~~~~~~~~~~~
 
-Continue execution despite errors, logging them for review.
+* ✅ **immediate_policy**: Execute immediately when any slot receives data
+* ✅ **all_slots_ready_policy**: Execute when all slots have at least one item
+* ✅ **batch_size_policy**: Execute when all slots have at least N items
+* ✅ **time_interval_policy**: Execute at most once per time interval
+* ✅ **custom_policy**: Define your own activation logic
 
-RETRY Strategy
-~~~~~~~~~~~~~~
+.. warning:: **Required Configuration**
 
-Retry the failed routine with configurable:
+   Routines MUST have an activation policy set. Without it, the routine
+   will never execute.
 
-* Maximum retry attempts
-* Retry delay
-* Retry backoff multiplier
-* Retryable exception types
+Error Handling
+--------------
 
-SKIP Strategy
-~~~~~~~~~~~~~
+Error Strategies
+~~~~~~~~~~~~~~~~
 
-Skip the failed routine and continue with the next routine.
+* ✅ **STOP**: Stop execution immediately on error
+* ✅ **CONTINUE**: Continue execution despite errors, log them
+* ✅ **RETRY**: Retry failed routine with configurable attempts and delay
+* ✅ **SKIP**: Skip failed routine and continue with next
 
-Pause and Resume
-----------------
+Error Handler Features
+~~~~~~~~~~~~~~~~~~~~~~
 
-* ✅ **Pause Functionality**: Flow.pause() supports pausing execution
-* ✅ **Resume Functionality**: Flow.resume() supports resuming execution
-* ✅ **Cancel Functionality**: Flow.cancel() supports cancelling execution
-* ✅ **Pause Point Recording**: Automatically records pause points and checkpoint information to JobState
-* ✅ **Design Optimization**: Execution control (pause/resume/cancel) handled by Flow, JobState only responsible for state recording
+* ✅ **Flow-Level Configuration**: Set error handler per flow
+* ✅ **Retry Configuration**: Max retries, delay, backoff multiplier
+* ✅ **Retryable Exception Types**: Specify which exceptions to retry
+* ✅ **Error Logging**: Automatic error capture and recording
 
 Concurrent Execution
 --------------------
 
-* ✅ **Unified Event Queue**: Both sequential and concurrent modes use the same queue-based mechanism
-* ✅ **Non-blocking emit()**: Event emission returns immediately, tasks execute asynchronously
-* ✅ **Fair Scheduling**: Tasks are processed fairly, preventing long chains from blocking shorter ones
-* ✅ **Concurrent Execution Strategy**: Support for parallel execution using thread pools (controlled by max_workers)
-* ✅ **Event Loop**: Background thread processes tasks from the queue
-* ✅ **Thread Pool Management**: Configurable thread pool size (max_workers)
-* ✅ **Dependency Handling**: Automatic dependency detection and waiting
-* ✅ **Thread Safety**: All state updates are thread-safe
-* ✅ **Performance Optimization**: Significant speedup for I/O-bound operations
-* ✅ **Strategy Switching**: Dynamic switching between sequential and concurrent execution
-* ✅ **Serialization Support**: Concurrent flows can be serialized and deserialized
-* ✅ **Task Completion Tracking**: Automatic tracking of active concurrent tasks
-* ✅ **Wait for Completion**: ``wait_for_completion()`` method to wait for all tasks with optional timeout
-* ✅ **Resource Cleanup**: ``shutdown()`` method for proper thread pool cleanup
+Threading Model
+~~~~~~~~~~~~~~~
 
-Concurrent Execution Details
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* ✅ **Shared Thread Pool**: All jobs share same worker threads
+* ✅ **Configurable Pool Size**: Adjust based on workload
+* ✅ **Thread-Safe Operations**: All state updates are thread-safe
+* ✅ **Fair Scheduling**: Tasks processed fairly across jobs
 
-**Execution Strategies:**
-- ``sequential``: Routines execute one after another (default)
-- ``concurrent``: Routines execute in parallel using thread pools
+Execution Features
+~~~~~~~~~~~~~~~~~~
 
-**Key Features:**
-- Automatic detection of parallelizable routines
-- Thread pool management with configurable size
-- Thread-safe state management
-- Error handling in concurrent scenarios
-- Performance monitoring for concurrent execution
+* ✅ **Non-Blocking emit()**: Event emission returns immediately
+* ✅ **Automatic Flow Detection**: No need to pass flow explicitly
+* ✅ **Independent Event Loops**: Each job has its own event loop
+* ✅ **Wait Management**: Wait for specific jobs or all jobs
 
-**Use Cases:**
-- Multiple API calls that can run in parallel
-- Concurrent data fetching from multiple sources
-- Parallel processing of independent tasks
-- I/O-bound operations that benefit from concurrency
+Serialization and Persistence
+-----------------------------
 
+Flow Serialization
+~~~~~~~~~~~~~~~~~~
+
+* ✅ **Save Flow Structure**: Serialize routines and connections
+* ✅ **Load Flow Structure**: Reconstruct flow from saved data
+* ✅ **DSL Support**: Import/export flows as YAML or JSON
+
+JobState Serialization
+~~~~~~~~~~~~~~~~~~~~~~
+
+* ✅ **Save Execution State**: Persist job state to disk
+* ✅ **Load Execution State**: Resume from saved state
+* ✅ **Job Recovery**: Resume interrupted workflows
+
+.. note:: **Serialization Format**
+
+   Uses ``serilux`` library for JSON-based serialization. All core
+   classes are serializable when following the parameterless constructor
+   constraint.
+
+Monitoring and Debugging
+-------------------------
+
+Monitoring Features
+~~~~~~~~~~~~~~~~~~~
+
+* ✅ **Zero Overhead When Disabled**: No performance impact when off
+* ✅ **Execution Metrics**: Track duration, event counts, errors
+* ✅ **Event Streaming**: Real-time event push via WebSocket
+* ✅ **Performance Metrics**: Per-routine and per-job metrics
+* ✅ **Execution History**: Complete audit trail
+
+Debugging Features
+~~~~~~~~~~~~~~~~~~
+
+* ✅ **Breakpoints**: Conditional breakpoints for pausing execution
+* ✅ **Debug Sessions**: Interactive debugging with step/continue
+* ✅ **Variable Inspection**: Inspect slot data and job state
+* ✅ **Expression Evaluation**: Safe expression evaluation in context
+
+HTTP API and WebSocket
+----------------------
+
+REST API
+~~~~~~~~
+
+* ✅ **Flow Management**: CRUD operations for flows
+* ✅ **Job Management**: Start, pause, resume, cancel jobs
+* ✅ **Breakpoint Management**: Set/clear breakpoints
+* ✅ **Debug Operations**: Step, continue, evaluate expressions
+* ✅ **Monitoring Endpoints**: Get metrics and status
+* ✅ **Health Checks**: API health and status endpoint
+
+WebSocket Endpoints
+~~~~~~~~~~~~~~~~~~~
+
+* ✅ **Job Monitor**: Real-time events for specific job
+* ✅ **Job Debug**: Debug-specific event streaming
+* ✅ **Flow Monitor**: Aggregated events for flow's jobs
+* ✅ **Generic WebSocket**: Dynamic subscription to multiple jobs
+
+.. warning:: **Production Security**
+
+   When using the API in production:
+   * **Always enable API key authentication**: ``ROUTILUX_API_KEY_ENABLED=true``
+   * **Use strong API keys**: Generate cryptographically random keys
+   * **Enable rate limiting**: ``ROUTILUX_RATE_LIMIT_ENABLED=true``
+   * **Restrict CORS**: Set ``ROUTILUX_CORS_ORIGINS`` to specific origins
+   * **Use HTTPS**: Always use HTTPS in production
+
+See :doc:`http_api` for complete security documentation.
+
+Optional Features
+-----------------
+
+API Server (Optional)
+~~~~~~~~~~~~~~~~~~~~~
+
+* ✅ **FastAPI-Based**: Modern async web framework
+* ✅ **Interactive Documentation**: Auto-generated Swagger UI and ReDoc
+* ✅ **Rate Limiting**: Configurable per-IP rate limiting
+* ✅ **CORS Support**: Configurable CORS origins
+* ✅ **GZip Compression**: Automatic response compression
+
+DSL Support (Optional)
+~~~~~~~~~~~~~~~~~~~~~~
+
+* ✅ **YAML Format**: Define flows in YAML
+* ✅ **JSON Format**: Define flows in JSON
+* ✅ **Import/Export**: Convert flows to/from DSL
+* ✅ **Validation**: Validate DSL structure before execution
+
+Built-in Routines
+~~~~~~~~~~~~~~~~~
+
+* ✅ **Control Flow**: Branch, merge, loop routines
+* ✅ **Data Processing**: Map, filter, reduce routines
+* ✅ **Text Processing**: String manipulation routines
+* ✅ **Utilities**: Logging, timing utilities
+
+Advanced Features
+-----------------
+
+Flow Builder
+~~~~~~~~~~~~
+
+* ✅ **Dynamic Flow Construction**: Build flows programmatically
+* ✅ **Validation**: Validate flow structure before execution
+* ✅ **Factory Support**: Create routines from factory or class path
+* ✅ **Connection Management**: Add/remove connections dynamically
+
+Output Handling
+~~~~~~~~~~~~~~~
+
+* ✅ **Multiple Handlers**: Queue, callback, null handlers
+* ✅ **Output Logging**: Automatic output capture
+* ✅ **Custom Handlers**: Implement custom output handlers
+
+Thread Safety
+~~~~~~~~~~~~~
+
+* ✅ **Lock-Protected State**: All shared state protected by locks
+* ✅ **ContextVars**: Thread-local storage for execution context
+* ✅ **Atomic Operations**: Thread-safe state updates
+* ✅ **No Race Conditions**: Designed for concurrent execution
+
+Extensibility
+~~~~~~~~~~~~~
+
+* ✅ **Custom Routines**: Easy to create custom routine classes
+* ✅ **Custom Policies**: Create custom activation policies
+* ✅ **Custom Handlers**: Implement custom output handlers
+* ✅ **Plugin System**: Factory pattern for routine registration

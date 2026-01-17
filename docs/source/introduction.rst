@@ -30,17 +30,24 @@ interfaces. This makes your workflows easy to understand, test, and maintain.
 
 .. code-block:: python
 
+   from routilux import Routine
+   from routilux.activation_policies import immediate_policy
+
    class DataProcessor(Routine):
        def __init__(self):
            super().__init__()
            # Define input slot
-           self.input_slot = self.define_slot("input", handler=self.process)
+           self.input_slot = self.define_slot("input")
            # Define output event
            self.output_event = self.define_event("output", ["result"])
-       
-       def process(self, data):
-           result = f"Processed: {data}"
-           self.emit("output", result=result)
+
+           def logic(slot_data, policy_message, job_state):
+               data = slot_data.get("input", [{}])[0].get("data", "")
+               result = f"Processed: {data}"
+               self.emit("output", result=result)
+
+           self.set_logic(logic)
+           self.set_activation_policy(immediate_policy())
 
 **🔗 Flexible Connections**
 
@@ -49,26 +56,40 @@ Routilux handles the complexity while you focus on your business logic.
 
 .. code-block:: python
 
+   from routilux import Flow
+
+   flow = Flow(flow_id="my_pipeline")
+
    # One event to multiple slots
-   flow.connect(source_id, "output", processor1_id, "input")
-   flow.connect(source_id, "output", processor2_id, "input")
-   
-   # Multiple events to one slot (with merge strategy)
-   flow.connect(source1_id, "output", aggregator_id, "input")
-   flow.connect(source2_id, "output", aggregator_id, "input")
+   flow.connect("source", "output", "processor1", "input")
+   flow.connect("source", "output", "processor2", "input")
 
-**⚡ Event Queue Architecture**
+   # Multiple events to one slot
+   flow.connect("source1", "output", "aggregator", "input")
+   flow.connect("source2", "output", "aggregator", "input")
 
-Routilux uses an event queue pattern for workflow execution:
-- Non-blocking ``emit()``: Returns immediately after enqueuing tasks
-- Unified execution model: Sequential and concurrent modes use the same queue mechanism
-- Fair scheduling: Tasks are processed fairly, preventing long chains from blocking shorter ones
-- Automatic flow detection: ``emit()`` automatically detects flow from routine context
+**⚡ Runtime-Based Execution**
+
+Routilux uses a centralized Runtime for all flow execution:
+
+- **Shared Thread Pool**: Efficient resource utilization across all flows
+- **Non-Blocking Execution**: ``runtime.exec()`` returns immediately
+- **Job Tracking**: Thread-safe job registry for monitoring
+- **Event Routing**: Automatic event delivery to connected slots
 
 .. code-block:: python
 
-   flow = Flow(execution_strategy="concurrent", max_workers=5)
-   # Tasks execute in parallel via event queue
+   from routilux.runtime import Runtime
+   from routilux.monitoring.flow_registry import FlowRegistry
+
+   # Register flow
+   registry = FlowRegistry.get_instance()
+   registry.register_by_name("my_pipeline", flow)
+
+   # Execute with Runtime
+   runtime = Runtime(thread_pool_size=10)
+   job_state = runtime.exec("my_pipeline", entry_params={"data": "hello"})
+   runtime.wait_until_all_jobs_finished(timeout=5.0)
 
 **🛡️ Robust Error Handling**
 
@@ -78,10 +99,11 @@ workflows that handle failures gracefully.
 .. code-block:: python
 
    from routilux import ErrorHandler, ErrorStrategy
-   
+
    error_handler = ErrorHandler(
        strategy=ErrorStrategy.RETRY,
-       max_retries=3
+       max_retries=3,
+       retry_delay=1.0
    )
    flow.set_error_handler(error_handler)
 
@@ -91,11 +113,13 @@ Serialize and deserialize entire flows for persistence, recovery, and distribute
 
 .. code-block:: python
 
-   # Serialize
-   flow_data = flow.serialize()
-   
-   # Deserialize
-   new_flow = Flow.deserialize(flow_data)
+   # Save job state
+   job_state.save("state.json")
+
+   # Resume from saved state
+   from routilux.job_state import JobState
+   saved_state = JobState.load("state.json")
+   runtime.exec("my_flow", job_state=saved_state)
 
 **📈 Comprehensive Tracking**
 
@@ -107,21 +131,19 @@ Key Features
 
 * **Slots and Events Mechanism**: Clear distinction between input slots and output events
 * **Many-to-Many Connections**: Flexible connection relationships between routines
-* **Merge Strategies**: Control how data from multiple sources is combined (override, append, custom)
-* **State Management**: Unified ``stats()`` method for tracking routine state
-* **Flow Manager**: Workflow orchestration, persistence, and recovery
-* **JobState Management**: Execution state recording and recovery functionality
+* **State Management**: Unified ``JobState`` for tracking execution state
+* **Flow Management**: Workflow orchestration, persistence, and recovery
+* **Runtime Execution**: Centralized execution manager with thread pool
 * **Error Handling**: Multiple error handling strategies (STOP, CONTINUE, RETRY, SKIP)
 * **Execution Tracking**: Comprehensive execution tracking and performance monitoring
-* **Event Queue Architecture**: Non-blocking emit(), unified execution model, fair scheduling
-* **Concurrent Execution**: Thread pool-based parallel execution for I/O-bound operations (via event queue)
+* **Concurrent Execution**: Thread pool-based parallel execution for I/O-bound operations
 * **Serialization Support**: Full serialization/deserialization support for persistence
-* **Built-in Routines**: Rich set of ready-to-use routines for common tasks
+* **HTTP API & WebSocket**: Optional REST API and real-time WebSocket monitoring
 
 Architecture and Responsibility Separation
 ------------------------------------------
 
-Understanding the clear separation of responsibilities between ``Flow``, ``Routine``, and ``JobState``
+Understanding the clear separation of responsibilities between ``Flow``, ``Routine``, ``Runtime``, and ``JobState``
 is **crucial** for effectively using Routilux. This separation enables flexible, scalable, and maintainable
 workflow applications.
 
@@ -129,59 +151,82 @@ workflow applications.
 
 **Routine** - Function Implementation
    Routines define **what** each node does. They are pure function implementations:
-   
+
    * **Slots** (0-N): Input mechanisms that receive data
    * **Events** (0-N): Output mechanisms that emit data
    * **Configuration** (``_config``): Static configuration parameters (set via ``set_config()``)
+   * **Activation Policy**: When to execute the routine
+   * **Logic Function**: What the routine does
    * **No Runtime State**: Routines **must not** modify instance variables during execution
-   * **Execution Context Access**: Use ``get_execution_context()`` to access flow, job_state, and routine_id
-   
-   **Key Constraint**: The same routine object can be used by multiple concurrent executions.
-   Modifying instance variables would cause data corruption. All execution-specific state
-   must be stored in ``JobState``.
+
+   .. warning:: **Critical Constraint: Parameterless Constructor**
+
+      Routines MUST have a parameterless constructor for serialization support:
+
+      .. code-block:: python
+
+         # ❌ WRONG - Will break serialization
+         class MyRoutine(Routine):
+             def __init__(self, name: str):
+                 super().__init__()
+                 self.name = name
+
+         # ✅ CORRECT - Use _config dictionary
+         class MyRoutine(Routine):
+             def __init__(self):
+                 super().__init__()
+                 self.set_config(name="my_routine", timeout=30)
+
+   .. warning:: **Critical Constraint: No Instance Variable Modification**
+
+      During execution, routines MUST NOT modify instance variables. All execution state
+      must be stored in JobState:
+
+      .. code-block:: python
+
+         # ❌ WRONG - Breaks execution isolation
+         def logic(slot_data, policy_message, job_state):
+             self.counter += 1  # Data race!
+
+         # ✅ CORRECT - Use JobState
+         def logic(slot_data, policy_message, job_state):
+             counter = job_state.get_routine_state(routine_id, {}).get("count", 0)
+             job_state.update_routine_state(routine_id, {"count": counter + 1})
 
 **Flow** - Workflow Structure and Configuration
    Flows define **how** routines are connected and configured:
-   
+
    * **Workflow Structure**: Defines which routines exist and how they're connected
-   * **Static Configuration**: Node-level static parameters (execution strategy, max_workers, etc.)
-   * **Connection Management**: Links events to slots with parameter mapping
-   * **Execution Orchestration**: Manages event queue, task scheduling, and thread pool
+   * **Static Configuration**: Flow-level parameters (error handler, timeout, etc.)
+   * **Connection Management**: Links events to slots
    * **No Runtime State**: Flow does **not** store execution state or business data
-   
-   **Key Point**: Flow is a **template** that can be executed multiple times, each with its own ``JobState``.
+
+   .. note:: **Flow is a Template**
+
+      Flow is a **template** that can be executed multiple times, each with its own ``JobState``.
+      Multiple executions = multiple independent ``JobState`` objects.
+
+**Runtime** - Centralized Execution Manager
+   Runtime manages all flow executions:
+
+   * **Thread Pool**: Shared worker threads for all flows
+   * **Job Registry**: Thread-safe tracking of active jobs
+   * **Event Routing**: Delivers events to connected slots
+   * **Non-Blocking Execution**: Returns immediately after starting
 
 **JobState** - Runtime State and Business Data
    JobState stores **everything** related to a specific execution:
-   
-   * **Execution State**: Status (pending, running, paused, completed, failed, cancelled)
+
+   * **Execution State**: Status (pending, running, completed, failed, cancelled)
    * **Routine States**: Per-routine execution state dictionaries
    * **Execution History**: Complete record of all routine executions with timestamps
-   * **Business Data**: ``shared_data`` (read/write) and ``shared_log`` (append-only) for intermediate data
+   * **Business Data**: ``shared_data`` (read/write) and ``shared_log`` (append-only)
    * **Output Handling**: ``output_handler`` and ``output_log`` for execution-specific output
-   * **Deferred Events**: Events to be emitted on resume
-   * **Pause Points**: Checkpoints for resumption
-   
-   **Key Point**: Each ``flow.execute()`` call creates a **new, independent** ``JobState``.
-   Multiple executions = multiple independent ``JobState`` objects.
-
-**Connection**
-   Links events to slots with optional parameter mapping. Supports flexible
-   connection patterns.
-
-**ErrorHandler**
-   Configurable error handling with multiple strategies.
-
-**ExecutionTracker**
-   Monitors execution performance and event flow.
 
 **Why This Separation Matters**:
 
 1. **Multiple Executions**: The same flow can run multiple times concurrently, each with its own state
-2. **Serialization**: Flow (structure) and JobState (state) are serialized separately, enabling:
-   - Workflow templates that can be shared
-   - Execution state that can be persisted and resumed
-   - Distributed execution across hosts
+2. **Serialization**: Flow (structure) and JobState (state) are serialized separately
 3. **State Isolation**: Each execution's state is completely isolated, preventing data corruption
 4. **Reusability**: Routine objects can be reused across multiple executions without conflicts
 5. **Clarity**: Clear boundaries make code easier to understand, test, and maintain
@@ -190,53 +235,41 @@ workflow applications.
 
 .. code-block:: python
 
-   from routilux import Flow, Routine
-   
+   from routilux import Routine, Flow
+   from routilux.activation_policies import immediate_policy
+
    class Processor(Routine):
        def __init__(self):
            super().__init__()
            # Static configuration (set once)
            self.set_config(threshold=10, timeout=30)
-           self.input_slot = self.define_slot("input", handler=self.process)
+           self.input_slot = self.define_slot("input")
            self.output_event = self.define_event("output", ["result"])
-       
-       def process(self, data=None, **kwargs):
-           # Read static config
-           threshold = self.get_config("threshold", 0)
-           
-           # Get execution context for runtime state
-           ctx = self.get_execution_context()
-           if ctx:
+
+           def logic(slot_data, policy_message, job_state):
+               # Read static config
+               threshold = self.get_config("threshold", 0)
+
                # Store execution-specific state in JobState
-               ctx.job_state.update_routine_state(ctx.routine_id, {"processed": True})
-               
+               # (Assuming routine_id is available via context)
+               job_state.update_routine_state("processor", {"processed": True})
+
                # Store business data in JobState
-               ctx.job_state.update_shared_data("last_processed", data)
-               ctx.job_state.append_to_shared_log({"action": "process", "data": data})
-               
-               # Send output via JobState
-               self.send_output("user_data", message="Processing", value=data)
-           
-           # Emit event (for workflow flow)
-           self.emit("output", result=f"Processed: {data}")
-   
+               job_state.shared_data["last_processed"] = slot_data
+               job_state.shared_log.append({"action": "process", "data": slot_data})
+
+           self.set_logic(logic)
+           self.set_activation_policy(immediate_policy())
+
    # Flow defines structure (static)
    flow = Flow(flow_id="my_workflow")
    processor = Processor()
-   processor_id = flow.add_routine(processor, "processor")
-   
-   # Each execution has its own JobState (runtime)
-   job_state1 = flow.execute(processor_id, entry_params={"data": "A"})
-   job_state2 = flow.execute(processor_id, entry_params={"data": "B"})
-   
-   # Each JobState is independent
-   assert job_state1.job_id != job_state2.job_id
-   assert job_state1.shared_data != job_state2.shared_data
+   flow.add_routine(processor, "processor")
 
 Design Principles
-------------------
+-----------------
 
-* **Separation of Concerns**: Clear separation between control (Flow) and data (JobState)
+* **Separation of Concerns**: Clear separation between structure (Flow), execution (Runtime), and state (JobState)
 * **Flexibility**: Support for various workflow patterns (linear, branching, converging)
 * **Persistence**: Full support for serialization and state recovery
 * **Error Resilience**: Multiple error handling strategies for robust applications
@@ -264,26 +297,40 @@ or dive into the :doc:`user_guide/index` for detailed documentation.
 
 .. code-block:: python
 
-   from routilux import Flow, Routine
-   
+   from routilux import Routine, Flow, Runtime
+   from routilux.activation_policies import immediate_policy
+   from routilux.monitoring.flow_registry import FlowRegistry
+
    class MyRoutine(Routine):
        def __init__(self):
            super().__init__()
-           self.input_slot = self.define_slot("input", handler=self.process)
-           self.output_event = self.define_event("output")
-       
-       def process(self, data=None, **kwargs):
-           # Flow is automatically detected from routine context
-           self.emit("output", result=f"Processed: {data}")
-   
-   flow = Flow()
-   routine_id = flow.add_routine(MyRoutine(), "my_routine")
-   flow.execute(routine_id, entry_params={"data": "Hello, Routilux!"})
+           self.input = self.define_slot("input")
+           self.output = self.define_event("output", ["result"])
+
+           def logic(slot_data, policy_message, job_state):
+               data = slot_data.get("input", [{}])[0]
+               self.emit("output", result=f"Processed: {data}")
+
+           self.set_logic(logic)
+           self.set_activation_policy(immediate_policy())
+
+   # Create flow
+   flow = Flow(flow_id="my_workflow")
+   routine = MyRoutine()
+   flow.add_routine(routine, "my_routine")
+
+   # Register and execute
+   FlowRegistry.get_instance().register_by_name("my_workflow", flow)
+   runtime = Runtime(thread_pool_size=5)
+   job_state = runtime.exec("my_workflow", entry_params={"data": "Hello"})
+   runtime.wait_until_all_jobs_finished(timeout=5.0)
 
 Next Steps
 ----------
 
+* :doc:`installation` - Installation instructions
 * :doc:`quickstart` - Get started in 5 minutes
+* :doc:`http_api` - HTTP API and security configuration
 * :doc:`user_guide/index` - Comprehensive user guide
 * :doc:`api_reference/index` - Complete API documentation
 * :doc:`examples/index` - Real-world examples
