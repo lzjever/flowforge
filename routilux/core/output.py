@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 import threading
 from collections import defaultdict, deque
-from typing import TextIO
+from typing import Any, TextIO
 
 from routilux.core.context import _current_job
 

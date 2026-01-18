@@ -55,7 +55,7 @@ from routilux.tools.testing import RoutineTester
 
 # Analysis tools (optional)
 try:
-    from routilux.tools.analysis import (
+    from routilux.tools.analysis import (  # noqa: F401
         BaseFormatter,
         RoutineAnalyzer,
         RoutineMarkdownFormatter,

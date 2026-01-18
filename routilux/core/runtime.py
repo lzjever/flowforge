@@ -466,9 +466,7 @@ class Runtime:
         except Exception as e:
             logger.exception(f"Error checking routine activation: {e}")
 
-    def _get_routine_id(
-        self, routine: Routine | None, worker_state: WorkerState
-    ) -> str | None:
+    def _get_routine_id(self, routine: Routine | None, worker_state: WorkerState) -> str | None:
         """Get routine ID from worker's flow.
 
         Args:

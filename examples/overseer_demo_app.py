@@ -580,7 +580,7 @@ class LoopController(Routine):
 
 def create_state_transition_flow():
     """Flow demonstrating state transitions: pending -> running -> completed"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="state_transition_flow")
@@ -602,7 +602,7 @@ def create_state_transition_flow():
 
 def create_queue_pressure_flow():
     """Flow demonstrating queue pressure monitoring"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="queue_pressure_flow")
@@ -631,7 +631,7 @@ def create_queue_pressure_flow():
 
 def create_debug_demo_flow():
     """Flow designed for debugging demonstrations"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="debug_demo_flow")
@@ -658,7 +658,7 @@ def create_debug_demo_flow():
 
 def create_comprehensive_demo_flow():
     """Comprehensive flow showcasing all features"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="comprehensive_demo_flow")
@@ -698,7 +698,7 @@ def create_comprehensive_demo_flow():
 
 def create_aggregator_flow():
     """Flow demonstrating aggregator pattern with all_slots_ready_policy"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="aggregator_flow")
@@ -724,7 +724,7 @@ def create_aggregator_flow():
 
 def create_branching_flow():
     """Flow demonstrating branching pattern - one source to multiple processors"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="branching_flow")
@@ -765,7 +765,7 @@ def create_branching_flow():
 
 def create_rate_limited_flow():
     """Flow demonstrating rate limiting with time_interval_policy"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="rate_limited_flow")
@@ -789,7 +789,7 @@ def create_rate_limited_flow():
 
 def create_error_handling_flow():
     """Flow demonstrating error handling scenarios"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="error_handling_flow")
@@ -821,7 +821,7 @@ def create_error_handling_flow():
 
 def create_loop_flow():
     """Flow demonstrating loop pattern with LoopController"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="loop_flow")
@@ -852,7 +852,7 @@ def create_loop_flow():
 
 def create_multi_slot_flow():
     """Flow demonstrating multi-slot processing"""
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="multi_slot_flow")
@@ -898,8 +898,7 @@ def main():
     MonitoringRegistry.enable()
 
     # Import AFTER enabling monitoring
-    from routilux.factory.factory import ObjectFactory
-    from routilux.factory.metadata import ObjectMetadata
+    from routilux.tools.factory import ObjectFactory, ObjectMetadata
     from routilux.monitoring.flow_registry import FlowRegistry
     from routilux.runtime import Runtime
 
@@ -1185,7 +1184,7 @@ def main():
     import uvicorn
 
     uvicorn.run(
-        "routilux.api.main:app",
+        "routilux.server.main:app",
         host="0.0.0.0",
         port=20555,
         reload=False,

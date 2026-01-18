@@ -376,9 +376,9 @@ class WorkerState(Serializable):
         data = super().serialize()
 
         # Handle datetime
-        for field in ["created_at", "updated_at", "started_at", "completed_at"]:
-            if isinstance(data.get(field), datetime):
-                data[field] = data[field].isoformat()
+        for field_name in ["created_at", "updated_at", "started_at", "completed_at"]:
+            if isinstance(data.get(field_name), datetime):
+                data[field_name] = data[field_name].isoformat()
 
         # Handle ExecutionRecord list
         if "execution_history" in data:
@@ -396,12 +396,14 @@ class WorkerState(Serializable):
     def deserialize(self, data: dict[str, Any], strict: bool = False, registry: Any = None) -> None:
         """Deserialize WorkerState."""
         # Handle datetime
-        for field in ["created_at", "updated_at", "started_at", "completed_at"]:
-            if isinstance(data.get(field), str):
+        for field_name in ["created_at", "updated_at", "started_at", "completed_at"]:
+            if isinstance(data.get(field_name), str):
                 try:
-                    data[field] = datetime.fromisoformat(data[field])
+                    data[field_name] = datetime.fromisoformat(data[field_name])
                 except (ValueError, TypeError):
-                    data[field] = datetime.now() if field in ["created_at", "updated_at"] else None
+                    data[field_name] = (
+                        datetime.now() if field_name in ["created_at", "updated_at"] else None
+                    )
 
         # Handle ExecutionRecord list
         if "execution_history" in data and isinstance(data["execution_history"], list):

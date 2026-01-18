@@ -23,7 +23,7 @@ from routilux.tools.testing import RoutineTester
 
 # Analysis (optional - may have extra dependencies)
 try:
-    from routilux.tools.analysis import (
+    from routilux.tools.analysis import (  # noqa: F401
         D2Exporter,
         MarkdownExporter,
         RoutineAnalyzer,

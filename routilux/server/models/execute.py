@@ -40,10 +40,10 @@ class ExecuteRequest(BaseModel):
         """Validate data payload size."""
         try:
             size = len(json.dumps(v))
-            MAX_SIZE = 10 * 1024 * 1024  # 10MB limit
-            if size > MAX_SIZE:
+            max_size = 10 * 1024 * 1024  # 10MB limit
+            if size > max_size:
                 raise ValueError(
-                    f"Data payload exceeds {MAX_SIZE / 1024 / 1024}MB limit "
+                    f"Data payload exceeds {max_size / 1024 / 1024}MB limit "
                     f"(current size: {size / 1024 / 1024:.2f}MB)"
                 )
         except (TypeError, ValueError) as e:
@@ -60,10 +60,10 @@ class ExecuteRequest(BaseModel):
             return v
         try:
             size = len(json.dumps(v))
-            MAX_SIZE = 1024 * 1024  # 1MB limit
-            if size > MAX_SIZE:
+            max_size = 1024 * 1024  # 1MB limit
+            if size > max_size:
                 raise ValueError(
-                    f"Metadata exceeds {MAX_SIZE / 1024}KB limit "
+                    f"Metadata exceeds {max_size / 1024}KB limit "
                     f"(current size: {size / 1024:.2f}KB)"
                 )
         except (TypeError, ValueError) as e:

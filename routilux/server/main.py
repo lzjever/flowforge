@@ -22,6 +22,7 @@ from routilux.server.routes import (
     jobs,
     monitor,
     objects,
+    runtimes,
     websocket,
     workers,
 )
@@ -203,8 +204,6 @@ app.include_router(discovery.router, prefix="/api", tags=["discovery"])
 app.include_router(objects.router, prefix="/api/factory", tags=["factory"])
 
 # Runtime management router
-from routilux.server.routes import runtimes
-
 app.include_router(runtimes.router, prefix="/api", tags=["runtimes"])
 app.include_router(runtimes.router, prefix="/api/v1", tags=["runtimes"])
 

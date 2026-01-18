@@ -72,7 +72,6 @@ def slow_flow():
             self.add_event("output")
 
         def logic(self, data):
-
             time.sleep(2)  # Slow processing
             self.emit("output", {"result": "done"})
 

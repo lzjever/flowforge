@@ -1,6 +1,5 @@
 """Basic tests for Runtime class."""
 
-
 import pytest
 
 from routilux.core import (

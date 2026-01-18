@@ -1,4 +1,4 @@
-.PHONY: help clean install dev-install test test-cov test-integration test-unit test-api lint format format-check check build sdist wheel docs html clean-docs upload upload-test check-package setup-venv pre-commit-install pre-commit-run pre-commit-update type-check install-tools clean-all
+.PHONY: help clean install dev-install test test-cov test-integration test-unit test-api test-userstory lint format format-check check build sdist wheel docs html clean-docs upload upload-test check-package setup-venv pre-commit-install pre-commit-run pre-commit-update type-check install-tools clean-all
 
 # Use uv if available, otherwise fall back to pip
 UV := $(shell command -v uv 2>/dev/null)
@@ -27,6 +27,7 @@ help:
 	@echo "  test-integration - Run all integration tests (requires external services)"
 	@echo "  test-unit     - Run only unit tests"
 	@echo "  test-api      - Run API endpoint tests"
+	@echo "  test-userstory - Run user story integration tests (multi-API workflows)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  lint          - Run linting checks (ruff)"
@@ -114,6 +115,10 @@ test-unit:
 test-api:
 	@echo "Running API endpoint tests..."
 	$(PYTHON_CMD) -m pytest tests/ -v -m api
+
+test-userstory:
+	@echo "Running user story integration tests..."
+	$(PYTHON_CMD) -m pytest tests/ -v -m userstory
 
 lint:
 	$(PYTHON_CMD) -m ruff check routilux/ tests/ examples/ --output-format=concise

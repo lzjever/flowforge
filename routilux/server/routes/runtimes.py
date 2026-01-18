@@ -34,8 +34,8 @@ def _runtime_to_info(runtime_id: str, runtime, is_default: bool) -> RuntimeInfo:
     # Get active job count from runtime
     active_job_count = 0
     if hasattr(runtime, "_active_jobs"):
-        with runtime._job_lock:
-            active_job_count = len(runtime._active_jobs)
+        with runtime._jobs_lock:
+            active_job_count = sum(len(jobs) for jobs in runtime._active_jobs.values())
 
     return RuntimeInfo(
         runtime_id=runtime_id,

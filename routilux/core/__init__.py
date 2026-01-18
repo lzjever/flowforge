@@ -82,8 +82,6 @@ from routilux.core.registry import (
 from routilux.core.routine import (
     ExecutionContext,
     Routine,
-    get_current_worker_state,
-    set_current_worker_state,
 )
 
 # Runtime

@@ -180,6 +180,15 @@ class Routine(Serializable):
             self._events[name] = event
             return event
 
+    # Backward compatibility aliases
+    def define_slot(self, name: str, max_queue_length: int = 1000, watermark: float = 0.8) -> Slot:
+        """Alias for add_slot (backward compatibility)."""
+        return self.add_slot(name, max_queue_length=max_queue_length, watermark=watermark)
+
+    def define_event(self, name: str, output_params: list[str] | None = None) -> Event:
+        """Alias for add_event (backward compatibility)."""
+        return self.add_event(name, output_params=output_params)
+
     def emit(
         self,
         event_name: str,
