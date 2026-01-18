@@ -18,7 +18,7 @@ class RoutineTester:
 
     Examples:
         Basic usage:
-            >>> from routilux.testing import RoutineTester
+            >>> from routilux.tools.testing import RoutineTester
             >>> routine = MyRoutine()
             >>> tester = RoutineTester(routine)
             >>>

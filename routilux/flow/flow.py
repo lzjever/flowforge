@@ -244,7 +244,7 @@ class Flow(Serializable):
         Raises:
             ValueError: If routine_id already exists or prototype not found.
         """
-        from routilux.factory.factory import ObjectFactory
+        from routilux.tools.factory.factory import ObjectFactory
 
         factory = ObjectFactory.get_instance()
         routine = factory.create(name, config=config)
@@ -545,7 +545,7 @@ class Flow(Serializable):
             ValueError: If DSL references unregistered components.
 
         Examples:
-            >>> from routilux.factory.factory import ObjectFactory
+            >>> from routilux.tools.factory.factory import ObjectFactory
             >>> factory = ObjectFactory.get_instance()
             >>> factory.register("docx_reader", DocxReader)
             >>> flow = Flow.from_dict({
@@ -561,7 +561,7 @@ class Flow(Serializable):
             ...     ]
             ... })
         """
-        from routilux.factory.factory import ObjectFactory
+        from routilux.tools.factory.factory import ObjectFactory
 
         factory = ObjectFactory.get_instance()
         return factory.load_flow_from_dsl(spec)
@@ -591,7 +591,7 @@ class Flow(Serializable):
             pyyaml is a core dependency, so this method is always available.
 
         Examples:
-            >>> from routilux.factory.factory import ObjectFactory
+            >>> from routilux.tools.factory.factory import ObjectFactory
             >>> factory = ObjectFactory.get_instance()
             >>> factory.register("docx_reader", DocxReader)
             >>> yaml_content = '''

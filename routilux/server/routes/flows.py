@@ -317,7 +317,7 @@ async def create_flow(request: FlowCreateRequest):
         HTTPException: 422 if request validation fails
     """
     try:
-        from routilux.factory.factory import ObjectFactory
+        from routilux.tools.factory.factory import ObjectFactory
 
         factory = ObjectFactory.get_instance()
 
@@ -493,7 +493,7 @@ async def export_flow_dsl(
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
 
     # Use factory to export DSL (factory-only components)
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     try:
@@ -867,7 +867,7 @@ async def add_routine_to_flow(flow_id: str, request: AddRoutineRequest):
         HTTPException: 422 if request validation fails
     """
     from routilux.server.validators import validate_flow_exists
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory.factory import ObjectFactory
 
     flow = validate_flow_exists(flow_id)
     validate_routine_id_conflict(flow, request.routine_id)

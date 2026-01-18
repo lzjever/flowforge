@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from routilux.server.middleware.auth import RequireAuth
 from routilux.server.models.object import ObjectListResponse, ObjectMetadataResponse
-from routilux.factory.factory import ObjectFactory
+from routilux.tools.factory.factory import ObjectFactory
 
 router = APIRouter()
 

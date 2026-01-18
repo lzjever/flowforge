@@ -5,7 +5,7 @@ Global Object Factory for creating Flow and Routine objects from prototypes.
 import threading
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, Union
 
-from routilux.factory.metadata import ObjectMetadata
+from routilux.tools.factory.metadata import ObjectMetadata
 
 if TYPE_CHECKING:
     from routilux.error_handler import ErrorHandler
@@ -185,7 +185,7 @@ class ObjectFactory:
                 # Check if we have an original Flow instance to clone
                 if "original_instance" in proto:
                     # Flow instance prototype - clone it
-                    from routilux.factory.cloning import clone_flow
+                    from routilux.tools.factory.cloning import clone_flow
 
                     original_flow = proto["original_instance"]
                     instance = clone_flow(original_flow)

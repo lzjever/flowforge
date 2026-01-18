@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from routilux.analysis.analyzers.routine import RoutineAnalyzer
+from routilux.tools.analysis.analyzers.routine import RoutineAnalyzer
 from routilux.flow import Flow
 from routilux.routine import Routine
 

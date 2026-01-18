@@ -5,7 +5,7 @@ Provides flexible connection, state management, and workflow orchestration capab
 """
 
 # Import analysis tools
-from routilux.analysis import (
+from routilux.tools.analysis import (
     BaseFormatter,
     RoutineAnalyzer,
     RoutineMarkdownFormatter,
@@ -37,10 +37,10 @@ from routilux.slot import Slot
 from routilux.status import ExecutionStatus, RoutineStatus
 
 # Import factory
-from routilux.factory import ObjectFactory, ObjectMetadata
+from routilux.tools.factory import ObjectFactory, ObjectMetadata
 
 # Import testing utilities
-from routilux.testing import RoutineTester
+from routilux.tools.testing import RoutineTester
 
 __all__ = [
     # Core classes

@@ -6,7 +6,7 @@ the results to various formats.
 """
 
 # Import analyzers
-from routilux.analysis.analyzers import (
+from routilux.tools.analysis.analyzers import (
     RoutineAnalyzer,
     WorkflowAnalyzer,
     analyze_routine_file,
@@ -14,7 +14,7 @@ from routilux.analysis.analyzers import (
 )
 
 # Import exporters
-from routilux.analysis.exporters import (
+from routilux.tools.analysis.exporters import (
     BaseFormatter,
     RoutineMarkdownFormatter,
     WorkflowD2Formatter,

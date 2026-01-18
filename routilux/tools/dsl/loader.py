@@ -42,7 +42,7 @@ def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":
     Raises:
         ValueError: If DSL references unregistered components or is invalid.
     """
-    from routilux.factory.factory import ObjectFactory
+    from routilux.tools.factory.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
     return factory.load_flow_from_dsl(spec)
