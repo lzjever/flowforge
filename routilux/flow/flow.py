@@ -531,18 +531,28 @@ class Flow(Serializable):
         This method allows creating flows from Python dictionaries or JSON,
         providing a declarative way to define workflows.
 
+        **Factory-Only Requirement**: All routines in the DSL must be registered
+        in ObjectFactory before use. The DSL uses factory names, not class paths.
+
         Args:
             spec: Flow specification dictionary. See DSL documentation for format.
+                The 'class' field in routines must be factory names.
 
         Returns:
             Constructed Flow object.
 
+        Raises:
+            ValueError: If DSL references unregistered components.
+
         Examples:
+            >>> from routilux.factory.factory import ObjectFactory
+            >>> factory = ObjectFactory.get_instance()
+            >>> factory.register("docx_reader", DocxReader)
             >>> flow = Flow.from_dict({
             ...     "flow_id": "my_flow",
             ...     "routines": {
             ...         "reader": {
-            ...             "class": "mymodule.DocxReader",
+            ...             "class": "docx_reader",  # Factory name
             ...             "config": {"output_dir": "/tmp"}
             ...         }
             ...     },
@@ -551,9 +561,10 @@ class Flow(Serializable):
             ...     ]
             ... })
         """
-        from routilux.dsl.loader import load_flow_from_spec
+        from routilux.factory.factory import ObjectFactory
 
-        return load_flow_from_spec(spec)
+        factory = ObjectFactory.get_instance()
+        return factory.load_flow_from_dsl(spec)
 
     @classmethod
     def from_yaml(cls, yaml_str: str) -> Flow:
@@ -562,24 +573,32 @@ class Flow(Serializable):
         This method parses a YAML string and creates a Flow from it.
         Requires the 'pyyaml' package to be installed.
 
+        **Factory-Only Requirement**: All routines in the DSL must be registered
+        in ObjectFactory before use. The DSL uses factory names, not class paths.
+
         Args:
             yaml_str: YAML string containing flow specification.
+                The 'class' field in routines must be factory names.
 
         Returns:
             Constructed Flow object.
 
         Raises:
-            ValueError: If YAML is invalid or specification is invalid.
+            ValueError: If YAML is invalid, specification is invalid, or
+                DSL references unregistered components.
 
         Note:
             pyyaml is a core dependency, so this method is always available.
 
         Examples:
+            >>> from routilux.factory.factory import ObjectFactory
+            >>> factory = ObjectFactory.get_instance()
+            >>> factory.register("docx_reader", DocxReader)
             >>> yaml_content = '''
             ... flow_id: my_flow
             ... routines:
             ...   reader:
-            ...     class: mymodule.DocxReader
+            ...     class: docx_reader  # Factory name
             ...     config:
             ...       output_dir: /tmp
             ... connections:

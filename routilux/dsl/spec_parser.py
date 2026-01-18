@@ -14,6 +14,13 @@ if TYPE_CHECKING:
 def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
     """Parse and validate flow specification.
 
+    **DEPRECATED**: This function is no longer used by the DSL loader.
+    The loader now delegates to ObjectFactory.load_flow_from_dsl() which
+    enforces factory-only component usage.
+
+    This function is kept for backward compatibility but should not be used
+    in new code. Use ObjectFactory.load_flow_from_dsl() directly.
+
     Args:
         spec: Flow specification dictionary.
 
@@ -22,6 +29,10 @@ def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
 
     Raises:
         ValueError: If specification is invalid.
+        
+    .. deprecated::
+        Use ObjectFactory.load_flow_from_dsl() instead, which enforces
+        factory-only component usage.
     """
     # Validate top-level structure
     if not isinstance(spec, dict):
@@ -34,7 +45,7 @@ def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(spec["routines"], dict):
         raise ValueError("'routines' must be a dictionary")
 
-    # Parse routines
+    # Parse routines - keep class as string (factory name), don't load class
     parsed_routines = {}
     for routine_id, routine_spec in spec["routines"].items():
         if not isinstance(routine_spec, dict):
@@ -43,10 +54,10 @@ def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
         if "class" not in routine_spec:
             raise ValueError(f"Routine '{routine_id}' must specify 'class'")
 
-        # Load routine class
-        routine_class = _load_class(routine_spec["class"])
+        # Keep class as string (factory name) - don't load class dynamically
+        # This maintains backward compatibility but doesn't use _load_class()
         parsed_routines[routine_id] = {
-            "class": routine_class,
+            "class": routine_spec["class"],  # Keep as string (factory name)
             "config": routine_spec.get("config", {}),
             "error_handler": routine_spec.get("error_handler"),
         }
@@ -85,11 +96,16 @@ def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
 def _load_class(class_spec: Union[str, Type]) -> Type:
     """Load class from string path or return class object.
 
+    **DEPRECATED**: This function is a security risk and should not be used.
+    It uses dynamic class loading which can execute arbitrary code.
+    
+    All DSL loading now goes through ObjectFactory which enforces factory-only
+    component usage. Use ObjectFactory.load_flow_from_dsl() instead.
+
     SECURITY WARNING: This function uses importlib.import_module() to dynamically
     load classes from user-provided string paths. This can execute arbitrary code
-    if the spec comes from an untrusted source. Only use this function with
-    trusted/trusted-validated specifications. Consider implementing a whitelist
-    of allowed modules if loading from untrusted sources.
+    if the spec comes from an untrusted source. This function is deprecated and
+    should not be used in new code.
 
     Args:
         class_spec: Either a class object or a string path like "module.path.ClassName".
@@ -100,6 +116,10 @@ def _load_class(class_spec: Union[str, Type]) -> Type:
     Raises:
         ValueError: If class_spec is invalid or loaded class is not a Routine subclass.
         ImportError: If module cannot be imported.
+        
+    .. deprecated:: 
+        Use ObjectFactory.load_flow_from_dsl() instead, which enforces
+        factory-only component usage and eliminates security risks.
     """
     if isinstance(class_spec, type):
         return class_spec

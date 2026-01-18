@@ -142,6 +142,10 @@ class TestOverseerDemoAppRegistration:
         from routilux.factory.factory import ObjectFactory
         
         factory = ObjectFactory.get_instance()
+        # Clean factory before test
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
         
         # Import and run the registration part
         import sys
@@ -174,7 +178,9 @@ class TestOverseerDemoAppRegistration:
         assert "test_routine" in routine_names
         
         # Cleanup
-        factory.clear()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
 
 
 if __name__ == "__main__":

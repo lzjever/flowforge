@@ -312,3 +312,211 @@ class TestObjectFactoryEdgeCases:
         assert len(created) == 10
         # All should be different instances
         assert len(set(id(obj) for obj in created)) == 10
+
+
+class TestFactoryReverseLookup:
+    """Test reverse lookup functionality."""
+
+    def test_get_factory_name_from_class(self):
+        """Test: Can get factory name from class."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        factory.register("test_routine", Routine, description="Test routine")
+
+        # Interface contract: get_factory_name() should return name for class
+        name = factory.get_factory_name(Routine)
+        assert name == "test_routine"
+
+    def test_get_factory_name_from_instance(self):
+        """Test: Can get factory name from instance."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        factory.register("test_routine", Routine, description="Test routine")
+        instance = factory.create("test_routine")
+
+        # Interface contract: get_factory_name() should return name for instance
+        name = factory.get_factory_name(instance)
+        assert name == "test_routine"
+
+    def test_get_factory_name_not_registered(self):
+        """Test: Returns None for unregistered class/instance."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        # Interface contract: get_factory_name() should return None for unregistered
+        name = factory.get_factory_name(Routine)
+        assert name is None
+
+        instance = Routine()
+        name = factory.get_factory_name(instance)
+        assert name is None
+
+
+class TestFactoryDSLExport:
+    """Test DSL export functionality."""
+
+    def test_export_flow_to_dsl_dict(self):
+        """Test: Can export flow to DSL dictionary."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        # Register routine
+        factory.register("test_routine", Routine, description="Test routine")
+
+        # Create flow with routine
+        flow = Flow(flow_id="test_flow")
+        routine = factory.create("test_routine")
+        flow.add_routine(routine, "routine1")
+
+        # Interface contract: export_flow_to_dsl() should return dict by default
+        dsl = factory.export_flow_to_dsl(flow, format="dict")
+        assert isinstance(dsl, dict)
+        assert dsl["flow_id"] == "test_flow"
+        assert "routine1" in dsl["routines"]
+        assert dsl["routines"]["routine1"]["class"] == "test_routine"
+
+    def test_export_flow_to_dsl_yaml(self):
+        """Test: Can export flow to YAML string."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        factory.register("test_routine", Routine)
+        flow = Flow(flow_id="test_flow")
+        routine = factory.create("test_routine")
+        flow.add_routine(routine, "routine1")
+
+        # Interface contract: export_flow_to_dsl() should return YAML string
+        dsl = factory.export_flow_to_dsl(flow, format="yaml")
+        assert isinstance(dsl, str)
+        assert "test_flow" in dsl
+        assert "test_routine" in dsl
+
+    def test_export_flow_to_dsl_json(self):
+        """Test: Can export flow to JSON string."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        factory.register("test_routine", Routine)
+        flow = Flow(flow_id="test_flow")
+        routine = factory.create("test_routine")
+        flow.add_routine(routine, "routine1")
+
+        # Interface contract: export_flow_to_dsl() should return JSON string
+        dsl = factory.export_flow_to_dsl(flow, format="json")
+        assert isinstance(dsl, str)
+        import json
+
+        parsed = json.loads(dsl)
+        assert parsed["flow_id"] == "test_flow"
+
+    def test_export_flow_unregistered_routine_raises_error(self):
+        """Test: Export fails if flow contains unregistered routine."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        # Create flow with unregistered routine
+        flow = Flow(flow_id="test_flow")
+        unregistered_routine = Routine()
+        flow.add_routine(unregistered_routine, "routine1")
+
+        # Interface contract: Should raise ValueError for unregistered routine
+        with pytest.raises(ValueError, match="not registered in factory"):
+            factory.export_flow_to_dsl(flow)
+
+
+class TestFactoryDSLImport:
+    """Test DSL import functionality."""
+
+    def test_load_flow_from_dsl(self):
+        """Test: Can load flow from DSL dictionary."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        # Register routine
+        factory.register("test_routine", Routine, description="Test routine")
+
+        # Create DSL
+        dsl = {
+            "flow_id": "test_flow",
+            "routines": {
+                "routine1": {
+                    "class": "test_routine",
+                    "config": {"test": "value"},
+                }
+            },
+            "connections": [],
+            "execution": {"timeout": 300.0},
+        }
+
+        # Interface contract: load_flow_from_dsl() should create Flow
+        flow = factory.load_flow_from_dsl(dsl)
+        assert isinstance(flow, Flow)
+        assert flow.flow_id == "test_flow"
+        assert "routine1" in flow.routines
+        assert flow.routines["routine1"].get_config("test") == "value"
+
+    def test_load_flow_unregistered_component_raises_error(self):
+        """Test: Load fails if DSL references unregistered component."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        dsl = {
+            "flow_id": "test_flow",
+            "routines": {
+                "routine1": {
+                    "class": "nonexistent_routine",
+                }
+            },
+            "connections": [],
+        }
+
+        # Interface contract: Should raise ValueError for unregistered component
+        with pytest.raises(ValueError, match="unregistered factory name"):
+            factory.load_flow_from_dsl(dsl)
+
+    def test_dsl_roundtrip(self):
+        """Test: Export then import produces same flow structure."""
+        factory = ObjectFactory.get_instance()
+        factory._registry.clear()
+        factory._class_to_name.clear()
+        factory._name_to_class.clear()
+
+        # Register routine
+        factory.register("test_routine", Routine)
+
+        # Create original flow
+        original_flow = Flow(flow_id="test_flow")
+        routine = factory.create("test_routine")
+        routine.set_config(test_key="test_value")
+        original_flow.add_routine(routine, "routine1")
+
+        # Export to DSL
+        dsl = factory.export_flow_to_dsl(original_flow, format="dict")
+
+        # Import from DSL
+        imported_flow = factory.load_flow_from_dsl(dsl)
+
+        # Interface contract: Imported flow should have same structure
+        assert imported_flow.flow_id == original_flow.flow_id
+        assert "routine1" in imported_flow.routines
+        assert imported_flow.routines["routine1"].get_config("test_key") == "test_value"

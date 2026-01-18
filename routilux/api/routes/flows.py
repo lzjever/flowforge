@@ -16,7 +16,11 @@ from routilux.api.models.flow import (
     FlowResponse,
     RoutineInfo,
 )
-from routilux.api.validators import validate_dsl_size, validate_routine_id_conflict
+from routilux.api.validators import (
+    validate_dsl_size,
+    validate_routine_id_conflict,
+    validate_routine_instance,
+)
 from routilux.flow import Flow
 from routilux.monitoring.storage import flow_store
 
@@ -24,15 +28,40 @@ router = APIRouter()
 
 
 def _flow_to_response(flow: Flow) -> FlowResponse:
-    """Convert Flow to response model."""
+    """Convert Flow to response model with defensive checks."""
+    import logging
+
+    logger = logging.getLogger(__name__)
     routines = {}
     for routine_id, routine in flow.routines.items():
+        # Defensive check: Ensure it's actually a Routine instance
+        # This handles cases where corrupted data might exist (e.g., Flow added as Routine)
+        from routilux.routine import Routine
+
+        if not isinstance(routine, Routine):
+            logger.error(
+                f"Flow '{flow.flow_id}' contains non-Routine object at routine_id '{routine_id}': "
+                f"{type(routine).__name__}. Skipping this entry."
+            )
+            continue
+
+        # Safe access with error handling
+        try:
+            slots = list(routine._slots.keys()) if hasattr(routine, "_slots") else []
+            events = list(routine._events.keys()) if hasattr(routine, "_events") else []
+            config = routine._config.copy() if hasattr(routine, "_config") else {}
+        except Exception as e:
+            logger.error(
+                f"Error extracting routine info for '{routine_id}' in flow '{flow.flow_id}': {e}"
+            )
+            slots, events, config = [], [], {}
+
         routines[routine_id] = RoutineInfo(
             routine_id=routine_id,
             class_name=routine.__class__.__name__,
-            slots=list(routine._slots.keys()),
-            events=list(routine._events.keys()),
-            config=routine._config.copy(),
+            slots=slots,
+            events=events,
+            config=config,
         )
 
     connections = []
@@ -228,9 +257,10 @@ async def create_flow(request: FlowCreateRequest):
     ```json
     {
       "flow_id": "my_flow",
-      "dsl": "flow_id: my_flow\nroutines:\n  source:\n    class: DataSource\n    config:\n      name: Source"
+      "dsl": "flow_id: my_flow\nroutines:\n  source:\n    class: data_source\n    config:\n      name: Source"
     }
     ```
+    Note: `class` field must be a factory name (e.g., "data_source"), not a class path.
 
     **3. From JSON DSL**:
     ```json
@@ -240,7 +270,7 @@ async def create_flow(request: FlowCreateRequest):
         "flow_id": "my_flow",
         "routines": {
           "source": {
-            "class": "DataSource",
+            "class": "data_source",
             "config": {"name": "Source"}
           }
         },
@@ -268,7 +298,7 @@ async def create_flow(request: FlowCreateRequest):
     1. Use empty flow + dynamic building for interactive flow builders
     2. Use DSL for predefined/reusable flows
     3. Validate flow after creation: POST /api/flows/{flow_id}/validate
-    4. Use factory names in DSL: `class: data_source` (not full class path)
+    4. **All routines in DSL must be registered in factory** - use factory names: `class: data_source`
 
     **Related Endpoints**:
     - POST /api/flows/{flow_id}/routines - Add routine to flow
@@ -287,14 +317,23 @@ async def create_flow(request: FlowCreateRequest):
         HTTPException: 422 if request validation fails
     """
     try:
+        from routilux.factory.factory import ObjectFactory
+
+        factory = ObjectFactory.get_instance()
+
         if request.dsl:
             # Validate DSL size
             validate_dsl_size(request.dsl)
-            # Create from YAML
-            flow = Flow.from_yaml(request.dsl)
+            # Parse YAML and load from factory
+            import yaml
+
+            dsl_dict = yaml.safe_load(request.dsl)
+            if not isinstance(dsl_dict, dict):
+                raise ValueError("DSL YAML must parse to a dictionary")
+            flow = factory.load_flow_from_dsl(dsl_dict)
         elif request.dsl_dict:
-            # Create from dict
-            flow = Flow.from_dict(request.dsl_dict)
+            # Load from factory using dict
+            flow = factory.load_flow_from_dsl(request.dsl_dict)
         else:
             # Create empty flow
             flow = Flow(flow_id=request.flow_id)
@@ -303,6 +342,10 @@ async def create_flow(request: FlowCreateRequest):
         flow_store.add(flow)
 
         return _flow_to_response(flow)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400, detail=f"Failed to create flow from DSL: {str(e)}"
+        ) from e
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create flow: {str(e)}") from e
 
@@ -405,11 +448,15 @@ async def export_flow_dsl(
     The DSL includes:
     - `flow_id`: Flow identifier
     - `routines`: Dictionary of routine_id -> routine specification
-      - `class`: Factory name or class path
+      - `class`: Factory name (must be registered in factory)
       - `config`: Routine configuration
     - `connections`: List of connections
       - `from`: "{routine_id}.{event_name}"
       - `to`: "{routine_id}.{slot_name}"
+
+    **Factory-Only Requirement**:
+    All routines in the flow must be registered in the factory for export to succeed.
+    The exported DSL uses factory names instead of class paths for portability and security.
 
     **Recreating from DSL**:
     ```javascript
@@ -445,59 +492,18 @@ async def export_flow_dsl(
     if not flow:
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
 
-    # Build DSL dict
-    dsl_dict = {
-        "flow_id": flow.flow_id,
-        "routines": {},
-        "connections": [],
-        "execution": {
-            "timeout": flow.execution_timeout,
-        },
-    }
+    # Use factory to export DSL (factory-only components)
+    from routilux.factory.factory import ObjectFactory
 
-    # Add routines
-    for routine_id, routine in flow.routines.items():
-        routine_spec = {
-            "class": f"{routine.__class__.__module__}.{routine.__class__.__name__}",
-        }
-        if routine._config:
-            routine_spec["config"] = routine._config.copy()
-
-        error_handler = routine.get_error_handler()
-        if error_handler:
-            routine_spec["error_handler"] = {
-                "strategy": error_handler.strategy.value,
-                "max_retries": error_handler.max_retries,
-                "retry_delay": error_handler.retry_delay,
-            }
-
-        dsl_dict["routines"][routine_id] = routine_spec
-
-    # Add connections
-    for conn in flow.connections:
-        # Critical fix: Check for None before accessing connection attributes
-        if conn.source_event is None or conn.source_event.routine is None:
-            continue  # Skip incomplete connections
-        if conn.target_slot is None or conn.target_slot.routine is None:
-            continue  # Skip incomplete connections
-
-        source_routine_id = flow._get_routine_id(conn.source_event.routine)
-        target_routine_id = flow._get_routine_id(conn.target_slot.routine)
-        conn_spec = {
-            "from": f"{source_routine_id}.{conn.source_event.name}",
-            "to": f"{target_routine_id}.{conn.target_slot.name}",
-        }
-        dsl_dict["connections"].append(conn_spec)
-
-    # Return in requested format
-    if format == "yaml":
-        import yaml
-
-        return {"format": "yaml", "dsl": yaml.dump(dsl_dict, default_flow_style=False)}
-    else:
-        import json
-
-        return {"format": "json", "dsl": json.dumps(dsl_dict, indent=2)}
+    factory = ObjectFactory.get_instance()
+    try:
+        dsl = factory.export_flow_to_dsl(flow, format=format)
+        return {"format": format, "dsl": dsl}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot export flow: {str(e)}. All routines must be registered in factory.",
+        ) from e
 
 
 @router.post("/flows/{flow_id}/validate", dependencies=[RequireAuth])
@@ -653,12 +659,39 @@ async def list_flow_routines(flow_id: str):
 
     routines = {}
     for routine_id, routine in flow.routines.items():
+        # Defensive check: Ensure it's actually a Routine instance
+        from routilux.routine import Routine
+
+        if not isinstance(routine, Routine):
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Flow '{flow.flow_id}' contains non-Routine object at routine_id '{routine_id}': "
+                f"{type(routine).__name__}. Skipping this entry."
+            )
+            continue
+
+        # Safe access with error handling
+        try:
+            slots = list(routine._slots.keys()) if hasattr(routine, "_slots") else []
+            events = list(routine._events.keys()) if hasattr(routine, "_events") else []
+            config = routine._config.copy() if hasattr(routine, "_config") else {}
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Error extracting routine info for '{routine_id}' in flow '{flow.flow_id}': {e}"
+            )
+            slots, events, config = [], [], []
+
         routines[routine_id] = RoutineInfo(
             routine_id=routine_id,
             class_name=routine.__class__.__name__,
-            slots=list(routine._slots.keys()),
-            events=list(routine._events.keys()),
-            config=routine._config.copy(),
+            slots=slots,
+            events=events,
+            config=config,
         )
 
     return routines
@@ -768,10 +801,10 @@ async def add_routine_to_flow(flow_id: str, request: AddRoutineRequest):
     1. **Factory name** (recommended): Use a registered factory name like "data_source"
     2. **Class path**: Use full module path like "mymodule.DataProcessor"
 
-    **Factory Names vs Class Paths**:
-    - **Factory names** are safer, discoverable, and don't require knowing internal class paths
+    **Factory-Only Requirement**:
+    - All routines must be registered in the factory before use
     - Use GET /api/factory/objects to see available factory names
-    - **Class paths** are fallback for routines not in factory
+    - Factory names are required - class paths are no longer supported
 
     **Request Example**:
     ```json
@@ -801,12 +834,12 @@ async def add_routine_to_flow(flow_id: str, request: AddRoutineRequest):
 
     **Error Responses**:
     - `404 Not Found`: Flow not found
-    - `400 Bad Request`: Routine ID already exists, invalid object_name, or failed to load class
+    - `400 Bad Request`: Routine ID already exists, or object_name not found in factory
     - `422 Validation Error`: Invalid request parameters
 
     **Validation**:
     - Routine ID must be unique within the flow
-    - Object name must exist in factory OR be a valid class path
+    - Object name must exist in factory (factory-only, no class paths)
     - Config must be a valid dictionary
 
     **Best Practices**:
@@ -847,30 +880,23 @@ async def add_routine_to_flow(flow_id: str, request: AddRoutineRequest):
         # Use factory to create
         routine = factory.create(request.object_name, config=request.config)
     else:
-        # Try loading as class path
-        if "." not in request.object_name or request.object_name.startswith(".") or request.object_name.endswith("."):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid object_name format: '{request.object_name}'. Expected factory name or 'module.path.ClassName'",
-            )
+        # Factory-only: reject if not found in factory
+        available = factory.list_available(object_type="routine")
+        available_names = [obj["name"] for obj in available]
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "object_not_found",
+                "message": f"Object '{request.object_name}' not found in factory. "
+                f"All routines must be registered in factory before use.",
+                "object_name": request.object_name,
+                "available_objects": available_names[:20],  # Limit to first 20 for response size
+            },
+        )
 
-        try:
-            from importlib import import_module
-
-            module_path, class_name = request.object_name.rsplit(".", 1)
-            if not module_path or not class_name:
-                raise ValueError("Both module_path and class_name must be non-empty")
-            module = import_module(module_path)
-            routine_class = getattr(module, class_name)
-            routine = routine_class()
-        except Exception as e:
-            raise HTTPException(
-                status_code=400, detail=f"Failed to load routine class: {str(e)}"
-            ) from e
-
-        # Apply config
-        if request.config:
-            routine.set_config(**request.config)
+    # CRITICAL SECURITY FIX: Validate that the created object is actually a Routine instance
+    # This prevents Flow instances or other non-Routine objects from being added to flows
+    validate_routine_instance(routine, context=f"routine_id: {request.routine_id}")
 
     # Add to flow
     flow.add_routine(routine, request.routine_id)
@@ -953,6 +979,41 @@ async def add_connection_to_flow(flow_id: str, request: AddConnectionRequest):
     flow = flow_store.get(flow_id)
     if not flow:
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+
+    # SECURITY FIX: Validate that source and target routines exist and are Routine instances
+    from routilux.routine import Routine
+
+    if request.source_routine not in flow.routines:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Source routine '{request.source_routine}' not found in flow",
+        )
+    source_routine = flow.routines[request.source_routine]
+    if not isinstance(source_routine, Routine):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_source_routine_type",
+                "message": f"Source routine '{request.source_routine}' is not a Routine instance",
+                "object_type": type(source_routine).__name__,
+            },
+        )
+
+    if request.target_routine not in flow.routines:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Target routine '{request.target_routine}' not found in flow",
+        )
+    target_routine = flow.routines[request.target_routine]
+    if not isinstance(target_routine, Routine):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_target_routine_type",
+                "message": f"Target routine '{request.target_routine}' is not a Routine instance",
+                "object_type": type(target_routine).__name__,
+            },
+        )
 
     try:
         flow.connect(

@@ -4,6 +4,8 @@ Request validators for API endpoints.
 Provides validation functions for common request patterns.
 """
 
+from typing import Any
+
 from fastapi import HTTPException
 
 from routilux.flow import Flow
@@ -98,3 +100,40 @@ def validate_routine_id_conflict(flow: Flow, routine_id: str) -> None:
                 "routine_id": routine_id,
             },
         )
+
+
+def validate_routine_instance(obj: Any, context: str = "") -> None:
+    """Validate that object is a Routine instance.
+
+    This is a critical security check to prevent Flow instances or other
+    non-Routine objects from being added to flows as routines.
+
+    Args:
+        obj: Object to validate.
+        context: Optional context string for error messages (e.g., "routine_id: my_routine").
+
+    Raises:
+        HTTPException: If object is not a Routine instance.
+    """
+    from routilux.routine import Routine
+
+    if not isinstance(obj, Routine):
+        error_detail = {
+            "error": "invalid_routine_type",
+            "message": f"Expected Routine instance, got {type(obj).__name__}",
+            "object_type": obj.__class__.__name__,
+            "expected_type": "Routine",
+        }
+        if context:
+            error_detail["context"] = context
+
+        # Special case: Explicitly reject Flow instances with clearer message
+        if isinstance(obj, Flow):
+            error_detail["error"] = "flow_not_allowed"
+            error_detail["message"] = (
+                "Flow instances cannot be used as routines. "
+                "Only Routine instances can be added to flows. "
+                f"Got Flow instance instead."
+            )
+
+        raise HTTPException(status_code=400, detail=error_detail)

@@ -495,11 +495,15 @@ class LoopController(Routine):
 
 def create_state_transition_flow():
     """Flow demonstrating state transitions: pending -> running -> completed"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="state_transition_flow")
 
-    source = DataSource(name="Source")
-    processor = StateTransitionDemo(name="Processor")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "Source"})
+    processor = factory.create("state_transition_demo", config={"name": "Processor"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     proc_id = flow.add_routine(processor, "processor")
@@ -513,14 +517,18 @@ def create_state_transition_flow():
 
 def create_queue_pressure_flow():
     """Flow demonstrating queue pressure monitoring"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="queue_pressure_flow")
 
-    source = DataSource(name="FastSource")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "FastSource"})
     # Validator uses batch policy - will create queue pressure
-    validator = DataValidator(name="BatchValidator")
+    validator = factory.create("data_validator", config={"name": "BatchValidator"})
     # Slow processor creates more pressure
-    processor = QueuePressureGenerator(name="SlowProcessor", processing_delay=0.8)
-    sink = DataSink(name="Sink")
+    processor = factory.create("queue_pressure_generator", config={"name": "SlowProcessor", "processing_delay": 0.8})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     val_id = flow.add_routine(validator, "validator")
@@ -536,12 +544,16 @@ def create_queue_pressure_flow():
 
 def create_debug_demo_flow():
     """Flow designed for debugging demonstrations"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="debug_demo_flow")
 
-    source = DataSource(name="Source")
-    transformer = DataTransformer(name="Transformer", transformation="uppercase")
-    debug_target = DebugTargetRoutine(name="DebugTarget")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "Source"})
+    transformer = factory.create("data_transformer", config={"name": "Transformer", "transformation": "uppercase"})
+    debug_target = factory.create("debug_target", config={"name": "DebugTarget"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     trans_id = flow.add_routine(transformer, "transformer")
@@ -557,15 +569,19 @@ def create_debug_demo_flow():
 
 def create_comprehensive_demo_flow():
     """Comprehensive flow showcasing all features"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="comprehensive_demo_flow")
 
-    source1 = DataSource(name="Source1")
-    source2 = DataSource(name="Source2")
-    validator = DataValidator(name="Validator")
-    transformer = DataTransformer(name="Transformer", transformation="uppercase")
-    queue_processor = QueuePressureGenerator(name="QueueProcessor", processing_delay=0.3)
-    debug_target = DebugTargetRoutine(name="DebugTarget")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source1 = factory.create("data_source", config={"name": "Source1"})
+    source2 = factory.create("data_source", config={"name": "Source2"})
+    validator = factory.create("data_validator", config={"name": "Validator"})
+    transformer = factory.create("data_transformer", config={"name": "Transformer", "transformation": "uppercase"})
+    queue_processor = factory.create("queue_pressure_generator", config={"name": "QueueProcessor", "processing_delay": 0.3})
+    debug_target = factory.create("debug_target", config={"name": "DebugTarget"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src1_id = flow.add_routine(source1, "source1")
     src2_id = flow.add_routine(source2, "source2")
@@ -589,12 +605,16 @@ def create_comprehensive_demo_flow():
 
 def create_aggregator_flow():
     """Flow demonstrating aggregator pattern with all_slots_ready_policy"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="aggregator_flow")
 
-    source1 = DataSource(name="Source1")
-    source2 = DataSource(name="Source2")
-    aggregator = DataAggregator(name="Aggregator")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source1 = factory.create("data_source", config={"name": "Source1"})
+    source2 = factory.create("data_source", config={"name": "Source2"})
+    aggregator = factory.create("data_aggregator", config={"name": "Aggregator"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src1_id = flow.add_routine(source1, "source1")
     src2_id = flow.add_routine(source2, "source2")
@@ -611,14 +631,18 @@ def create_aggregator_flow():
 
 def create_branching_flow():
     """Flow demonstrating branching pattern - one source to multiple processors"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="branching_flow")
 
-    source = DataSource(name="Source")
-    transformer1 = DataTransformer(name="Transformer1", transformation="uppercase")
-    transformer2 = DataTransformer(name="Transformer2", transformation="lowercase")
-    transformer3 = DataTransformer(name="Transformer3", transformation="reverse")
-    aggregator = DataAggregator(name="FinalAggregator")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "Source"})
+    transformer1 = factory.create("data_transformer", config={"name": "Transformer1", "transformation": "uppercase"})
+    transformer2 = factory.create("data_transformer", config={"name": "Transformer2", "transformation": "lowercase"})
+    transformer3 = factory.create("data_transformer", config={"name": "Transformer3", "transformation": "reverse"})
+    aggregator = factory.create("data_aggregator", config={"name": "FinalAggregator"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     trans1_id = flow.add_routine(transformer1, "transformer1")
@@ -642,11 +666,15 @@ def create_branching_flow():
 
 def create_rate_limited_flow():
     """Flow demonstrating rate limiting with time_interval_policy"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="rate_limited_flow")
 
-    source = DataSource(name="FastSource")
-    rate_limited = RateLimitedProcessor(name="RateLimited", interval_seconds=2.0)
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "FastSource"})
+    rate_limited = factory.create("rate_limited_processor", config={"name": "RateLimited", "interval_seconds": 2.0})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     rate_id = flow.add_routine(rate_limited, "rate_limited")
@@ -660,12 +688,16 @@ def create_rate_limited_flow():
 
 def create_error_handling_flow():
     """Flow demonstrating error handling scenarios"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="error_handling_flow")
 
-    source = DataSource(name="Source")
-    error_gen = ErrorGenerator(name="ErrorGenerator", error_rate=0.4)
-    transformer = DataTransformer(name="Transformer", transformation="uppercase")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "Source"})
+    error_gen = factory.create("error_generator", config={"name": "ErrorGenerator", "error_rate": 0.4})
+    transformer = factory.create("data_transformer", config={"name": "Transformer", "transformation": "uppercase"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     err_id = flow.add_routine(error_gen, "error_generator")
@@ -684,12 +716,16 @@ def create_error_handling_flow():
 
 def create_loop_flow():
     """Flow demonstrating loop pattern with LoopController"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="loop_flow")
 
-    source = DataSource(name="Source")
-    loop_controller = LoopController(name="LoopController", max_iterations=5)
-    processor = DataTransformer(name="Processor", transformation="uppercase")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source = factory.create("data_source", config={"name": "Source"})
+    loop_controller = factory.create("loop_controller", config={"name": "LoopController", "max_iterations": 5})
+    processor = factory.create("data_transformer", config={"name": "Processor", "transformation": "uppercase"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src_id = flow.add_routine(source, "source")
     loop_id = flow.add_routine(loop_controller, "loop_controller")
@@ -707,12 +743,16 @@ def create_loop_flow():
 
 def create_multi_slot_flow():
     """Flow demonstrating multi-slot processing"""
+    from routilux.factory.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
     flow = Flow(flow_id="multi_slot_flow")
 
-    source1 = DataSource(name="PrimarySource")
-    source2 = DataSource(name="SecondarySource")
-    multi_processor = MultiSlotProcessor(name="MultiSlotProcessor")
-    sink = DataSink(name="Sink")
+    # Use factory to create routines (required for DSL export)
+    source1 = factory.create("data_source", config={"name": "PrimarySource"})
+    source2 = factory.create("data_source", config={"name": "SecondarySource"})
+    multi_processor = factory.create("multi_slot_processor", config={"name": "MultiSlotProcessor"})
+    sink = factory.create("data_sink", config={"name": "Sink"})
 
     src1_id = flow.add_routine(source1, "primary_source")
     src2_id = flow.add_routine(source2, "secondary_source")
@@ -745,17 +785,38 @@ def main():
     print("\n" + "=" * 80)
 
     # Enable monitoring BEFORE importing flow_store
-    print("\n[1/5] Enabling monitoring...")
+    print("\n[1/6] Enabling monitoring...")
     MonitoringRegistry.enable()
 
     # Import AFTER enabling monitoring
     from routilux.factory.factory import ObjectFactory
     from routilux.factory.metadata import ObjectMetadata
     from routilux.monitoring.flow_registry import FlowRegistry
+    from routilux.monitoring.runtime_registry import RuntimeRegistry
     from routilux.monitoring.storage import flow_store
+    from routilux.runtime import Runtime
+
+    # Register runtimes in RuntimeRegistry
+    print("\n[2/6] Registering runtimes in RuntimeRegistry...")
+    runtime_registry = RuntimeRegistry.get_instance()
+    
+    # Create and register three runtimes for testing
+    runtimes_to_create = [
+        ("production", 0, True, "Production runtime using shared thread pool (recommended)"),
+        ("development", 5, False, "Development runtime with small independent thread pool"),
+        ("testing", 2, False, "Testing runtime with minimal thread pool for isolation"),
+    ]
+    
+    for runtime_id, thread_pool_size, is_default, description in runtimes_to_create:
+        runtime = Runtime(thread_pool_size=thread_pool_size)
+        runtime_registry.register(runtime, runtime_id, is_default=is_default)
+        pool_info = "shared pool" if thread_pool_size == 0 else f"{thread_pool_size} threads"
+        default_info = " (default)" if is_default else ""
+        print(f"  ✓ Registered: {runtime_id} ({pool_info}){default_info}")
+        print(f"    {description}")
 
     # Register routines in factory
-    print("\n[2/5] Registering routines in factory...")
+    print("\n[3/6] Registering routines in factory...")
     factory = ObjectFactory.get_instance()
     
     routine_registrations = [
@@ -788,7 +849,7 @@ def main():
     flows = []
 
     # Create all flows
-    print("\n[3/5] Creating demo flows...")
+    print("\n[4/6] Creating demo flows...")
 
     flows_to_create = [
         ("State Transition Flow", create_state_transition_flow),
@@ -828,7 +889,7 @@ def main():
         print(f"     ✓ Registered in factory")
 
     print("\n" + "=" * 80)
-    print("[4/5] All flows created successfully!")
+    print("[6/6] All flows created successfully!")
     print("=" * 80)
     print(f"\nTotal flows created: {len(flows)}")
     print("\nFlow Summary:")
@@ -837,7 +898,7 @@ def main():
         print(f"    Routines: {len(flow.routines):2d} | Connections: {len(flow.connections):2d}")
 
     # Register flows in registry by name
-    print("\n[5/5] Registering flows in registry...")
+    print("\n[5/6] Registering flows in registry...")
     registry = FlowRegistry.get_instance()
     for name, flow, entry in flows:
         # Use a clean name for registry
@@ -857,6 +918,9 @@ def main():
     print("   Start job from: source")
     print("   Monitor: Job status changes (pending -> running -> completed)")
     print("   API: GET /api/jobs/{job_id} to see status transitions")
+    print("   Start with runtime:")
+    print("     POST /api/jobs")
+    print('     {"flow_id": "state_transition_flow", "runtime_id": "production"}')
     print("\n2️⃣  Queue Pressure Flow - Queue monitoring")
     print("   Start job from: source")
     print("   Monitor: Queue status, pressure levels (low/medium/high/critical)")
@@ -902,6 +966,26 @@ def main():
     print("   Filter by category: GET /api/factory/objects?category=data_generation")
     print("   Filter by type: GET /api/factory/objects?object_type=routine")
     print("   Combined filter: GET /api/factory/objects?category=data_generation&object_type=routine")
+    
+    print("\n⚙️  Runtime Management - Registered runtimes")
+    print("   List: GET /api/runtimes")
+    print("   Details: GET /api/runtimes/{runtime_id}")
+    print("   Create: POST /api/runtimes")
+    print("   Available runtimes:")
+    for runtime_id, thread_pool_size, is_default, description in runtimes_to_create:
+        default_marker = " (default)" if is_default else ""
+        pool_info = "shared pool" if thread_pool_size == 0 else f"{thread_pool_size} threads"
+        print(f"     • {runtime_id}: {description} ({pool_info}){default_marker}")
+    print("\n   Start job with specific runtime:")
+    print("     POST /api/jobs")
+    print("     {")
+    print('       "flow_id": "state_transition_flow",')
+    print('       "runtime_id": "production"  // or "development", "testing", or omit for default')
+    print("     }")
+    print("\n   Test different runtimes:")
+    print("     • Production: Uses shared thread pool (recommended)")
+    print("     • Development: Small independent thread pool (5 threads)")
+    print("     • Testing: Minimal thread pool (2 threads) for isolation")
 
     # Start API server
     print("\n" + "=" * 80)
