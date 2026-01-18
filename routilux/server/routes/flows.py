@@ -6,8 +6,8 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.flow import (
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.models.flow import (
     AddConnectionRequest,
     AddRoutineRequest,
     ConnectionInfo,
@@ -16,7 +16,7 @@ from routilux.api.models.flow import (
     FlowResponse,
     RoutineInfo,
 )
-from routilux.api.validators import (
+from routilux.server.validators import (
     validate_dsl_size,
     validate_routine_id_conflict,
     validate_routine_instance,
@@ -866,7 +866,7 @@ async def add_routine_to_flow(flow_id: str, request: AddRoutineRequest):
         HTTPException: 400 if routine ID conflict or object_name invalid
         HTTPException: 422 if request validation fails
     """
-    from routilux.api.validators import validate_flow_exists
+    from routilux.server.validators import validate_flow_exists
     from routilux.factory.factory import ObjectFactory
 
     flow = validate_flow_exists(flow_id)

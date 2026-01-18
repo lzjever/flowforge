@@ -4,8 +4,8 @@ Breakpoint management API routes.
 
 from fastapi import APIRouter, HTTPException
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.breakpoint import (
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.models.breakpoint import (
     BreakpointCreateRequest,
     BreakpointListResponse,
     BreakpointResponse,

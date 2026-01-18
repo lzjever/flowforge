@@ -10,7 +10,7 @@ WebSocket) requires a valid X-API-Key; when false, all are public. No mixed mode
 from fastapi import Depends, HTTPException, Security
 from fastapi.security import APIKeyHeader
 
-from routilux.api.config import get_config
+from routilux.server.config import get_config
 
 # API Key header name (OpenAPI: X-API-Key, In: header)
 API_KEY_HEADER = "X-API-Key"

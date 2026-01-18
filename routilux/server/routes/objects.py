@@ -6,8 +6,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.object import ObjectListResponse, ObjectMetadataResponse
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.models.object import ObjectListResponse, ObjectMetadataResponse
 from routilux.factory.factory import ObjectFactory
 
 router = APIRouter()

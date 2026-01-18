@@ -8,9 +8,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.debug import ExpressionEvalRequest, ExpressionEvalResponse
-from routilux.api.security import SecurityError, TimeoutError, safe_evaluate
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.models.debug import ExpressionEvalRequest, ExpressionEvalResponse
+from routilux.server.security import SecurityError, TimeoutError, safe_evaluate
 from routilux.monitoring.registry import MonitoringRegistry
 from routilux.monitoring.storage import job_store
 

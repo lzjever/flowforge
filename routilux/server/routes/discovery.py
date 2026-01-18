@@ -6,11 +6,11 @@ Provides endpoints to discover and register flows/jobs created outside the API.
 
 from fastapi import APIRouter, HTTPException
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.flow import FlowListResponse
-from routilux.api.models.job import JobListResponse
-from routilux.api.routes.flows import _flow_to_response
-from routilux.api.routes.jobs import _job_to_response
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.models.flow import FlowListResponse
+from routilux.server.models.job import JobListResponse
+from routilux.server.routes.flows import _flow_to_response
+from routilux.server.routes.jobs import _job_to_response
 from routilux.monitoring.flow_registry import FlowRegistry
 from routilux.monitoring.job_registry import JobRegistry
 from routilux.monitoring.storage import flow_store, job_store

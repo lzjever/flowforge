@@ -7,8 +7,8 @@ from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.models.monitor import (
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.models.monitor import (
     ExecutionEventResponse,
     ExecutionMetricsResponse,
     ExecutionTraceResponse,

@@ -11,8 +11,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from routilux.api.middleware.auth import RequireAuth
-from routilux.api.routes import breakpoints, debug, discovery, flows, jobs, monitor, objects, websocket
+from routilux.server.middleware.auth import RequireAuth
+from routilux.server.routes import breakpoints, debug, discovery, flows, jobs, monitor, objects, websocket
 
 
 @asynccontextmanager
@@ -141,7 +141,7 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Setup rate limiting
-from routilux.api.middleware.rate_limit import setup_rate_limiting  # noqa: E402
+from routilux.server.middleware.rate_limit import setup_rate_limiting  # noqa: E402
 
 setup_rate_limiting(app)
 
@@ -149,7 +149,7 @@ setup_rate_limiting(app)
 from starlette.exceptions import HTTPException  # noqa: E402
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 
-from routilux.api.middleware.error_handler import (  # noqa: E402
+from routilux.server.middleware.error_handler import (  # noqa: E402
     general_exception_handler,
     http_exception_handler,
     validation_exception_handler,
@@ -170,7 +170,7 @@ app.include_router(discovery.router, prefix="/api", tags=["discovery"])
 app.include_router(objects.router, prefix="/api/factory", tags=["factory"])
 
 # Runtime management router
-from routilux.api.routes import runtimes
+from routilux.server.routes import runtimes
 
 app.include_router(runtimes.router, prefix="/api", tags=["runtimes"])
 
@@ -211,7 +211,7 @@ def health():
         job_count = None
         stores_accessible = False
 
-    from routilux.api.config import get_config
+    from routilux.server.config import get_config
 
     config = get_config()
     return {

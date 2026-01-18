@@ -11,7 +11,7 @@ from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from routilux.api.models.error import ErrorResponse
+from routilux.server.models.error import ErrorResponse
 
 logger = logging.getLogger(__name__)
 

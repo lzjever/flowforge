@@ -8,7 +8,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from routilux.api.config import get_config
+from routilux.server.config import get_config
 
 # Create limiter instance
 limiter = Limiter(key_func=get_remote_address)

@@ -32,7 +32,7 @@ async def _check_websocket_auth(websocket: WebSocket) -> bool:
 
     Returns True if auth passed or disabled, False if closed due to auth failure.
     """
-    from routilux.api.config import get_config
+    from routilux.server.config import get_config
 
     config = get_config()
     if not config.api_key_enabled:

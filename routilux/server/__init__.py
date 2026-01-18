@@ -14,7 +14,7 @@ This is an optional module. Install with: pip install routilux[api]
 __all__ = ["app"]
 
 try:
-    from routilux.api.main import app
+    from routilux.server.main import app
 except ImportError as e:
     raise ImportError(
         "FastAPI dependencies are not installed. Install them with: pip install routilux[api]"

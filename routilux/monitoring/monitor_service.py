@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from routilux.api.models.monitor import (
+    from routilux.server.models.monitor import (
         JobMonitoringData,
         RoutineExecutionStatus,
         RoutineInfo,
@@ -142,7 +142,7 @@ class MonitorService:
 
         # Get aggregate metrics (for statistics)
         # Lazy import to avoid circular dependency
-        from routilux.api.models.monitor import RoutineExecutionStatus
+        from routilux.server.models.monitor import RoutineExecutionStatus
 
         execution_count = 0
         error_count = 0
@@ -194,7 +194,7 @@ class MonitorService:
         routine = flow.routines[routine_id]
 
         # Lazy import to avoid circular dependency
-        from routilux.api.models.monitor import SlotQueueStatus
+        from routilux.server.models.monitor import SlotQueueStatus
 
         queue_statuses = []
         for slot_name, slot in routine.slots.items():
@@ -240,7 +240,7 @@ class MonitorService:
         events = list(routine.events.keys())
 
         # Lazy import to avoid circular dependency
-        from routilux.api.models.monitor import RoutineInfo
+        from routilux.server.models.monitor import RoutineInfo
 
         # Get routine type
         routine_type = type(routine).__name__
@@ -271,7 +271,7 @@ class MonitorService:
             raise ValueError(f"Job '{job_id}' not found")
 
         # Lazy import to avoid circular dependency
-        from routilux.api.models.monitor import RoutineMonitoringData
+        from routilux.server.models.monitor import RoutineMonitoringData
 
         # Get execution status
         execution_status = self.get_routine_execution_status(job_id, routine_id, job_state)
@@ -308,7 +308,7 @@ class MonitorService:
             raise ValueError(f"Flow '{job_state.flow_id}' not found")
 
         # Lazy import to avoid circular dependency
-        from routilux.api.models.monitor import JobMonitoringData
+        from routilux.server.models.monitor import JobMonitoringData
 
         # Build monitoring data for each routine
         routines_data: Dict[str, "RoutineMonitoringData"] = {}
