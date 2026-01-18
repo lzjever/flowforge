@@ -8,7 +8,7 @@ unconnected component detection, and connection validation.
 from typing import TYPE_CHECKING, List, Set, Tuple
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
+    from routilux.core.flow import Flow
 
 
 def detect_cycles(flow: "Flow") -> List[List[str]]:

@@ -10,8 +10,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.job_state import JobState
+    from routilux.core.flow import Flow
+    from routilux.core.worker import JobState
 
 
 class StorageBackend(ABC):

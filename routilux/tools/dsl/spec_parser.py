@@ -8,7 +8,7 @@ import importlib
 from typing import TYPE_CHECKING, Any, Dict, Type, Union
 
 if TYPE_CHECKING:
-    from routilux.routine import Routine  # noqa: F401
+    from routilux.core.routine import Routine  # noqa: F401
 
 
 def parse_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
@@ -145,7 +145,7 @@ def _load_class(class_spec: Union[str, Type]) -> Type:
 
         # Validate that the loaded class is a Routine subclass
         # Import here at runtime to avoid circular imports at module level
-        from routilux.routine import Routine
+        from routilux.core.routine import Routine
 
         if not isinstance(cls, type):
             raise ValueError(

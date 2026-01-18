@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Dict
 from serilux import Serializable
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
+    from routilux.core.flow import Flow
 
 
 def serialize_flow(flow: "Flow") -> Dict[str, Any]:

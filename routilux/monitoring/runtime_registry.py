@@ -10,7 +10,7 @@ import threading
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from routilux.runtime import Runtime
+    from routilux.core.runtime import Runtime
 
 
 class RuntimeRegistry:
@@ -95,7 +95,7 @@ class RuntimeRegistry:
         """
         with self._lock:
             if self._default_runtime_id is None:
-                from routilux.runtime import Runtime
+                from routilux.core.runtime import Runtime
 
                 runtime = Runtime(thread_pool_size=thread_pool_size)
                 self.register(runtime, "default", is_default=True)

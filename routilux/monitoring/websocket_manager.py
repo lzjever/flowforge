@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
     from routilux.monitoring.breakpoint_manager import Breakpoint
     from routilux.monitoring.monitor_collector import ExecutionEvent, ExecutionMetrics
-    from routilux.routine import ExecutionContext
+    from routilux.core.routine import ExecutionContext
 
 # Optional FastAPI import for WebSocket type
 try:

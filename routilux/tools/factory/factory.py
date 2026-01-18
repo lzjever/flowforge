@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, Uni
 from routilux.tools.factory.metadata import ObjectMetadata
 
 if TYPE_CHECKING:
-    from routilux.error_handler import ErrorHandler
-    from routilux.flow.flow import Flow
-    from routilux.routine import Routine
+    from routilux.core.error import ErrorHandler
+    from routilux.core.flow import Flow
+    from routilux.core.routine import Routine
 
 
 class ObjectFactory:
@@ -108,7 +108,7 @@ class ObjectFactory:
                 prototype_class = prototype.__class__
 
                 # Check if it's a Flow - Flows need special handling (clone routines/connections)
-                from routilux.flow.flow import Flow
+                from routilux.core.flow import Flow
 
                 if isinstance(prototype, Flow):
                     # For Flow instances, store the original instance for cloning
@@ -198,7 +198,7 @@ class ObjectFactory:
                     if "slots" in proto:
                         for slot_name, slot in proto["slots"].items():
                             # Clone slot by redefining it with same parameters
-                            from routilux.slot import Slot
+                            from routilux.core.slot import Slot
                             cloned_slot = Slot(
                                 slot.name,
                                 instance,
@@ -211,7 +211,7 @@ class ObjectFactory:
                     if "events" in proto:
                         for event_name, event in proto["events"].items():
                             # Clone event by redefining it with same parameters
-                            from routilux.event import Event
+                            from routilux.core.event import Event
                             cloned_event = Event(
                                 event.name,
                                 instance,
@@ -277,8 +277,8 @@ class ObjectFactory:
                         continue  # Skip if we can't determine type
 
                 # Check if it's a Flow or Routine
-                from routilux.flow.flow import Flow
-                from routilux.routine import Routine
+                from routilux.core.flow import Flow
+                from routilux.core.routine import Routine
 
                 if issubclass(prototype_class, Flow):
                     detected_object_type = "flow"
@@ -405,7 +405,7 @@ class ObjectFactory:
             >>> dsl_dict = factory.export_flow_to_dsl(flow)
             >>> dsl_yaml = factory.export_flow_to_dsl(flow, format="yaml")
         """
-        from routilux.flow.flow import Flow
+        from routilux.core.flow import Flow
 
         if not isinstance(flow, Flow):
             raise TypeError(f"Expected Flow instance, got {type(flow).__name__}")
@@ -528,9 +528,9 @@ class ObjectFactory:
             ... }
             >>> flow = factory.load_flow_from_dsl(dsl)
         """
-        from routilux.error_handler import ErrorHandler, ErrorStrategy
-        from routilux.flow.flow import Flow
-        from routilux.routine import Routine
+        from routilux.core.error import ErrorHandler, ErrorStrategy
+        from routilux.core.flow import Flow
+        from routilux.core.routine import Routine
 
         # Validate DSL structure
         if not isinstance(dsl_dict, dict):

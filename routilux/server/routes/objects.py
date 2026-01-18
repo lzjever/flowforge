@@ -342,7 +342,7 @@ async def get_factory_object_interface(name: str):
         instance = factory.create(name)
 
         # Check if it's a Routine
-        from routilux.routine import Routine
+        from routilux.core.routine import Routine
 
         if not isinstance(instance, Routine):
             raise HTTPException(

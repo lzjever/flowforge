@@ -5,8 +5,8 @@ Cloning utilities for Flow and Routine objects.
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.routine import Routine
+    from routilux.core.flow import Flow
+    from routilux.core.routine import Routine
 
 
 def clone_routine(routine: "Routine") -> "Routine":
@@ -59,7 +59,7 @@ def clone_flow(flow: "Flow", flow_id: Optional[str] = None) -> "Flow":
     Returns:
         New Flow instance with cloned routines and connections.
     """
-    from routilux.flow.flow import Flow
+    from routilux.core.flow import Flow
 
     # Create new flow
     new_flow = Flow(flow_id=flow_id)

@@ -36,7 +36,7 @@ def _flow_to_response(flow: Flow) -> FlowResponse:
     for routine_id, routine in flow.routines.items():
         # Defensive check: Ensure it's actually a Routine instance
         # This handles cases where corrupted data might exist (e.g., Flow added as Routine)
-        from routilux.routine import Routine
+        from routilux.core.routine import Routine
 
         if not isinstance(routine, Routine):
             logger.error(
@@ -660,7 +660,7 @@ async def list_flow_routines(flow_id: str):
     routines = {}
     for routine_id, routine in flow.routines.items():
         # Defensive check: Ensure it's actually a Routine instance
-        from routilux.routine import Routine
+        from routilux.core.routine import Routine
 
         if not isinstance(routine, Routine):
             import logging
@@ -981,7 +981,7 @@ async def add_connection_to_flow(flow_id: str, request: AddConnectionRequest):
         raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
 
     # SECURITY FIX: Validate that source and target routines exist and are Routine instances
-    from routilux.routine import Routine
+    from routilux.core.routine import Routine
 
     if request.source_routine not in flow.routines:
         raise HTTPException(

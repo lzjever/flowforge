@@ -7,8 +7,8 @@ Handles building and querying routine dependency graphs.
 from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
-    from routilux.connection import Connection
-    from routilux.routine import Routine
+    from routilux.core.connection import Connection
+    from routilux.core.routine import Routine
 
 
 def build_dependency_graph(

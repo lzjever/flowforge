@@ -14,7 +14,7 @@ from typing import Any
 
 from routilux.tools.analysis.analyzers.routine import RoutineAnalyzer
 from routilux.flow import Flow
-from routilux.routine import Routine
+from routilux.core.routine import Routine
 
 
 class WorkflowAnalyzer:

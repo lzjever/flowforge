@@ -9,8 +9,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.job_state import JobState
+    from routilux.core.flow import Flow
+    from routilux.core.worker import JobState
 
 
 def execute_flow(
@@ -77,8 +77,8 @@ def start_flow_execution(
     if entry_routine_id not in flow.routines:
         raise ValueError(f"Entry routine '{entry_routine_id}' not found in flow")
 
-    from routilux.job_state import JobState
-    from routilux.status import ExecutionStatus
+    from routilux.core.worker import JobState
+    from routilux.core.status import ExecutionStatus
 
     # Create or use provided job_state
     if job_state is None:
@@ -159,8 +159,8 @@ def execute_flow_unified(
     """
     from routilux.execution_tracker import ExecutionTracker
     from routilux.flow.error_handling import get_error_handler_for_routine
-    from routilux.job_state import JobState
-    from routilux.status import ExecutionStatus
+    from routilux.core.worker import JobState
+    from routilux.core.status import ExecutionStatus
 
     # Use provided job_state or create new one
     if job_state is None:
@@ -192,7 +192,7 @@ def execute_flow_unified(
         flow.execution_tracker.record_routine_start(entry_routine_id, entry_params)
 
         # Monitoring hook: Flow start
-        from routilux.monitoring.hooks import execution_hooks
+        from routilux.monitoring.execution_hooks import execution_hooks
 
         execution_hooks.on_flow_start(flow, job_state)
 
@@ -207,7 +207,7 @@ def execute_flow_unified(
             )
 
         # Set job_state in context variable for entry routine execution
-        from routilux.routine import _current_job_state
+        from routilux.core.routine import _current_job_state
 
         old_job_state = _current_job_state.get(None)
         _current_job_state.set(job_state)
@@ -344,7 +344,7 @@ def execute_flow_unified(
         logging.exception(f"Error executing flow: {e}")
 
         # Monitoring hook: Flow end (failed)
-        from routilux.monitoring.hooks import execution_hooks
+        from routilux.monitoring.execution_hooks import execution_hooks
 
         execution_hooks.on_flow_end(flow, job_state, "failed")
 

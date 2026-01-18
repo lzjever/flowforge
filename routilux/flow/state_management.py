@@ -11,8 +11,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.job_state import JobState
+    from routilux.core.flow import Flow
+    from routilux.core.worker import JobState
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +207,7 @@ def deserialize_pending_tasks(flow: "Flow", job_state: "JobState") -> None:
     if not hasattr(job_state, "pending_tasks") or not job_state.pending_tasks:
         return
 
-    from routilux.flow.task import SlotActivationTask, TaskPriority
+    from routilux.core.task import SlotActivationTask, TaskPriority
 
     flow._pending_tasks = []
     for serialized in job_state.pending_tasks:
@@ -280,7 +280,7 @@ def _recover_slot_tasks(flow: "Flow", job_state: "JobState") -> None:
         raise AttributeError("Flow is missing required attribute/method: _enqueue_task. Ensure Flow.__init__() has been called properly.")
 
     from routilux.flow.error_handling import get_error_handler_for_routine
-    from routilux.flow.task import SlotActivationTask, TaskPriority
+    from routilux.core.task import SlotActivationTask, TaskPriority
 
     recovered_count = 0
 

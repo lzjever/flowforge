@@ -4,43 +4,60 @@ Routilux - Event-driven workflow orchestration framework
 Provides flexible connection, state management, and workflow orchestration capabilities.
 """
 
-# Import analysis tools
-from routilux.tools.analysis import (
-    BaseFormatter,
-    RoutineAnalyzer,
-    RoutineMarkdownFormatter,
-    WorkflowAnalyzer,
-    WorkflowD2Formatter,
-    analyze_routine_file,
-    analyze_workflow,
+# Core classes from core module
+from routilux.core.connection import Connection
+from routilux.core.context import JobContext
+from routilux.core.error import ErrorHandler, ErrorStrategy
+from routilux.core.event import Event
+from routilux.core.flow import Flow
+from routilux.core.registry import (
+    FlowRegistry,
+    WorkerRegistry,
+    get_flow_registry,
+    get_worker_registry,
 )
-from routilux.connection import Connection
-from routilux.error_handler import ErrorHandler, ErrorStrategy
-from routilux.event import Event
-from routilux.execution_tracker import ExecutionTracker
-from routilux.flow import Flow
+from routilux.core.routine import ExecutionContext, Routine
+from routilux.core.runtime import Runtime
+from routilux.core.slot import Slot
+from routilux.core.status import ExecutionStatus, JobStatus, RoutineStatus
+from routilux.core.worker import ExecutionRecord, WorkerState
+
+# Worker management (renamed from Job*)
+from routilux.core.executor import WorkerExecutor
+from routilux.core.manager import WorkerManager, get_worker_manager, reset_worker_manager
+
+# Output handling
+from routilux.core.output import (
+    RoutedStdout,
+    clear_job_output,
+    get_job_output,
+    install_routed_stdout,
+    uninstall_routed_stdout,
+)
+
+# Flow builder (still in flow/ for now)
 from routilux.flow.builder import FlowBuilder
 
-# Import job management
-from routilux.job_executor import JobExecutor
-from routilux.job_manager import GlobalJobManager, get_job_manager, reset_job_manager
-from routilux.job_state import ExecutionRecord, JobState
-from routilux.output_handler import (
-    CallbackOutputHandler,
-    NullOutputHandler,
-    OutputHandler,
-    QueueOutputHandler,
-)
-from routilux.routine import ExecutionContext, Routine
-from routilux.runtime import Runtime
-from routilux.slot import Slot
-from routilux.status import ExecutionStatus, RoutineStatus
-
-# Import factory
+# Factory
 from routilux.tools.factory import ObjectFactory, ObjectMetadata
 
-# Import testing utilities
+# Testing utilities
 from routilux.tools.testing import RoutineTester
+
+# Analysis tools (optional)
+try:
+    from routilux.tools.analysis import (
+        BaseFormatter,
+        RoutineAnalyzer,
+        RoutineMarkdownFormatter,
+        WorkflowAnalyzer,
+        WorkflowD2Formatter,
+        analyze_routine_file,
+        analyze_workflow,
+    )
+    _analysis_available = True
+except ImportError:
+    _analysis_available = False
 
 __all__ = [
     # Core classes
@@ -51,39 +68,59 @@ __all__ = [
     "Connection",
     "Flow",
     "FlowBuilder",
-    "JobState",
+    # Worker/Job state (renamed)
+    "WorkerState",
     "ExecutionRecord",
-    "ExecutionTracker",
+    "JobContext",
+    # Error handling
     "ErrorHandler",
     "ErrorStrategy",
-    # Job management
-    "GlobalJobManager",
-    "JobExecutor",
-    "get_job_manager",
-    "reset_job_manager",
+    # Worker management (renamed from Job*)
+    "WorkerManager",
+    "WorkerExecutor",
+    "get_worker_manager",
+    "reset_worker_manager",
     # Status enums
     "ExecutionStatus",
     "RoutineStatus",
+    "JobStatus",
     # Runtime
     "Runtime",
+    # Registry
+    "FlowRegistry",
+    "WorkerRegistry",
+    "get_flow_registry",
+    "get_worker_registry",
+    # Output handling
+    "RoutedStdout",
+    "install_routed_stdout",
+    "uninstall_routed_stdout",
+    "get_job_output",
+    "clear_job_output",
     # Factory
     "ObjectFactory",
     "ObjectMetadata",
-    # Output handlers
-    "OutputHandler",
-    "QueueOutputHandler",
-    "CallbackOutputHandler",
-    "NullOutputHandler",
-    # Analysis tools
-    "RoutineAnalyzer",
-    "analyze_routine_file",
-    "WorkflowAnalyzer",
-    "analyze_workflow",
-    "BaseFormatter",
-    "RoutineMarkdownFormatter",
-    "WorkflowD2Formatter",
     # Testing utilities
     "RoutineTester",
 ]
+
+# Add analysis tools if available
+if _analysis_available:
+    __all__.extend([
+        "RoutineAnalyzer",
+        "analyze_routine_file",
+        "WorkflowAnalyzer",
+        "analyze_workflow",
+        "BaseFormatter",
+        "RoutineMarkdownFormatter",
+        "WorkflowD2Formatter",
+    ])
+
+# Backward compatibility aliases (deprecated, will be removed)
+# These allow existing code to continue working during transition
+JobState = WorkerState  # type: ignore
+GlobalJobManager = WorkerManager  # type: ignore
+JobExecutor = WorkerExecutor  # type: ignore
+get_job_manager = get_worker_manager  # type: ignore
 
 __version__ = "0.10.0"

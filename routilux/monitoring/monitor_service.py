@@ -11,9 +11,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.job_state import JobState
-    from routilux.routine import Routine
+    from routilux.core.flow import Flow
+    from routilux.core.worker import JobState
+    from routilux.core.routine import Routine
 
 # Import models with TYPE_CHECKING to avoid circular import
 from typing import TYPE_CHECKING
@@ -26,10 +26,10 @@ if TYPE_CHECKING:
         RoutineMonitoringData,
         SlotQueueStatus,
     )
-from routilux.monitoring.flow_registry import FlowRegistry
+from routilux.core.registry import FlowRegistry
 from routilux.monitoring.registry import MonitoringRegistry
 from routilux.monitoring.storage import job_store
-from routilux.runtime import get_runtime_instance
+from routilux.core.runtime import get_runtime_instance
 
 
 class MonitorService:

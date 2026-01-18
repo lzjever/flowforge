@@ -115,7 +115,7 @@ def validate_routine_instance(obj: Any, context: str = "") -> None:
     Raises:
         HTTPException: If object is not a Routine instance.
     """
-    from routilux.routine import Routine
+    from routilux.core.routine import Routine
 
     if not isinstance(obj, Routine):
         error_detail = {

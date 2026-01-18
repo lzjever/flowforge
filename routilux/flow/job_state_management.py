@@ -13,9 +13,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.job_executor import JobExecutor
-    from routilux.job_state import JobState
+    from routilux.core.flow import Flow
+    from routilux.core.executor import JobExecutor
+    from routilux.core.worker import JobState
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,7 @@ def _serialize_pending_tasks(executor: "JobExecutor") -> None:
     Args:
         executor: JobExecutor to serialize tasks from.
     """
-    from routilux.flow.task import TaskPriority
+    from routilux.core.task import TaskPriority
 
     serialized_tasks = []
     for task in executor.pending_tasks:
@@ -262,7 +262,7 @@ def _deserialize_pending_tasks(executor: "JobExecutor") -> None:
     if not hasattr(executor.job_state, "pending_tasks") or not executor.job_state.pending_tasks:
         return
 
-    from routilux.flow.task import SlotActivationTask, TaskPriority
+    from routilux.core.task import SlotActivationTask, TaskPriority
 
     # Clear existing pending tasks
     executor.pending_tasks = []

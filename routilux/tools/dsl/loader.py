@@ -5,7 +5,7 @@ DSL loader for creating Flow objects from specifications.
 from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
+    from routilux.core.flow import Flow
 
 
 def load_flow_from_spec(spec: Dict[str, Any]) -> "Flow":

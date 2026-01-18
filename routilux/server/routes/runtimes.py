@@ -278,7 +278,7 @@ async def create_runtime(request: RuntimeCreateRequest):
         HTTPException: 422 if validation fails
     """
     try:
-        from routilux.runtime import Runtime
+        from routilux.core.runtime import Runtime
 
         registry = RuntimeRegistry.get_instance()
 

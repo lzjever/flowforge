@@ -7,9 +7,9 @@ Provides a fluent builder pattern for constructing Flow objects.
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
-    from routilux.error_handler import ErrorHandler
-    from routilux.flow.flow import Flow
-    from routilux.routine import Routine
+    from routilux.core.error import ErrorHandler
+    from routilux.core.flow import Flow
+    from routilux.core.routine import Routine
 
 
 class FlowBuilder:
@@ -46,7 +46,7 @@ class FlowBuilder:
         Args:
             flow_id: Optional flow identifier. If None, Flow will generate one.
         """
-        from routilux.flow.flow import Flow
+        from routilux.core.flow import Flow
 
         self.flow = Flow(flow_id=flow_id)
 

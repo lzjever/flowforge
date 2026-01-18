@@ -59,7 +59,7 @@ async def create_breakpoint(job_id: str, request: BreakpointCreateRequest):
     # For routine-level breakpoints, use job-specific activation policy
     if request.type == "routine" and request.routine_id:
         # Get flow and routine to save original policy
-        from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.core.registry import FlowRegistry
         
         flow_registry = FlowRegistry.get_instance()
         flow = flow_registry.get(job_state.flow_id)
@@ -160,7 +160,7 @@ async def delete_breakpoint(job_id: str, breakpoint_id: str):
     
     if breakpoint and breakpoint.type == "routine" and breakpoint.routine_id:
         # Restore original policy
-        from routilux.monitoring.flow_registry import FlowRegistry
+        from routilux.core.registry import FlowRegistry
         from routilux.activation_policies import immediate_policy
         
         flow_registry = FlowRegistry.get_instance()

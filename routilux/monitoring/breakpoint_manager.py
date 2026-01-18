@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
 if TYPE_CHECKING:
-    from routilux.routine import ExecutionContext
+    from routilux.core.routine import ExecutionContext
 
 
 @dataclass

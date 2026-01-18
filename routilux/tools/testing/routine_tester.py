@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from unittest.mock import MagicMock
 
 if TYPE_CHECKING:
-    from routilux.routine import Routine
+    from routilux.core.routine import Routine
 
 
 class RoutineTester:
@@ -43,8 +43,8 @@ class RoutineTester:
 
     def _setup_mock_flow(self) -> None:
         """Setup mock flow context for testing."""
-        from routilux.job_state import JobState
-        from routilux.routine import _current_job_state
+        from routilux.core.worker import JobState
+        from routilux.core.routine import _current_job_state
 
         mock_flow = MagicMock()
         mock_job_state = JobState("test_flow")
@@ -145,7 +145,7 @@ class RoutineTester:
         Critical fix: Properly cleans up context variables and monkey-patched
         methods to prevent state leakage between tests.
         """
-        from routilux.routine import _current_job_state
+        from routilux.core.routine import _current_job_state
 
         # HIGH fix: Properly reset context variable using the token
         if hasattr(self, '_original_job_state_token'):

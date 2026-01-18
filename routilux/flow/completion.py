@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
+    from routilux.core.flow import Flow
 
 logger = logging.getLogger(__name__)
 

@@ -8,10 +8,10 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from routilux.error_handler import ErrorHandler
-    from routilux.flow.flow import Flow
-    from routilux.flow.task import SlotActivationTask
-    from routilux.routine import Routine
+    from routilux.core.error import ErrorHandler
+    from routilux.core.flow import Flow
+    from routilux.core.task import SlotActivationTask
+    from routilux.core.routine import Routine
 
 
 def get_error_handler_for_routine(
@@ -56,7 +56,7 @@ def handle_task_error(
         logging.getLogger(__name__).error(error_msg)
         # Still update job state if available
         if task.job_state:
-            from routilux.status import ExecutionStatus
+            from routilux.core.status import ExecutionStatus
 
             task.job_state.status = ExecutionStatus.FAILED
             task.job_state.record_execution("unknown", "error", {"error": error_msg})
@@ -91,7 +91,7 @@ def handle_task_error(
                     error_handler.max_retries if error_handler.max_retries > 0 else task.max_retries
                 )
                 if task.retry_count < max_retries:
-                    from routilux.flow.task import SlotActivationTask
+                    from routilux.core.task import SlotActivationTask
 
                     retry_task = SlotActivationTask(
                         slot=task.slot,
@@ -131,7 +131,7 @@ def handle_task_error(
 
     # Update JobState on failure
     if task.job_state:
-        from routilux.status import ExecutionStatus
+        from routilux.core.status import ExecutionStatus
 
         task.job_state.status = ExecutionStatus.FAILED
         if routine_id:
@@ -155,7 +155,7 @@ def _enqueue_to_executor(task: "SlotActivationTask", job_state) -> bool:
     if job_state is None:
         return False
 
-    from routilux.job_manager import get_job_manager
+    from routilux.core.manager import get_job_manager
 
     job_manager = get_job_manager()
     executor = job_manager.get_job(job_state.job_id)
@@ -175,7 +175,7 @@ def _stop_execution(job_state, flow: "Flow") -> None:
         flow: Flow object (fallback).
     """
     if job_state is not None:
-        from routilux.job_manager import get_job_manager
+        from routilux.core.manager import get_job_manager
 
         job_manager = get_job_manager()
         executor = job_manager.get_job(job_state.job_id)

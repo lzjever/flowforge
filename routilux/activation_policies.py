@@ -12,8 +12,8 @@ import time
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from routilux.job_state import JobState
-    from routilux.slot import Slot
+    from routilux.core.worker import JobState
+    from routilux.core.slot import Slot
 
 
 # Thread-safe storage for time_interval_policy

@@ -11,11 +11,11 @@ from fastapi import APIRouter, HTTPException, Query
 from routilux.server.middleware.auth import RequireAuth
 from routilux.server.models.job import JobListResponse, JobResponse, JobStartRequest, PostToJobRequest
 from routilux.server.validators import validate_flow_exists
-from routilux.job_state import JobState
-from routilux.monitoring.flow_registry import FlowRegistry
+from routilux.core.worker import JobState
+from routilux.core.registry import FlowRegistry
 from routilux.monitoring.storage import flow_store, job_store
-from routilux.runtime import get_runtime_instance
-from routilux.status import ExecutionStatus
+from routilux.core.runtime import get_runtime_instance
+from routilux.core.status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
@@ -662,7 +662,7 @@ async def resume_job(job_id: str):
         HTTPException: 409 if job is not paused
         HTTPException: 400 if resume operation fails
     """
-    from routilux.flow.flow import JobNotRunningError
+    from routilux.core.flow import JobNotRunningError
 
     job_state = job_store.get(job_id)
     if not job_state:
@@ -982,8 +982,8 @@ async def complete_job(job_id: str, reason: Optional[str] = Query(None, descript
     if not job_state:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-    from routilux.job_manager import get_job_manager
-    from routilux.status import ExecutionStatus
+    from routilux.core.manager import get_job_manager
+    from routilux.core.status import ExecutionStatus
 
     job_manager = get_job_manager()
     executor = job_manager.get_job(job_id)
@@ -1067,7 +1067,7 @@ async def fail_job(
     if not job_state:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
 
-    from routilux.status import ExecutionStatus
+    from routilux.core.status import ExecutionStatus
 
     if job_state.status in (ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED):
         raise HTTPException(
@@ -1170,8 +1170,8 @@ async def wait_for_job(
         HTTPException: 404 if job not found
         HTTPException: 422 if timeout is invalid
     """
-    from routilux.job_manager import get_job_manager
-    from routilux.status import ExecutionStatus
+    from routilux.core.manager import get_job_manager
+    from routilux.core.status import ExecutionStatus
 
     job_state = job_store.get(job_id)
     if not job_state:

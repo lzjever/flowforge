@@ -8,8 +8,8 @@ import threading
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from routilux.flow.flow import Flow
-    from routilux.job_state import JobState
+    from routilux.core.flow import Flow
+    from routilux.core.worker import JobState
 
 
 class FlowStore:
@@ -43,7 +43,7 @@ class FlowStore:
 
             # Fall back to global registry
             try:
-                from routilux.monitoring.flow_registry import FlowRegistry
+                from routilux.core.registry import FlowRegistry
 
                 registry = FlowRegistry.get_instance()
                 flow = registry.get(flow_id)
@@ -87,7 +87,7 @@ class FlowStore:
 
             # Also get flows from global registry
             try:
-                from routilux.monitoring.flow_registry import FlowRegistry
+                from routilux.core.registry import FlowRegistry
 
                 registry = FlowRegistry.get_instance()
                 registry_flows = registry.list_all()
@@ -142,7 +142,7 @@ class JobStore:
 
             # Fall back to global registry
             try:
-                from routilux.monitoring.job_registry import JobRegistry
+                from routilux.core.registry import JobRegistry
 
                 registry = JobRegistry.get_instance()
                 job = registry.get(job_id)
@@ -218,7 +218,7 @@ class JobStore:
 
             # Also get from global registry
             try:
-                from routilux.monitoring.job_registry import JobRegistry
+                from routilux.core.registry import JobRegistry
 
                 registry = JobRegistry.get_instance()
                 registry_jobs = registry.get_by_flow(flow_id)
@@ -254,7 +254,7 @@ class JobStore:
 
             # Also get jobs from global registry
             try:
-                from routilux.monitoring.job_registry import JobRegistry
+                from routilux.core.registry import JobRegistry
 
                 registry = JobRegistry.get_instance()
                 registry_jobs = registry.list_all()

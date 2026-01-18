@@ -11,8 +11,8 @@ from routilux.server.models.flow import FlowListResponse
 from routilux.server.models.job import JobListResponse
 from routilux.server.routes.flows import _flow_to_response
 from routilux.server.routes.jobs import _job_to_response
-from routilux.monitoring.flow_registry import FlowRegistry
-from routilux.monitoring.job_registry import JobRegistry
+from routilux.core.registry import FlowRegistry
+from routilux.core.registry import JobRegistry
 from routilux.monitoring.storage import flow_store, job_store
 
 router = APIRouter()
