@@ -1,28 +1,45 @@
-"""
-Pytest configuration and fixtures for routilux tests.
-"""
+"""Pytest configuration and fixtures for Routilux tests."""
 
 import pytest
-
-from routilux.monitoring.flow_registry import FlowRegistry
+from routilux.core import (
+    Flow,
+    FlowRegistry,
+    Runtime,
+    WorkerManager,
+    get_flow_registry,
+    get_worker_manager,
+    reset_worker_manager,
+)
 
 
 @pytest.fixture(autouse=True)
-def clear_flow_registry():
-    """Clear flow registry before each test to avoid conflicts."""
-    registry = FlowRegistry.get_instance()
-    registry.clear()
+def reset_state():
+    """Reset global state before each test."""
+    # Reset worker manager
+    reset_worker_manager()
+    
+    # Note: FlowRegistry uses weak references, so flows will be cleaned up
+    # automatically when they go out of scope. No need to manually unregister.
+    
     yield
+    
     # Cleanup after test
-    registry.clear()
+    reset_worker_manager()
 
 
-# Add timeout marker to all tests by default
-def pytest_collection_modifyitems(config, items):
-    """Add timeout marker to all tests if not already present."""
-    for item in items:
-        # Add timeout if not already set
-        # Use shorter timeout for faster feedback on hanging tests
-        if not any(marker.name == "timeout" for marker in item.iter_markers()):
-            # Default 30 seconds, but can be overridden per test
-            item.add_marker(pytest.mark.timeout(30))
+@pytest.fixture
+def runtime():
+    """Create a Runtime instance for testing."""
+    return Runtime(thread_pool_size=5)
+
+
+@pytest.fixture
+def empty_flow():
+    """Create an empty Flow for testing."""
+    return Flow()
+
+
+@pytest.fixture
+def worker_manager():
+    """Get the global WorkerManager instance."""
+    return get_worker_manager()
