@@ -163,15 +163,89 @@ async def handle_client_message(
 
 @router.websocket("/ws/jobs/{job_id}/monitor")
 async def job_monitor_websocket(websocket: WebSocket, job_id: str):
-    """WebSocket endpoint for real-time job monitoring.
+    """
+    WebSocket endpoint for real-time job monitoring.
 
-    Uses event-driven push notifications via JobEventManager.
-    Receives events as they occur instead of polling.
+    **Overview**:
+    Establishes a WebSocket connection for real-time monitoring of a specific job.
+    Uses event-driven push notifications via JobEventManager, eliminating the need
+    for polling. Receives events as they occur during job execution.
 
-    Features:
+    **Endpoint**: `WS /api/ws/jobs/{job_id}/monitor`
+
+    **Use Cases**:
+    - Real-time job monitoring dashboards
+    - Live progress updates
+    - Event-driven notifications
+    - Real-time debugging
+    - Performance monitoring
+
+    **Connection**:
+    - WebSocket connection (not HTTP)
+    - Requires valid API key if authentication is enabled
+    - Connection remains open until job completes or client disconnects
+
+    **Authentication**:
+    - API key can be provided via query parameter: `?api_key=your_key`
+    - Required if `ROUTILUX_API_KEY_ENABLED=true`
+
+    **Message Format**:
+    All messages are JSON objects. Server sends:
+    - `{"type": "metrics", "job_id": "...", "metrics": {...}}` - Initial metrics
+    - `{"type": "event", "event_type": "...", "data": {...}}` - Execution events
+    - `{"type": "ping"}` - Keep-alive ping
+
+    **Event Types**:
+    - `routine_start`: Routine execution started
+    - `routine_end`: Routine execution completed
+    - `slot_call`: Slot was called
+    - `event_emit`: Event was emitted
+    - Other event types as defined by monitoring system
+
+    **Features**:
     - Automatic retry on send failures
-    - Connection timeout handling
+    - Connection timeout handling (5 minutes idle timeout)
     - Comprehensive error logging
+    - Initial metrics sent on connection
+    - Periodic ping to keep connection alive
+
+    **Error Handling**:
+    - Connection closes with code 1008 if job not found
+    - Connection closes with code 1008 if API key invalid
+    - Connection closes with code 1011 on internal errors
+
+    **Example Usage** (JavaScript):
+    ```javascript
+    const ws = new WebSocket('ws://localhost:20555/api/ws/jobs/job_xyz789/monitor?api_key=your_key');
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'metrics') {
+        console.log('Metrics:', data.metrics);
+      } else if (data.type === 'event') {
+        console.log('Event:', data.event_type, data.data);
+      }
+    };
+    ```
+
+    **Best Practices**:
+    1. Handle connection errors and reconnection
+    2. Process events asynchronously
+    3. Close connection when done monitoring
+    4. Use ping/pong for connection health checks
+
+    **Related Endpoints**:
+    - GET /api/v1/jobs/{job_id}/metrics - Get metrics (polling alternative)
+    - GET /api/v1/jobs/{job_id}/execution-trace - Get trace (polling alternative)
+    - WS /api/ws/jobs/{job_id}/debug - Debug WebSocket endpoint
+
+    Args:
+        websocket: WebSocket connection
+        job_id: Unique job identifier
+
+    Raises:
+        WebSocketDisconnect: When client disconnects
+        HTTPException: If job not found or authentication fails
     """
     subscriber_id: Optional[str] = None
 
@@ -280,10 +354,84 @@ async def job_monitor_websocket(websocket: WebSocket, job_id: str):
 
 @router.websocket("/ws/jobs/{job_id}/debug")
 async def job_debug_websocket(websocket: WebSocket, job_id: str):
-    """WebSocket endpoint for real-time debug events.
+    """
+    WebSocket endpoint for real-time debug events.
 
-    Uses event-driven push notifications via JobEventManager.
-    Filters and sends debug-relevant events only.
+    **Overview**:
+    Establishes a WebSocket connection for real-time debugging of a specific job.
+    Filters and sends only debug-relevant events (routine_start, routine_end, slot_call).
+    Use this for focused debugging sessions.
+
+    **Endpoint**: `WS /api/ws/jobs/{job_id}/debug`
+
+    **Use Cases**:
+    - Real-time debugging sessions
+    - Step-through debugging
+    - Debug event monitoring
+    - Interactive debugging tools
+
+    **Connection**:
+    - WebSocket connection (not HTTP)
+    - Requires valid API key if authentication is enabled
+    - Connection remains open until job completes or client disconnects
+
+    **Authentication**:
+    - API key can be provided via query parameter: `?api_key=your_key`
+    - Required if `ROUTILUX_API_KEY_ENABLED=true`
+
+    **Message Format**:
+    All messages are JSON objects. Server sends:
+    - `{"type": "debug_session", "job_id": "...", "status": "..."}` - Initial debug session state
+    - `{"type": "debug_event", "event": {...}}` - Debug-relevant events
+    - `{"type": "ping"}` - Keep-alive ping
+
+    **Filtered Events**:
+    Only debug-relevant events are sent:
+    - `routine_start`: Routine execution started
+    - `routine_end`: Routine execution completed
+    - `slot_call`: Slot was called with data
+
+    **Features**:
+    - Filters events to debug-relevant only
+    - Initial debug session state sent on connection
+    - Periodic ping to keep connection alive
+    - Automatic retry on send failures
+
+    **Error Handling**:
+    - Connection closes with code 1008 if job not found
+    - Connection closes with code 1008 if API key invalid
+    - Connection closes with code 1011 on internal errors
+
+    **Example Usage** (JavaScript):
+    ```javascript
+    const ws = new WebSocket('ws://localhost:20555/api/ws/jobs/job_xyz789/debug?api_key=your_key');
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'debug_event') {
+        console.log('Debug event:', data.event);
+      }
+    };
+    ```
+
+    **Best Practices**:
+    1. Use for focused debugging sessions
+    2. Combine with breakpoints for step-through debugging
+    3. Handle connection errors and reconnection
+    4. Close connection when debugging is complete
+
+    **Related Endpoints**:
+    - WS /api/ws/jobs/{job_id}/monitor - Full monitoring WebSocket
+    - POST /api/jobs/{job_id}/breakpoints - Create breakpoints
+    - GET /api/jobs/{job_id}/trace - Get trace (polling alternative)
+
+    Args:
+        websocket: WebSocket connection
+        job_id: Unique job identifier
+
+    Raises:
+        WebSocketDisconnect: When client disconnects
+        HTTPException: If job not found or authentication fails
     """
     subscriber_id: Optional[str] = None
 
@@ -386,10 +534,84 @@ async def job_debug_websocket(websocket: WebSocket, job_id: str):
 
 @router.websocket("/ws/flows/{flow_id}/monitor")
 async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
-    """WebSocket endpoint for real-time flow monitoring.
+    """
+    WebSocket endpoint for real-time flow monitoring.
 
-    Aggregates events from all jobs belonging to this flow.
-    Manages multiple subscriptions concurrently.
+    **Overview**:
+    Establishes a WebSocket connection for real-time monitoring of all jobs belonging
+    to a specific flow. Aggregates events from multiple jobs and forwards them with
+    flow context. Use this to monitor flow-level execution across all jobs.
+
+    **Endpoint**: `WS /api/ws/flows/{flow_id}/monitor`
+
+    **Use Cases**:
+    - Flow-level monitoring dashboards
+    - Aggregate job monitoring
+    - Flow performance tracking
+    - Multi-job execution monitoring
+    - Flow health monitoring
+
+    **Connection**:
+    - WebSocket connection (not HTTP)
+    - Requires valid API key if authentication is enabled
+    - Connection remains open until closed by client
+
+    **Authentication**:
+    - API key can be provided via query parameter: `?api_key=your_key`
+    - Required if `ROUTILUX_API_KEY_ENABLED=true`
+
+    **Message Format**:
+    All messages are JSON objects. Server sends:
+    - `{"type": "flow_metrics", "flow_id": "...", "total_jobs": 5}` - Initial flow metrics
+    - `{"type": "flow_job_event", "flow_id": "...", "job_id": "...", "event": {...}}` - Job events with flow context
+
+    **Behavior**:
+    - Subscribes to all jobs for the flow
+    - Forwards events from all jobs with flow context
+    - Manages multiple job subscriptions concurrently
+    - Sends initial flow metrics on connection
+
+    **Features**:
+    - Aggregates events from multiple jobs
+    - Includes flow_id and job_id in each event
+    - Automatic cleanup on disconnect
+    - Periodic ping to keep connection alive
+
+    **Error Handling**:
+    - Connection closes with code 1008 if flow not found
+    - Connection closes with code 1008 if API key invalid
+    - Connection closes with code 1011 on internal errors
+
+    **Example Usage** (JavaScript):
+    ```javascript
+    const ws = new WebSocket('ws://localhost:20555/api/ws/flows/data_processing_flow/monitor?api_key=your_key');
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'flow_job_event') {
+        console.log(`Job ${data.job_id} in flow ${data.flow_id}:`, data.event);
+      }
+    };
+    ```
+
+    **Best Practices**:
+    1. Use for flow-level monitoring
+    2. Handle events from multiple jobs
+    3. Track job_id to identify source
+    4. Close connection when done monitoring
+
+    **Related Endpoints**:
+    - WS /api/ws/jobs/{job_id}/monitor - Single job monitoring
+    - GET /api/flows/{flow_id}/metrics - Get flow metrics (polling alternative)
+    - GET /api/jobs?flow_id={flow_id} - List jobs for flow
+
+    Args:
+        websocket: WebSocket connection
+        flow_id: Unique flow identifier
+
+    Raises:
+        WebSocketDisconnect: When client disconnects
+        HTTPException: If flow not found or authentication fails
     """
     event_manager = get_event_manager()
     subscribers = []  # List of (job_id, subscriber_id) tuples
@@ -515,17 +737,96 @@ async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
 
 @router.websocket("/ws")
 async def generic_websocket(websocket: WebSocket):
-    """Generic WebSocket endpoint for subscribing to multiple jobs/flows.
+    """
+    Generic WebSocket endpoint for subscribing to multiple jobs/flows.
 
-    This endpoint allows clients to:
-    - Connect without specifying a specific job/flow
-    - Subscribe to multiple jobs via messages
-    - Receive events from all subscribed jobs
+    **Overview**:
+    Establishes a generic WebSocket connection that allows clients to dynamically
+    subscribe and unsubscribe to multiple jobs. This provides flexibility for
+    clients that need to monitor multiple jobs or dynamically change subscriptions.
 
-    Client messages:
-    - {"type": "subscribe", "job_id": "..."} - Subscribe to a job
-    - {"type": "unsubscribe", "job_id": "..."} - Unsubscribe from a job
-    - {"type": "ping"} - Keep-alive ping
+    **Endpoint**: `WS /api/ws`
+
+    **Use Cases**:
+    - Multi-job monitoring dashboards
+    - Dynamic job subscriptions
+    - Flexible monitoring clients
+    - Job management tools
+    - Custom monitoring applications
+
+    **Connection**:
+    - WebSocket connection (not HTTP)
+    - Requires valid API key if authentication is enabled
+    - Connection remains open until closed by client
+
+    **Authentication**:
+    - API key can be provided via query parameter: `?api_key=your_key`
+    - Required if `ROUTILUX_API_KEY_ENABLED=true`
+
+    **Client Messages** (send to server):
+    - `{"type": "subscribe", "job_id": "job_xyz789"}` - Subscribe to a job
+    - `{"type": "unsubscribe", "job_id": "job_xyz789"}` - Unsubscribe from a job
+    - `{"type": "pong"}` - Respond to ping (keep-alive)
+
+    **Server Messages** (receive from server):
+    - `{"type": "connected", "message": "..."}` - Connection confirmation
+    - `{"type": "subscribed", "job_id": "...", "subscriber_id": "..."}` - Subscription confirmed
+    - `{"type": "unsubscribed", "job_id": "..."}` - Unsubscription confirmed
+    - `{"type": "error", "message": "..."}` - Error message
+    - `{"type": "ping"}` - Keep-alive ping
+    - `{...}` - Job events (when subscribed)
+
+    **Features**:
+    - Dynamic subscription management
+    - Multiple job subscriptions
+    - Automatic event forwarding
+    - Subscription confirmations
+    - Error handling and reporting
+
+    **Error Handling**:
+    - Sends error messages for invalid subscriptions
+    - Handles job not found errors gracefully
+    - Connection closes with code 1008 if API key invalid
+    - Connection closes with code 1011 on internal errors
+
+    **Example Usage** (JavaScript):
+    ```javascript
+    const ws = new WebSocket('ws://localhost:20555/api/ws?api_key=your_key');
+    
+    ws.onopen = () => {
+      // Subscribe to jobs
+      ws.send(JSON.stringify({type: 'subscribe', job_id: 'job_xyz789'}));
+      ws.send(JSON.stringify({type: 'subscribe', job_id: 'job_abc123'}));
+    };
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'subscribed') {
+        console.log('Subscribed to:', data.job_id);
+      } else if (data.job_id) {
+        console.log('Event from', data.job_id, ':', data);
+      }
+    };
+    ```
+
+    **Best Practices**:
+    1. Subscribe to jobs after connection is established
+    2. Handle subscription confirmations
+    3. Unsubscribe when done monitoring
+    4. Handle errors gracefully
+    5. Respond to pings with pong
+
+    **Related Endpoints**:
+    - WS /api/ws/jobs/{job_id}/monitor - Single job monitoring (simpler)
+    - WS /api/ws/flows/{flow_id}/monitor - Flow-level monitoring
+    - GET /api/v1/jobs - List jobs to subscribe to
+
+    Args:
+        websocket: WebSocket connection
+
+    Raises:
+        WebSocketDisconnect: When client disconnects
+        HTTPException: If authentication fails
     """
     event_manager = get_event_manager()
     subscribers: Dict[str, str] = {}  # job_id -> subscriber_id
