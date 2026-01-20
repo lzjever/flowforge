@@ -47,11 +47,11 @@ you MUST manually set the context variables:
 
     # In your test
     worker_state, job_context = runtime.post(...)
-    
+
     # Set context variables before calling methods that need them
     set_current_job(job_context)
     set_current_worker_state(worker_state)
-    
+
     # Now methods can access context
     source.output.emit(runtime=runtime, worker_state=worker_state, data="test")
 
@@ -255,24 +255,25 @@ class JobContext:
         self.status = status
         self.error = error
         self.completed_at = datetime.now()
-        
+
         # Trigger on_job_end hook
+        import logging
+
         from routilux.core.hooks import get_execution_hooks
         from routilux.core.registry import WorkerRegistry
-        import logging
-        
+
         logger = logging.getLogger(__name__)
-        
+
         hooks = get_execution_hooks()
         worker_state = None
-        
+
         # Try to get worker_state from registry
         try:
             registry = WorkerRegistry.get_instance()
             worker_state = registry.get(self.worker_id)
         except Exception:
             pass
-        
+
         if worker_state:
             try:
                 error_exception = Exception(error) if error else None

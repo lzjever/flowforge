@@ -136,8 +136,7 @@ async def create_breakpoint(job_id: str, request: BreakpointCreateRequest):
 
     if request.routine_id not in flow.routines:
         raise HTTPException(
-            status_code=404,
-            detail=f"Routine '{request.routine_id}' not found in flow"
+            status_code=404, detail=f"Routine '{request.routine_id}' not found in flow"
         )
 
     routine = flow.routines[request.routine_id]
@@ -146,7 +145,7 @@ async def create_breakpoint(job_id: str, request: BreakpointCreateRequest):
     if slot is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Slot '{request.slot_name}' not found in routine '{request.routine_id}'"
+            detail=f"Slot '{request.slot_name}' not found in routine '{request.routine_id}'",
         )
 
     # Get breakpoint manager
@@ -349,8 +348,7 @@ async def delete_breakpoint(job_id: str, breakpoint_id: str):
 
     if not breakpoint:
         raise HTTPException(
-            status_code=404,
-            detail=f"Breakpoint '{breakpoint_id}' not found for job '{job_id}'"
+            status_code=404, detail=f"Breakpoint '{breakpoint_id}' not found for job '{job_id}'"
         )
 
     # Remove breakpoint (no policy restoration needed)

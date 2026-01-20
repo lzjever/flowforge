@@ -8,12 +8,11 @@ This example demonstrates the basic concepts of Routilux:
 - Executing with Runtime
 """
 
-from routilux import Routine, Flow, Runtime
+from routilux import Flow, FlowRegistry, Routine, Runtime
 from routilux.activation_policies import immediate_policy
-from routilux.monitoring.flow_registry import FlowRegistry
 
 
-class HelloWorld(Routine(Routine):
+class HelloWorld(Routine):
     """A simple routine that prints a greeting."""
 
     def __init__(self):

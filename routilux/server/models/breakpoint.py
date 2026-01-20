@@ -20,7 +20,7 @@ class BreakpointCreateRequest(BaseModel):
     slot_name: str = Field(..., description="Slot name where breakpoint is set")
     condition: Optional[str] = Field(
         None,
-        description="Optional Python expression to evaluate (e.g., \"data.get('value') > 10\")"
+        description="Optional Python expression to evaluate (e.g., \"data.get('value') > 10\")",
     )
     enabled: bool = Field(True, description="Whether breakpoint is active")
 

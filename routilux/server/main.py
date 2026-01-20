@@ -41,10 +41,11 @@ async def lifespan(app: FastAPI):
     runtime_registry = RuntimeRegistry.get_instance()
     # Create default runtime if it doesn't exist
     runtime_registry.get_or_create_default(thread_pool_size=0)
-    
+
     # Initialize global event publisher for sync-to-async bridge
     # This ensures events from sync contexts can be published efficiently
     from routilux.monitoring.execution_hooks import _ensure_event_publisher
+
     _ensure_event_publisher()
 
     if os.getenv("ROUTILUX_DEBUGGER_MODE") == "true":
@@ -260,8 +261,6 @@ def root():
     Raises:
         HTTPException: 401 if authentication fails
     """
-
-
 
 
 # OpenAPI: document X-API-Key so Swagger UI shows Authorize

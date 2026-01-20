@@ -7,7 +7,7 @@ Manages slot-level breakpoints with optional conditions.
 import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
     from routilux.core.routine import ExecutionContext
@@ -150,21 +150,24 @@ class BreakpointManager:
 
                 # Evaluate condition if present
                 if breakpoint.condition:
-                    from routilux.monitoring.breakpoint_condition import evaluate_condition
                     import logging
-                    
+
+                    from routilux.monitoring.breakpoint_condition import evaluate_condition
+
                     logger = logging.getLogger(__name__)
-                    
+
                     # Debug: Log condition evaluation
                     logger.debug(
                         f"Evaluating condition: {breakpoint.condition}, "
                         f"variables={variables}, variables_type={type(variables)}"
                     )
-                    
+
                     try:
-                        condition_result = evaluate_condition(breakpoint.condition, context, variables or {})
+                        condition_result = evaluate_condition(
+                            breakpoint.condition, context, variables or {}
+                        )
                         logger.debug(f"Condition result: {condition_result}")
-                        
+
                         if not condition_result:
                             continue
                     except Exception as e:

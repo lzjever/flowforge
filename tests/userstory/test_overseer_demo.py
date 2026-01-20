@@ -301,7 +301,7 @@ class TestUserStory1_WorkerAndJobs:
         assert "worker_id" in data
         assert data["flow_id"] == "state_transition_flow"
         assert data["status"] in ["running", "pending"]
-        return data["worker_id"]
+        # Note: worker_id is available in data["worker_id"] if needed by other tests
 
     def test_submit_job(self, client, setup_demo_flows):
         """Test submitting a job."""
@@ -328,7 +328,7 @@ class TestUserStory1_WorkerAndJobs:
         assert "job_id" in data
         assert data["worker_id"] == worker_id
         assert data["status"] in ["pending", "running"]
-        return data["job_id"]
+        # Note: job_id is available in data["job_id"] if needed by other tests
 
     def test_submit_multiple_jobs(self, client, setup_demo_flows):
         """Test submitting multiple jobs to the same worker."""
@@ -572,7 +572,9 @@ class TestUserStory3_Debugging:
                 "enabled": True,
             },
         )
-        assert response.status_code in [200, 201], f"Expected 200/201, got {response.status_code}: {response.text}"
+        assert response.status_code in [200, 201], (
+            f"Expected 200/201, got {response.status_code}: {response.text}"
+        )
         data = response.json()
         assert "breakpoint_id" in data
         assert data["routine_id"] == "transformer"
@@ -652,7 +654,7 @@ class TestUserStory3_Debugging:
         assert "total" in data
         assert isinstance(data["breakpoints"], list)
         assert data["total"] >= 1
-        
+
         # Verify breakpoint structure (new API design)
         if len(data["breakpoints"]) > 0:
             bp = data["breakpoints"][0]
@@ -663,7 +665,9 @@ class TestUserStory3_Debugging:
             assert "enabled" in bp
             assert "hit_count" in bp
             # Verify no deprecated fields
-            assert "type" not in bp, "Breakpoint response should not contain deprecated 'type' field"
+            assert "type" not in bp, (
+                "Breakpoint response should not contain deprecated 'type' field"
+            )
 
     def test_delete_breakpoint(self, client, setup_demo_flows):
         """Test deleting a breakpoint."""
@@ -1122,7 +1126,7 @@ class TestBoundaryConditions:
         """Test submitting invalid JSON."""
         response = client.post(
             "/api/v1/jobs",
-            data="invalid json",
+            content="invalid json",
             headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 422

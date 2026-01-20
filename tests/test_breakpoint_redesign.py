@@ -11,21 +11,14 @@ Tests cover:
 - Error handling
 """
 
+
 import pytest
-import time
-from datetime import datetime
 
 from routilux.monitoring.breakpoint_manager import Breakpoint, BreakpointManager
 from routilux.server.models.breakpoint import (
     BreakpointCreateRequest,
     BreakpointResponse,
-    BreakpointUpdateRequest,
 )
-from routilux.core.runtime import Runtime
-from routilux.core.flow import Flow
-from routilux.core.routine import Routine
-from routilux.core.context import JobContext
-from routilux.core.worker import WorkerState
 
 
 class TestBreakpointDataModel:
@@ -201,14 +194,12 @@ class TestBreakpointManager:
             job_id="job_1",
             routine_id="r1",
             slot_name="s1",
-            condition='value > 10',
+            condition="value > 10",
         )
         mgr.add_breakpoint(bp)
 
         # Variables are passed as a dict, condition should access them directly
-        result = mgr.check_slot_breakpoint(
-            "job_1", "r1", "s1", variables={"value": 20}
-        )
+        result = mgr.check_slot_breakpoint("job_1", "r1", "s1", variables={"value": 20})
         assert result is not None
         assert result.breakpoint_id == bp.breakpoint_id
 
@@ -223,9 +214,7 @@ class TestBreakpointManager:
         )
         mgr.add_breakpoint(bp)
 
-        result = mgr.check_slot_breakpoint(
-            "job_1", "r1", "s1", variables={"value": 5}
-        )
+        result = mgr.check_slot_breakpoint("job_1", "r1", "s1", variables={"value": 5})
         assert result is None
 
     def test_check_slot_breakpoint_condition_missing_variable(self):
@@ -378,9 +367,7 @@ class TestBreakpointThreadSafety:
 
         threads = []
         for i in range(10):
-            t = threading.Thread(
-                target=add_breakpoint, args=(f"job_{i}", f"r_{i}", f"s_{i}")
-            )
+            t = threading.Thread(target=add_breakpoint, args=(f"job_{i}", f"r_{i}", f"s_{i}"))
             threads.append(t)
             t.start()
 

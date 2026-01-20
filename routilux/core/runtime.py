@@ -321,8 +321,10 @@ class Runtime:
         This method retrieves the current ``JobContext`` from the thread-local context
         using ``get_current_job()``. The job_context is used for:
 
-        1. **Breakpoint checking**: Breakpoints are matched by (job_id, routine_id, slot_name).
-           Without job_context, breakpoints will not trigger.
+        1. **Hook-based interception**: The `on_slot_before_enqueue` hook is called before
+           enqueueing data to slots. This allows breakpoints and other interceptors to
+           control whether data is enqueued. Without job_context, hooks may not function
+           correctly.
 
         2. **Execution hooks**: Hooks receive job_context for tracking and monitoring.
 
@@ -348,11 +350,11 @@ class Runtime:
             # Now event routing will have access to job_context
             source.output.emit(runtime=runtime, worker_state=worker_state, data="test")
 
-        **Breakpoint Mechanism:**
-        Before enqueueing data to a slot, this method checks for breakpoints matching
-        (job_id, routine_id, slot_name). If a breakpoint matches and its condition
-        (if any) evaluates to True, the enqueue operation is skipped, effectively
-        intercepting the event at that slot.
+        **Hook-Based Interception:**
+        Before enqueueing data to a slot, this method calls the `on_slot_before_enqueue`
+        hook. If the hook returns `should_enqueue=False`, the enqueue operation is
+        skipped. This mechanism is used by monitoring to implement breakpoints, but
+        can be used for other interception purposes as well.
         """
         from routilux.core.hooks import get_execution_hooks
         from routilux.core.registry import FlowRegistry
@@ -367,15 +369,16 @@ class Runtime:
         # Find connections for this event
         connections = flow.get_connections_for_event(event)
         if not connections:
-            logger.debug(f"No connections found for event {event.name} from routine {event.routine}")
+            logger.debug(
+                f"No connections found for event {event.name} from routine {event.routine}"
+            )
             return  # No consumers - normal case
 
-        # Get job context early (needed for hooks and breakpoint checking)
+        # Get job context early (needed for hooks)
         from routilux.core.context import get_current_job
-        from routilux.monitoring.registry import MonitoringRegistry
 
         job_context = get_current_job()
-        
+
         logger.debug(
             f"Event routing: event={event.name}, connections={len(connections)}, "
             f"job_context={job_context.job_id if job_context else None}"
@@ -392,19 +395,12 @@ class Runtime:
                 "event_emit",
                 {"event_name": event.name, "data": data},
             )
-            
+
             should_continue = hooks.on_event_emit(
                 event, source_routine_id, worker_state, job_context, data
             )
             if not should_continue:
                 return
-
-        # Get breakpoint manager if available
-        breakpoint_mgr = None
-        if job_context:
-            registry = MonitoringRegistry.get_instance()
-            if registry:
-                breakpoint_mgr = registry.breakpoint_manager
 
         # Route to all connected slots
         for connection in connections:
@@ -426,82 +422,32 @@ class Runtime:
                 emitted_from = metadata.get("emitted_from", "unknown")
                 emitted_at = metadata.get("emitted_at", datetime.now())
 
-                # === BREAKPOINT CHECK (NEW) ===
-                # Check if there's a breakpoint for this slot before enqueueing
-                if job_context and breakpoint_mgr:
-                    # Get target routine and slot information
-                    target_routine = slot.routine
-                    if target_routine is not None:
-                        # Get routine_id from flow
-                        target_routine_id = flow._get_routine_id(target_routine)
-                        target_slot_name = slot.name
+                # Get target routine and slot information for hook
+                target_routine = slot.routine
+                target_routine_id = None
+                if target_routine is not None:
+                    target_routine_id = flow._get_routine_id(target_routine)
 
-                        if target_routine_id:
-                            # Check for breakpoint
-                            # Debug: Log breakpoint check details
-                            logger.debug(
-                                f"Checking breakpoint: job_id={job_context.job_id}, "
-                                f"routine_id={target_routine_id}, slot_name={target_slot_name}, "
-                                f"data_keys={list(data.keys()) if isinstance(data, dict) else 'not_dict'}"
-                            )
-                            
-                            breakpoint = breakpoint_mgr.check_slot_breakpoint(
-                                job_id=job_context.job_id,
-                                routine_id=target_routine_id,
-                                slot_name=target_slot_name,
-                                context=None,  # Can be enhanced later if needed
-                                variables=data,  # Pass event data as variables for condition evaluation
-                            )
+                # Call hook before enqueueing (only if we have routine_id)
+                if target_routine_id is None:
+                    # If we can't find routine_id, allow enqueue (backward compatibility)
+                    logger.debug(f"Skipping hook call: routine_id not found for slot {slot.name}")
+                else:
+                    should_enqueue, reason = hooks.on_slot_before_enqueue(
+                        slot=slot,
+                        routine_id=target_routine_id,
+                        job_context=job_context,
+                        data=data,
+                        flow_id=flow.flow_id,
+                    )
 
-                            if breakpoint is not None:
-                                # Breakpoint hit - skip enqueue and publish event
-                                logger.info(
-                                    f"Breakpoint hit: job_id={job_context.job_id}, "
-                                    f"routine_id={target_routine_id}, slot_name={target_slot_name}, "
-                                    f"breakpoint_id={breakpoint.breakpoint_id}, condition={breakpoint.condition}"
-                                )
-                                
-                                # Publish breakpoint_hit event
-                                from routilux.monitoring.event_manager import get_event_manager
-                                from datetime import datetime
-                                
-                                event_manager = get_event_manager()
-                                try:
-                                    # Use asyncio.create_task for fire-and-forget async call
-                                    import asyncio
-                                    try:
-                                        loop = asyncio.get_running_loop()
-                                        asyncio.create_task(event_manager.publish(
-                                            job_context.job_id,
-                                            {
-                                                "type": "breakpoint_hit",
-                                                "job_id": job_context.job_id,
-                                                "timestamp": datetime.now().isoformat(),
-                                                "data": {
-                                                    "breakpoint_id": breakpoint.breakpoint_id,
-                                                    "routine_id": target_routine_id,
-                                                    "slot_name": target_slot_name,
-                                                    "condition": breakpoint.condition,
-                                                    "event_data": data,  # The data that would have been enqueued
-                                                }
-                                            }
-                                        ))
-                                    except RuntimeError:
-                                        # No event loop running - skip publishing
-                                        logger.debug("No event loop running, skipping breakpoint_hit event publish")
-                                except Exception as e:
-                                    logger.warning(f"Failed to publish breakpoint_hit event: {e}")
-                                
-                                # Skip this enqueue operation
-                                continue
-                            else:
-                                # Debug: Log when breakpoint check returns None
-                                logger.debug(
-                                    f"No breakpoint match: job_id={job_context.job_id}, "
-                                    f"routine_id={target_routine_id}, slot_name={target_slot_name}"
-                                )
-                # === END BREAKPOINT CHECK ===
+                    if not should_enqueue:
+                        # Hook indicates we should skip enqueue (e.g., breakpoint hit)
+                        if reason:
+                            logger.info(f"Skipping slot enqueue: {reason}")
+                        continue
 
+                # Proceed with enqueue (if hook wasn't called or hook allowed enqueue)
                 slot.enqueue(
                     data=data,
                     emitted_from=emitted_from,

@@ -54,24 +54,24 @@ async def _check_websocket_auth(websocket: WebSocket) -> bool:
 
 def normalize_event_for_frontend(event: dict, job_id: str) -> dict:
     """Normalize event format for frontend consumption.
-    
+
     Converts backend event format to frontend-expected format:
     - Maps `event_type` -> `type` with proper type name conversion
     - Ensures `job_id`, `timestamp`, `data` fields exist
     - Handles special cases (routine_end -> routine_completed/routine_failed)
-    
+
     Args:
         event: Backend event dictionary
         job_id: Job ID (fallback if not in event)
-    
+
     Returns:
         Normalized event dictionary matching frontend expectations
     """
     from datetime import datetime
-    
+
     # Extract event type (backend uses "event_type" or "type")
     event_type = event.get("event_type") or event.get("type", "unknown")
-    
+
     # Event type mapping: backend -> frontend
     type_mapping = {
         "routine_start": "routine_started",
@@ -80,10 +80,10 @@ def normalize_event_for_frontend(event: dict, job_id: str) -> dict:
         "job_start": "job_started",
         "job_end": "job_completed",  # Will be overridden by status check
     }
-    
+
     # Determine normalized type
     normalized_type = type_mapping.get(event_type, event_type)
-    
+
     # Handle routine_end special case
     if event_type == "routine_end":
         status = event.get("status", "completed")
@@ -91,7 +91,7 @@ def normalize_event_for_frontend(event: dict, job_id: str) -> dict:
             normalized_type = "routine_failed"
         else:
             normalized_type = "routine_completed"
-    
+
     # Handle job_end special case
     if event_type == "job_end":
         status = event.get("status", "completed")
@@ -99,7 +99,7 @@ def normalize_event_for_frontend(event: dict, job_id: str) -> dict:
             normalized_type = "job_failed"
         else:
             normalized_type = "job_completed"
-    
+
     # Build normalized event structure
     normalized = {
         "type": normalized_type,
@@ -109,20 +109,20 @@ def normalize_event_for_frontend(event: dict, job_id: str) -> dict:
             "event_id": event.get("event_id"),
             "routine_id": event.get("routine_id"),
             **(event.get("data", {})),
-        }
+        },
     }
-    
+
     # Add duration and status for routine_end events
     if event_type == "routine_end":
         if "duration" in event:
             normalized["data"]["duration"] = event["duration"]
         if "status" in event:
             normalized["data"]["status"] = event["status"]
-    
+
     # Add error information if present
     if "error" in event:
         normalized["data"]["error"] = event["error"]
-    
+
     return normalized
 
 
@@ -291,7 +291,7 @@ async def job_monitor_websocket(websocket: WebSocket, job_id: str):
     **Example Usage** (JavaScript):
     ```javascript
     const ws = new WebSocket('ws://localhost:20555/api/ws/jobs/job_xyz789/monitor?api_key=your_key');
-    
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'metrics') {
@@ -398,7 +398,7 @@ async def job_monitor_websocket(websocket: WebSocket, job_id: str):
         async for event in event_manager.iter_events(subscriber_id):
             # Normalize event format for frontend
             normalized_event = normalize_event_for_frontend(event, job_id)
-            
+
             # Send event to WebSocket client
             success = await safe_send_json(websocket, normalized_event, f"event for job {job_id}")
             if not success:
@@ -482,7 +482,7 @@ async def job_debug_websocket(websocket: WebSocket, job_id: str):
     **Example Usage** (JavaScript):
     ```javascript
     const ws = new WebSocket('ws://localhost:20555/api/ws/jobs/job_xyz789/debug?api_key=your_key');
-    
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'debug_event') {
@@ -662,7 +662,7 @@ async def flow_monitor_websocket(websocket: WebSocket, flow_id: str):
     **Example Usage** (JavaScript):
     ```javascript
     const ws = new WebSocket('ws://localhost:20555/api/ws/flows/data_processing_flow/monitor?api_key=your_key');
-    
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'flow_job_event') {
@@ -823,7 +823,7 @@ async def websocket_v1(websocket: WebSocket):
     clients that need to monitor multiple jobs or dynamically change subscriptions.
 
     **Endpoint**: `WS /api/v1/websocket`
-    
+
     This is the primary WebSocket endpoint for subscribing to job events.
     The old /api/v1/ws endpoint has been removed.
 
@@ -874,13 +874,13 @@ async def websocket_v1(websocket: WebSocket):
     **Example Usage** (JavaScript):
     ```javascript
     const ws = new WebSocket('ws://localhost:20555/api/v1/websocket?api_key=your_key');
-    
+
     ws.onopen = () => {
       // Subscribe to jobs
       ws.send(JSON.stringify({type: 'subscribe', job_id: 'job_xyz789'}));
       ws.send(JSON.stringify({type: 'subscribe', job_id: 'job_abc123'}));
     };
-    
+
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'subscribed') {
@@ -970,7 +970,7 @@ async def websocket_v1(websocket: WebSocket):
                                 logger.info(
                                     f"Generic WebSocket subscribed to job {job_id} as {subscriber_id}"
                                 )
-                                
+
                                 # Immediately start event handler for this subscription
                                 if job_id not in event_tasks:
                                     task = asyncio.create_task(
@@ -978,7 +978,7 @@ async def websocket_v1(websocket: WebSocket):
                                     )
                                     event_tasks[job_id] = task
                                     logger.debug(f"Started event handler for job {job_id}")
-                                
+
                                 await safe_send_json(
                                     websocket,
                                     {
@@ -1062,18 +1062,26 @@ async def websocket_v1(websocket: WebSocket):
                 event_count = 0
                 async for event in event_manager.iter_events(subscriber_id):
                     event_count += 1
-                    logger.debug(f"Event handler received event {event_count} for job {job_id}: {event.get('type')}")
+                    logger.debug(
+                        f"Event handler received event {event_count} for job {job_id}: {event.get('type')}"
+                    )
                     # Normalize event format for frontend
                     normalized_event = normalize_event_for_frontend(event, job_id)
-                    logger.debug(f"Normalized event for job {job_id}: {normalized_event.get('type')}")
-                    
-                    success = await safe_send_json(websocket, normalized_event, f"event for job {job_id}")
+                    logger.debug(
+                        f"Normalized event for job {job_id}: {normalized_event.get('type')}"
+                    )
+
+                    success = await safe_send_json(
+                        websocket, normalized_event, f"event for job {job_id}"
+                    )
                     if not success:
                         logger.warning(
                             f"Failed to send event, removing subscription for job {job_id}"
                         )
                         break
-                logger.debug(f"Event handler finished for job {job_id}, processed {event_count} events")
+                logger.debug(
+                    f"Event handler finished for job {job_id}, processed {event_count} events"
+                )
             except asyncio.CancelledError:
                 logger.debug(f"Event handler cancelled for job {job_id}")
             except Exception as e:
@@ -1149,7 +1157,7 @@ async def websocket_v1(websocket: WebSocket):
 async def generic_websocket(websocket: WebSocket):
     """
     DEPRECATED: Use /api/v1/websocket instead.
-    
+
     This endpoint is kept temporarily for backward compatibility but will be removed.
     """
     return await websocket_v1(websocket)

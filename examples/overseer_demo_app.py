@@ -1125,21 +1125,27 @@ def main():
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "state_transition_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "state_transition_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "state_transition_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Job status changes (pending -> running -> completed)")
     print("   API: GET /api/v1/jobs/{job_id} to see status transitions")
     print("\n2️⃣  Queue Pressure Flow - Queue monitoring")
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "queue_pressure_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "queue_pressure_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "queue_pressure_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Queue status, pressure levels (low/medium/high/critical)")
     print("   API: GET /api/v1/jobs/{job_id}/routines/{routine_id}/queue-status")
     print("\n3️⃣  Debug Demo Flow - Debugging features")
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "debug_demo_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "debug_demo_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "debug_demo_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Set breakpoint: POST /api/jobs/{job_id}/breakpoints")
     print('     {"type": "routine", "routine_id": "debug_target"}')
     print("   List breakpoints: GET /api/jobs/{job_id}/breakpoints")
@@ -1149,7 +1155,9 @@ def main():
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "comprehensive_demo_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "comprehensive_demo_flow", "routine_id": "source1", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "comprehensive_demo_flow", "routine_id": "source1", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: State transitions, queue pressure, debug capabilities")
     print("   API: GET /api/v1/jobs/{job_id}/metrics")
     print("\n5️⃣  Aggregator Flow - Multiple sources aggregation")
@@ -1157,37 +1165,49 @@ def main():
     print('     {"flow_id": "aggregator_flow"}')
     print("   Submit multiple jobs to trigger aggregation:")
     print("     POST /api/v1/jobs")
-    print('     {"flow_id": "aggregator_flow", "worker_id": "{worker_id}", "routine_id": "source1", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "aggregator_flow", "worker_id": "{worker_id}", "routine_id": "source1", "slot_name": "trigger", "data": {}}'
+    )
     print("     POST /api/v1/jobs")
-    print('     {"flow_id": "aggregator_flow", "worker_id": "{worker_id}", "routine_id": "source2", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "aggregator_flow", "worker_id": "{worker_id}", "routine_id": "source2", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Aggregator waits for both inputs (all_slots_ready_policy)")
     print("   API: GET /api/v1/jobs/{job_id}/routines/aggregator/status")
     print("\n6️⃣  Branching Flow - One source to multiple processors")
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "branching_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "branching_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "branching_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Parallel processing in multiple transformers")
     print("   API: GET /api/v1/jobs/{job_id}/routines")
     print("\n7️⃣  Rate Limited Flow - Rate limiting demonstration")
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "rate_limited_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "rate_limited_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "rate_limited_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Rate-limited processing (time_interval_policy)")
     print("   API: GET /api/v1/jobs/{job_id}/routines/rate-limited/status")
     print("\n8️⃣  Error Handling Flow - Error scenarios")
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "error_handling_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "error_handling_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "error_handling_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Success and error paths")
     print("   API: GET /api/v1/jobs/{job_id}/routines/error-generator/status")
     print("\n9️⃣  Loop Flow - Loop pattern demonstration")
     print("   Create worker: POST /api/v1/workers")
     print('     {"flow_id": "loop_flow"}')
     print("   Submit job: POST /api/v1/jobs")
-    print('     {"flow_id": "loop_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "loop_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Loop controller iterations")
     print("   API: GET /api/v1/jobs/{job_id}/routines/loop-controller/status")
     print("\n🔟  Multi Slot Flow - Multi-slot processing")
@@ -1195,9 +1215,13 @@ def main():
     print('     {"flow_id": "multi_slot_flow"}')
     print("   Submit jobs to different slots:")
     print("     POST /api/v1/jobs")
-    print('     {"flow_id": "multi_slot_flow", "worker_id": "{worker_id}", "routine_id": "primary_source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "multi_slot_flow", "worker_id": "{worker_id}", "routine_id": "primary_source", "slot_name": "trigger", "data": {}}'
+    )
     print("     POST /api/v1/jobs")
-    print('     {"flow_id": "multi_slot_flow", "worker_id": "{worker_id}", "routine_id": "secondary_source", "slot_name": "trigger", "data": {}}')
+    print(
+        '     {"flow_id": "multi_slot_flow", "worker_id": "{worker_id}", "routine_id": "secondary_source", "slot_name": "trigger", "data": {}}'
+    )
     print("   Monitor: Processing from multiple input slots")
     print("   API: GET /api/v1/jobs/{job_id}/routines/multi-processor/status")
     print("\n📦 Factory Objects - Registered routines")
@@ -1225,7 +1249,9 @@ def main():
     print("     • Create Worker: POST /api/v1/workers")
     print('       {"flow_id": "state_transition_flow"}')
     print("     • Submit Job: POST /api/v1/jobs")
-    print('       {"flow_id": "state_transition_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}')
+    print(
+        '       {"flow_id": "state_transition_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+    )
     print("     • List Workers: GET /api/v1/workers")
     print("     • Get Worker: GET /api/v1/workers/{worker_id}")
     print("     • List Jobs: GET /api/v1/jobs")

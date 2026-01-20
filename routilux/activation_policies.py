@@ -290,7 +290,7 @@ def immediate_policy():
 def breakpoint_policy(routine_id: str):
     """Create a breakpoint activation policy.
 
-    .. deprecated:: 
+    .. deprecated::
         This function is deprecated. Breakpoints are now handled at the slot level
         during event routing, not through activation policies. Use the breakpoint API
         to set slot-level breakpoints instead.

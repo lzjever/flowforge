@@ -10,15 +10,17 @@ Tests cover:
 - Complex flow scenarios
 """
 
-import pytest
 import time
-from routilux.core.runtime import Runtime
+
+import pytest
+
+from routilux import immediate_policy
 from routilux.core.flow import Flow
-from routilux.core.routine import Routine
 from routilux.core.registry import FlowRegistry
+from routilux.core.routine import Routine
+from routilux.core.runtime import Runtime
 from routilux.monitoring.breakpoint_manager import Breakpoint
 from routilux.monitoring.registry import MonitoringRegistry
-from routilux import immediate_policy
 
 
 @pytest.fixture(scope="function")
@@ -27,14 +29,15 @@ def setup_monitoring():
     # Enable monitoring
     MonitoringRegistry.enable()
     registry = MonitoringRegistry.get_instance()
-    
+
     # Ensure breakpoint manager exists
     if not registry.breakpoint_manager:
         from routilux.monitoring.breakpoint_manager import BreakpointManager
+
         registry.breakpoint_manager = BreakpointManager()
-    
+
     yield registry
-    
+
     # Cleanup
     if registry.breakpoint_manager:
         # Clear all breakpoints
@@ -54,7 +57,7 @@ class SourceRoutine(Routine):
         """Emit output event with data."""
         worker_state = kwargs.get("worker_state")
         runtime = getattr(worker_state, "_runtime", None)
-        
+
         for data in trigger_data_list:
             # Emit with the data
             self.output.emit(
@@ -97,9 +100,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         # Register flow
@@ -160,9 +163,7 @@ class TestBreakpointRuntimeIntegration:
 
         # Verify slot did NOT receive data (breakpoint intercepted)
         final_count = target.input.get_unconsumed_count()
-        assert (
-            final_count == initial_count
-        ), (
+        assert final_count == initial_count, (
             f"Slot should not have received data due to breakpoint. "
             f"Initial: {initial_count}, Final: {final_count}"
         )
@@ -175,9 +176,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -185,8 +186,14 @@ class TestBreakpointRuntimeIntegration:
 
         runtime = Runtime()
         worker_state, job_context = runtime.post(
-            "test_flow_condition", "source", "trigger", {"value": 50}
+            "test_flow_condition",
+            "source",
+            "trigger",
+            {"value": 0},  # Use value that won't match condition
         )
+
+        # Wait for automatic emission from runtime.post() to complete
+        time.sleep(0.2)
 
         registry = setup_monitoring
         breakpoint_mgr = registry.breakpoint_manager
@@ -195,7 +202,7 @@ class TestBreakpointRuntimeIntegration:
         target_routine_id_actual = flow._get_routine_id(target)
         assert target_routine_id_actual is not None, "Target routine ID should be found in flow"
 
-        # Create breakpoint with condition: value > 40
+        # Create breakpoint with condition: value > 40 (after automatic emission)
         breakpoint = Breakpoint(
             job_id=job_context.job_id,
             routine_id=target_routine_id_actual,
@@ -208,6 +215,10 @@ class TestBreakpointRuntimeIntegration:
         initial_count = target.input.get_unconsumed_count()
 
         # Emit event with value=50 (condition should match)
+        # Set job context before emitting
+        from routilux.core.context import set_current_job
+
+        set_current_job(job_context)
         source.output.emit(
             runtime=runtime, worker_state=worker_state, value=50, message="test", count=1
         )
@@ -217,7 +228,7 @@ class TestBreakpointRuntimeIntegration:
         start_time = time.time()
         while breakpoint.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.1)
-        
+
         time.sleep(0.2)
 
         # Verify breakpoint was hit (condition evaluated to True)
@@ -226,9 +237,9 @@ class TestBreakpointRuntimeIntegration:
         )
 
         # Verify slot did not receive data
-        assert (
-            target.input.get_unconsumed_count() == initial_count
-        ), "Slot should not have received data when condition matches"
+        assert target.input.get_unconsumed_count() == initial_count, (
+            "Slot should not have received data when condition matches"
+        )
 
     def test_breakpoint_condition_false_does_not_intercept(self, setup_monitoring):
         """Test that breakpoint with false condition does not intercept."""
@@ -238,9 +249,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -268,7 +279,7 @@ class TestBreakpointRuntimeIntegration:
         )
         breakpoint_mgr.add_breakpoint(breakpoint)
 
-        initial_count = target.input.get_unconsumed_count()
+        target.input.get_unconsumed_count()
 
         # Emit event with value=30 (condition should NOT match)
         source.output.emit(
@@ -288,9 +299,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -330,7 +341,7 @@ class TestBreakpointRuntimeIntegration:
         start_time = time.time()
         while breakpoint.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.1)
-        
+
         time.sleep(0.2)
 
         # Verify breakpoint was hit
@@ -340,9 +351,9 @@ class TestBreakpointRuntimeIntegration:
         )
 
         # Verify slot did not receive data
-        assert (
-            target.input.get_unconsumed_count() == initial_count
-        ), "Slot should not have received data when condition matches"
+        assert target.input.get_unconsumed_count() == initial_count, (
+            "Slot should not have received data when condition matches"
+        )
 
     def test_breakpoint_condition_string_comparison(self, setup_monitoring):
         """Test breakpoint with string comparison condition."""
@@ -352,9 +363,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -394,16 +405,16 @@ class TestBreakpointRuntimeIntegration:
         start_time = time.time()
         while breakpoint.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.1)
-        
+
         time.sleep(0.2)
 
         # Verify breakpoint was hit
         assert breakpoint.hit_count == 1, "Breakpoint with matching string condition should be hit"
 
         # Verify slot did not receive data
-        assert (
-            target.input.get_unconsumed_count() == initial_count
-        ), "Slot should not have received data when condition matches"
+        assert target.input.get_unconsumed_count() == initial_count, (
+            "Slot should not have received data when condition matches"
+        )
 
     def test_breakpoint_job_isolation_multiple_jobs(self, setup_monitoring):
         """Test that breakpoint only affects the specific job."""
@@ -413,9 +424,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -423,13 +434,16 @@ class TestBreakpointRuntimeIntegration:
 
         runtime = Runtime()
 
-        # Create two jobs
+        # Create two jobs (use values that won't matter since we'll manually emit)
         worker_state1, job_context1 = runtime.post(
-            "test_flow_isolation", "source", "trigger", {"value": 10}
+            "test_flow_isolation", "source", "trigger", {"value": 0}
         )
         worker_state2, job_context2 = runtime.post(
-            "test_flow_isolation", "source", "trigger", {"value": 20}
+            "test_flow_isolation", "source", "trigger", {"value": 0}
         )
+
+        # Wait for automatic emissions from runtime.post() to complete
+        time.sleep(0.2)
 
         registry = setup_monitoring
         breakpoint_mgr = registry.breakpoint_manager
@@ -438,7 +452,7 @@ class TestBreakpointRuntimeIntegration:
         target_routine_id_actual = flow._get_routine_id(target)
         assert target_routine_id_actual is not None, "Target routine ID should be found in flow"
 
-        # Create breakpoint only for job1
+        # Create breakpoint only for job1 (after automatic emissions)
         breakpoint = Breakpoint(
             job_id=job_context1.job_id,
             routine_id=target_routine_id_actual,
@@ -447,10 +461,18 @@ class TestBreakpointRuntimeIntegration:
         )
         breakpoint_mgr.add_breakpoint(breakpoint)
 
-        # Emit events from both jobs
+        # Emit events from both jobs (set job context before each emit)
+        from routilux.core.context import set_current_job
+
+        set_current_job(job_context1)
         source.output.emit(
             runtime=runtime, worker_state=worker_state1, value=10, message="job1", count=1
         )
+
+        # Wait a bit to ensure first event is processed with job_context1
+        time.sleep(0.1)
+
+        set_current_job(job_context2)
         source.output.emit(
             runtime=runtime, worker_state=worker_state2, value=20, message="job2", count=1
         )
@@ -472,10 +494,10 @@ class TestBreakpointRuntimeIntegration:
         target1.setup()
         target2 = TargetRoutine()
         target2.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target1_id = flow.add_routine(target1, "target1")
-        target2_id = flow.add_routine(target2, "target2")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target1, "target1")
+        flow.add_routine(target2, "target2")
         flow.connect("source", "output", "target1", "input")
         flow.connect("source", "output", "target2", "input")
 
@@ -484,8 +506,14 @@ class TestBreakpointRuntimeIntegration:
 
         runtime = Runtime()
         worker_state, job_context = runtime.post(
-            "test_flow_multi_bp", "source", "trigger", {"value": 42}
+            "test_flow_multi_bp",
+            "source",
+            "trigger",
+            {"value": 0},  # Use value that won't matter
         )
+
+        # Wait for automatic emission from runtime.post() to complete
+        time.sleep(0.2)
 
         registry = setup_monitoring
         breakpoint_mgr = registry.breakpoint_manager
@@ -495,7 +523,7 @@ class TestBreakpointRuntimeIntegration:
         target2_routine_id = flow._get_routine_id(target2)
         assert target1_routine_id is not None and target2_routine_id is not None
 
-        # Create breakpoints on both targets
+        # Create breakpoints on both targets (after automatic emission)
         bp1 = Breakpoint(
             job_id=job_context.job_id,
             routine_id=target1_routine_id,
@@ -512,6 +540,10 @@ class TestBreakpointRuntimeIntegration:
         breakpoint_mgr.add_breakpoint(bp2)
 
         # Emit event (should hit both breakpoints)
+        # Set job context before emitting
+        from routilux.core.context import set_current_job
+
+        set_current_job(job_context)
         source.output.emit(
             runtime=runtime, worker_state=worker_state, value=42, message="test", count=1
         )
@@ -536,16 +568,16 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
         flow_registry.register(flow)
 
         runtime = Runtime()
-        
+
         # Create first job for first event
         worker_state1, job_context1 = runtime.post(
             "test_flow_enable_disable", "source", "trigger", {"value": 42}
@@ -573,11 +605,13 @@ class TestBreakpointRuntimeIntegration:
         )
         time.sleep(0.4)
 
-        assert breakpoint.hit_count == 0, f"Disabled breakpoint should not be hit, got {breakpoint.hit_count}"
+        assert breakpoint.hit_count == 0, (
+            f"Disabled breakpoint should not be hit, got {breakpoint.hit_count}"
+        )
 
         # Enable breakpoint
         breakpoint.enabled = True
-        
+
         # Verify breakpoint is enabled
         assert breakpoint.enabled is True, "Breakpoint should be enabled"
 
@@ -585,7 +619,7 @@ class TestBreakpointRuntimeIntegration:
         worker_state2, job_context2 = runtime.post(
             "test_flow_enable_disable", "source", "trigger", {"value": 43}
         )
-        
+
         # Update breakpoint job_id to job2
         # Actually, we should create a new breakpoint for job2
         breakpoint2 = Breakpoint(
@@ -600,13 +634,13 @@ class TestBreakpointRuntimeIntegration:
         source.output.emit(
             runtime=runtime, worker_state=worker_state2, value=43, message="event2", count=2
         )
-        
+
         # Wait for breakpoint to be hit
         max_wait = 2.0
         start_time = time.time()
         while breakpoint2.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.15)
-        
+
         time.sleep(0.3)
 
         assert breakpoint2.hit_count == 1, (
@@ -628,7 +662,9 @@ class TestBreakpointRuntimeIntegration:
         )
         time.sleep(0.4)
 
-        assert breakpoint2.hit_count == 1, f"Disabled breakpoint should not be hit again, got {breakpoint2.hit_count}"
+        assert breakpoint2.hit_count == 1, (
+            f"Disabled breakpoint should not be hit again, got {breakpoint2.hit_count}"
+        )
 
     def test_breakpoint_condition_with_missing_variable(self, setup_monitoring):
         """Test breakpoint condition when variable is missing."""
@@ -638,9 +674,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -668,7 +704,7 @@ class TestBreakpointRuntimeIntegration:
         )
         breakpoint_mgr.add_breakpoint(breakpoint)
 
-        initial_count = target.input.get_unconsumed_count()
+        target.input.get_unconsumed_count()
 
         # Emit event without missing_var
         source.output.emit(
@@ -692,9 +728,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -727,6 +763,7 @@ class TestBreakpointRuntimeIntegration:
         # Set job_context in current thread context before emitting
         # This ensures event.emit() can retrieve it via get_current_job()
         from routilux.core.context import set_current_job
+
         set_current_job(job_context)
 
         # Emit event with matching values
@@ -739,7 +776,7 @@ class TestBreakpointRuntimeIntegration:
         start_time = time.time()
         while breakpoint.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.15)
-        
+
         time.sleep(0.3)
 
         # Verify breakpoint was hit
@@ -751,9 +788,9 @@ class TestBreakpointRuntimeIntegration:
         )
 
         # Verify slot did not receive data
-        assert (
-            target.input.get_unconsumed_count() == initial_count
-        ), "Slot should not have received data when condition matches"
+        assert target.input.get_unconsumed_count() == initial_count, (
+            "Slot should not have received data when condition matches"
+        )
 
     def test_breakpoint_removed_during_execution(self, setup_monitoring):
         """Test removing breakpoint during execution."""
@@ -763,9 +800,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -796,16 +833,18 @@ class TestBreakpointRuntimeIntegration:
         source.output.emit(
             runtime=runtime, worker_state=worker_state, value=42, message="event1", count=1
         )
-        
+
         # Wait for breakpoint to be hit
         max_wait = 1.0
         start_time = time.time()
         while breakpoint.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.1)
-        
+
         time.sleep(0.2)
 
-        assert breakpoint.hit_count == 1, f"Breakpoint should be hit before removal, got {breakpoint.hit_count}"
+        assert breakpoint.hit_count == 1, (
+            f"Breakpoint should be hit before removal, got {breakpoint.hit_count}"
+        )
 
         # Remove breakpoint
         breakpoint_mgr.remove_breakpoint(breakpoint.breakpoint_id, job_context.job_id)
@@ -817,7 +856,9 @@ class TestBreakpointRuntimeIntegration:
         time.sleep(0.3)
 
         # Hit count should still be 1 (breakpoint was removed)
-        assert breakpoint.hit_count == 1, f"Breakpoint hit count should not increase after removal, got {breakpoint.hit_count}"
+        assert breakpoint.hit_count == 1, (
+            f"Breakpoint hit count should not increase after removal, got {breakpoint.hit_count}"
+        )
 
     def test_breakpoint_multiple_events_same_slot(self, setup_monitoring):
         """Test breakpoint with multiple events to the same slot."""
@@ -827,9 +868,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -859,6 +900,7 @@ class TestBreakpointRuntimeIntegration:
         # Set job_context in current thread context before emitting
         # This ensures event.emit() can retrieve it via get_current_job()
         from routilux.core.context import set_current_job
+
         set_current_job(job_context)
 
         # Emit multiple events with longer delays
@@ -890,14 +932,14 @@ class TestBreakpointRuntimeIntegration:
             f"This may indicate events are being processed in batch or breakpoint check is not working for all events. "
             f"Job ID: {job_context.job_id}, Routine ID: {target_routine_id_actual}"
         )
-        
+
         # Also verify that breakpoint is working (hit_count > 0)
         assert breakpoint.hit_count > 0, "Breakpoint should have been hit at least once"
 
         # Verify slot did not receive any data
-        assert (
-            target.input.get_unconsumed_count() == 0
-        ), "Slot should not have received any data due to breakpoint"
+        assert target.input.get_unconsumed_count() == 0, (
+            "Slot should not have received any data due to breakpoint"
+        )
 
     def test_breakpoint_condition_with_arithmetic(self, setup_monitoring):
         """Test breakpoint condition with arithmetic operations."""
@@ -907,9 +949,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -949,16 +991,18 @@ class TestBreakpointRuntimeIntegration:
         start_time = time.time()
         while breakpoint.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.1)
-        
+
         time.sleep(0.2)
 
         # Verify breakpoint was hit
-        assert breakpoint.hit_count == 1, "Breakpoint with matching arithmetic condition should be hit"
+        assert breakpoint.hit_count == 1, (
+            "Breakpoint with matching arithmetic condition should be hit"
+        )
 
         # Verify slot did not receive data
-        assert (
-            target.input.get_unconsumed_count() == initial_count
-        ), "Slot should not have received data when condition matches"
+        assert target.input.get_unconsumed_count() == initial_count, (
+            "Slot should not have received data when condition matches"
+        )
 
     def test_breakpoint_no_condition_vs_with_condition(self, setup_monitoring):
         """Test breakpoint without condition vs with condition."""
@@ -968,9 +1012,9 @@ class TestBreakpointRuntimeIntegration:
         source.setup()
         target = TargetRoutine()
         target.setup()
-        
-        source_id = flow.add_routine(source, "source")
-        target_id = flow.add_routine(target, "target")
+
+        flow.add_routine(source, "source")
+        flow.add_routine(target, "target")
         flow.connect("source", "output", "target", "input")
 
         flow_registry = FlowRegistry.get_instance()
@@ -1020,16 +1064,18 @@ class TestBreakpointRuntimeIntegration:
         start_time = time.time()
         while bp_no_condition.hit_count == 0 and (time.time() - start_time) < max_wait:
             time.sleep(0.1)
-        
+
         time.sleep(0.2)
 
         # Verify breakpoint without condition was hit
         assert bp_no_condition.hit_count == 1, "Breakpoint without condition should always match"
 
         # Verify breakpoint with condition was NOT hit
-        assert bp_with_condition.hit_count == 0, "Breakpoint with non-matching condition should not match"
+        assert bp_with_condition.hit_count == 0, (
+            "Breakpoint with non-matching condition should not match"
+        )
 
         # Verify slot did not receive data (breakpoint without condition intercepted)
-        assert (
-            target.input.get_unconsumed_count() == initial_count
-        ), "Slot should not have received data (breakpoint without condition intercepted)"
+        assert target.input.get_unconsumed_count() == initial_count, (
+            "Slot should not have received data (breakpoint without condition intercepted)"
+        )

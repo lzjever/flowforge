@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from routilux.core.context import JobContext
     from routilux.core.event import Event
     from routilux.core.flow import Flow
+    from routilux.core.slot import Slot
     from routilux.core.worker import WorkerState
 
 logger = logging.getLogger(__name__)
@@ -34,59 +35,62 @@ _event_publisher_lock = threading.Lock()
 
 def _ensure_event_publisher():
     """Ensure global event publisher is running.
-    
+
     Creates a single background thread with event loop that processes
     events from sync contexts. This is more efficient than creating
     a new thread for each event.
     """
     global _event_publisher_loop, _event_publisher_thread, _event_publisher_queue
-    
+
     with _event_publisher_lock:
         if _event_publisher_thread is not None and _event_publisher_thread.is_alive():
             return  # Already running
-        
+
         def run_event_loop():
             """Background thread that runs event loop for sync-to-async bridge."""
             global _event_publisher_loop, _event_publisher_queue
-            
+
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
             _event_publisher_loop = new_loop
             queue = asyncio.Queue()
             _event_publisher_queue = queue
-            
+
             async def publisher():
                 """Async task that processes events from queue."""
                 from routilux.monitoring.event_manager import get_event_manager
+
                 event_manager = get_event_manager()
-                
+
                 while True:
                     try:
                         # Wait for event with timeout to allow checking if we should continue
-                        job_id, event = await asyncio.wait_for(
-                            queue.get(), timeout=1.0
-                        )
+                        job_id, event = await asyncio.wait_for(queue.get(), timeout=1.0)
                         try:
                             await event_manager.publish(job_id, event)
                         except Exception as e:
-                            logger.error(f"Error publishing event {event.get('type')} for job {job_id}: {e}", exc_info=True)
+                            logger.error(
+                                f"Error publishing event {event.get('type')} for job {job_id}: {e}",
+                                exc_info=True,
+                            )
                     except asyncio.TimeoutError:
                         # No events for 1 second, but keep running (queue might get events later)
                         continue
                     except Exception as e:
                         logger.error(f"Error in event publisher loop: {e}", exc_info=True)
-            
+
             # Create and run publisher task
-            task = new_loop.create_task(publisher())
+            new_loop.create_task(publisher())
             new_loop.run_forever()
-        
+
         _event_publisher_thread = threading.Thread(
             target=run_event_loop, daemon=True, name="EventPublisher"
         )
         _event_publisher_thread.start()
-        
+
         # Give thread time to initialize
         import time
+
         time.sleep(0.1)
 
 
@@ -106,13 +110,13 @@ def _publish_event_via_manager(job_id: str, event: dict) -> None:
         event_manager = get_event_manager()
 
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # In async context, create task without waiting
             asyncio.create_task(event_manager.publish(job_id, event))
         except RuntimeError:
             # No running event loop - use global background publisher
             _ensure_event_publisher()
-            
+
             if _event_publisher_loop is not None and _event_publisher_queue is not None:
                 # Schedule event in the background loop using call_soon_threadsafe
                 # This is more efficient than using a thread queue
@@ -121,7 +125,7 @@ def _publish_event_via_manager(job_id: str, event: dict) -> None:
                         _event_publisher_queue.put_nowait((job_id, event))
                     except Exception as e:
                         logger.error(f"Failed to queue event for job {job_id}: {e}")
-                
+
                 _event_publisher_loop.call_soon_threadsafe(put_event)
             else:
                 # Fallback: log warning but don't fail
@@ -137,7 +141,7 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
 
     Implements ExecutionHooksInterface with:
     - Metrics collection via MonitorCollector
-    - Breakpoint support via BreakpointManager
+    - Breakpoint support via BreakpointManager (in on_slot_before_enqueue)
     - Event broadcasting via EventManager
     - Debug session management
 
@@ -220,8 +224,9 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
             job_context: Job context
             worker_state: Worker state
         """
-        from routilux.monitoring.registry import MonitoringRegistry
         from datetime import datetime
+
+        from routilux.monitoring.registry import MonitoringRegistry
 
         if not MonitoringRegistry.is_enabled():
             return
@@ -238,7 +243,7 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
                     "flow_id": worker_state.flow_id,
                     "worker_id": worker_state.worker_id,
                     "metadata": job_context.metadata,
-                }
+                },
             },
         )
         logger.debug(f"Published job_started event for job {job_context.job_id}")
@@ -258,8 +263,9 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
             status: Final status ("completed", "failed")
             error: Error if failed
         """
-        from routilux.monitoring.registry import MonitoringRegistry
         from datetime import datetime
+
+        from routilux.monitoring.registry import MonitoringRegistry
 
         if not MonitoringRegistry.is_enabled():
             return
@@ -280,7 +286,7 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
                     "status": status,
                     "error": str(error) if error else None,
                     "trace_log": job_context.trace_log,
-                }
+                },
             },
         )
 
@@ -300,8 +306,9 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
         Returns:
             True to continue execution, False to pause (e.g., breakpoint)
         """
-        from routilux.monitoring.registry import MonitoringRegistry
         from datetime import datetime
+
+        from routilux.monitoring.registry import MonitoringRegistry
 
         if not MonitoringRegistry.is_enabled():
             return True
@@ -316,7 +323,7 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
                 "data": {
                     "routine_id": routine_id,
                     "worker_id": worker_state.worker_id,
-                }
+                },
             },
         )
 
@@ -342,8 +349,9 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
             status: Final status
             error: Error if failed
         """
-        from routilux.monitoring.registry import MonitoringRegistry
         from datetime import datetime
+
+        from routilux.monitoring.registry import MonitoringRegistry
 
         if not MonitoringRegistry.is_enabled():
             return
@@ -363,7 +371,7 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
                     "worker_id": worker_state.worker_id,
                     "status": status,
                     "error": str(error) if error else None,
-                }
+                },
             },
         )
 
@@ -412,10 +420,117 @@ class MonitoringExecutionHooks(ExecutionHooksInterface):
             },
         )
 
-        # Note: Breakpoints are now checked during event routing in Runtime.handle_event_emit
-        # when data is about to be enqueued to slots. No breakpoint check needed here for event emit.
+        # Note: Breakpoints are checked in on_slot_before_enqueue hook when data is about
+        # to be enqueued to slots. No breakpoint check needed here for event emit.
 
         return True
+
+    def on_slot_before_enqueue(
+        self,
+        slot: Slot,
+        routine_id: str,
+        job_context: JobContext | None,
+        data: dict[str, Any],
+        flow_id: str,
+    ) -> tuple[bool, str | None]:
+        """Called before enqueueing data to a slot.
+
+        Checks for breakpoints matching (job_id, routine_id, slot_name).
+        If breakpoint is hit, returns False to skip enqueue and publishes
+        breakpoint_hit event.
+
+        Args:
+            slot: Slot that will receive the data
+            routine_id: ID of the routine that owns the slot
+            job_context: Current job context (may be None)
+            data: Data dictionary that will be enqueued
+            flow_id: ID of the flow containing the routine
+
+        Returns:
+            Tuple of (should_enqueue, reason):
+            - should_enqueue: False if breakpoint hit, True otherwise
+            - reason: Breakpoint ID if breakpoint hit, None otherwise
+        """
+        from datetime import datetime
+
+        from routilux.monitoring.registry import MonitoringRegistry
+
+        # If monitoring not enabled or no job context, allow enqueue
+        if not MonitoringRegistry.is_enabled() or not job_context:
+            return True, None
+
+        registry = MonitoringRegistry.get_instance()
+        if not registry or not registry.breakpoint_manager:
+            return True, None
+
+        breakpoint_mgr = registry.breakpoint_manager
+        slot_name = slot.name
+
+        # Check for breakpoint
+        logger.debug(
+            f"Checking breakpoint: job_id={job_context.job_id}, "
+            f"routine_id={routine_id}, slot_name={slot_name}, "
+            f"data_keys={list(data.keys()) if isinstance(data, dict) else 'not_dict'}"
+        )
+
+        breakpoint = breakpoint_mgr.check_slot_breakpoint(
+            job_id=job_context.job_id,
+            routine_id=routine_id,
+            slot_name=slot_name,
+            context=None,  # Can be enhanced later if needed
+            variables=data,  # Pass event data as variables for condition evaluation
+        )
+
+        if breakpoint is not None:
+            # Breakpoint hit - skip enqueue and publish event
+            logger.info(
+                f"Breakpoint hit: job_id={job_context.job_id}, "
+                f"routine_id={routine_id}, slot_name={slot_name}, "
+                f"breakpoint_id={breakpoint.breakpoint_id}, condition={breakpoint.condition}"
+            )
+
+            # Publish breakpoint_hit event
+            from routilux.monitoring.event_manager import get_event_manager
+
+            event_manager = get_event_manager()
+            try:
+                # Use asyncio.create_task for fire-and-forget async call
+                import asyncio
+
+                try:
+                    asyncio.get_running_loop()
+                    asyncio.create_task(
+                        event_manager.publish(
+                            job_context.job_id,
+                            {
+                                "type": "breakpoint_hit",
+                                "job_id": job_context.job_id,
+                                "timestamp": datetime.now().isoformat(),
+                                "data": {
+                                    "breakpoint_id": breakpoint.breakpoint_id,
+                                    "routine_id": routine_id,
+                                    "slot_name": slot_name,
+                                    "condition": breakpoint.condition,
+                                    "event_data": data,  # The data that would have been enqueued
+                                },
+                            },
+                        )
+                    )
+                except RuntimeError:
+                    # No event loop running - skip publishing
+                    logger.debug("No event loop running, skipping breakpoint_hit event publish")
+            except Exception as e:
+                logger.warning(f"Failed to publish breakpoint_hit event: {e}")
+
+            # Return False to skip enqueue
+            return False, f"breakpoint_{breakpoint.breakpoint_id}"
+        else:
+            # Debug: Log when breakpoint check returns None
+            logger.debug(
+                f"No breakpoint match: job_id={job_context.job_id}, "
+                f"routine_id={routine_id}, slot_name={slot_name}"
+            )
+            return True, None
 
 
 # Singleton instance

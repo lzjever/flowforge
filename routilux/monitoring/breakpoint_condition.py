@@ -76,7 +76,9 @@ def evaluate_condition(
             if callable(value) and key not in safe_builtins:
                 # Check if it's a method on a built-in type (like dict.get, list.append)
                 # These are safe because they operate on the object itself
-                if hasattr(value, '__self__') and isinstance(value.__self__, (dict, list, tuple, str, int, float)):
+                if hasattr(value, "__self__") and isinstance(
+                    value.__self__, (dict, list, tuple, str, int, float)
+                ):
                     # It's a method on a built-in type - allow it
                     eval_context[key] = value
                 else:

@@ -106,7 +106,14 @@ test-cov:
 
 test-integration:
 	@echo "Running integration tests (requires external services)..."
-	$(PYTHON_CMD) -m pytest tests/ -v -m integration -n auto
+	$(PYTHON_CMD) -m pytest tests/ -v -m integration -n auto || \
+		(exit_code=$$?; \
+		 if [ $$exit_code -eq 5 ]; then \
+			 echo "No integration tests found (this is OK if no tests are marked with @pytest.mark.integration)"; \
+			 exit 0; \
+		 else \
+			 exit $$exit_code; \
+		 fi)
 
 test-unit:
 	@echo "Running unit tests only..."

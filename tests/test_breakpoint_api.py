@@ -4,8 +4,8 @@ API tests for breakpoint endpoints.
 Tests the breakpoint API endpoints with the new slot-level breakpoint design.
 """
 
+
 import pytest
-import time
 from fastapi.testclient import TestClient
 
 from routilux.monitoring.registry import MonitoringRegistry
@@ -22,11 +22,11 @@ def client():
 @pytest.fixture(scope="function")
 def setup_test_flow(client):
     """Setup a simple test flow for breakpoint testing."""
-    from routilux.core.flow import Flow
-    from routilux.core.routine import Routine
-    from routilux.core.registry import FlowRegistry
-    from routilux.monitoring.storage import flow_store
     from routilux import immediate_policy
+    from routilux.core.flow import Flow
+    from routilux.core.registry import FlowRegistry
+    from routilux.core.routine import Routine
+    from routilux.monitoring.storage import flow_store
     from routilux.tools.factory import ObjectFactory, ObjectMetadata
 
     # Create a simple test routine
@@ -53,16 +53,32 @@ def setup_test_flow(client):
     # Register routines in factory (skip if already registered)
     factory = ObjectFactory.get_instance()
     try:
-        factory.register("test_source_bp", TestSource, metadata=ObjectMetadata(
-            name="test_source_bp", description="Test source", category="test", tags=["test"], version="1.0.0"
-        ))
+        factory.register(
+            "test_source_bp",
+            TestSource,
+            metadata=ObjectMetadata(
+                name="test_source_bp",
+                description="Test source",
+                category="test",
+                tags=["test"],
+                version="1.0.0",
+            ),
+        )
     except ValueError:
         pass  # Already registered
-    
+
     try:
-        factory.register("test_target_bp", TestTarget, metadata=ObjectMetadata(
-            name="test_target_bp", description="Test target", category="test", tags=["test"], version="1.0.0"
-        ))
+        factory.register(
+            "test_target_bp",
+            TestTarget,
+            metadata=ObjectMetadata(
+                name="test_target_bp",
+                description="Test target",
+                category="test",
+                tags=["test"],
+                version="1.0.0",
+            ),
+        )
     except ValueError:
         pass  # Already registered
 
@@ -72,9 +88,9 @@ def setup_test_flow(client):
     source.setup()  # Ensure setup is called
     target = factory.create("test_target_bp")
     target.setup()  # Ensure setup is called
-    
-    source_id = flow.add_routine(source, "source")
-    target_id = flow.add_routine(target, "target")
+
+    flow.add_routine(source, "source")
+    flow.add_routine(target, "target")
     flow.connect("source", "output", "target", "input")
 
     # Register flow
@@ -118,7 +134,7 @@ class TestBreakpointAPICreate:
         )
         assert response.status_code == 201
         data = response.json()
-        
+
         # Verify response structure (new API design)
         assert "breakpoint_id" in data
         assert data["job_id"] == job_id
@@ -127,7 +143,7 @@ class TestBreakpointAPICreate:
         assert data["enabled"] is True
         assert data["hit_count"] == 0
         assert "condition" in data  # May be None
-        
+
         # Verify no deprecated fields
         assert "type" not in data, "Response should not contain deprecated 'type' field"
 
@@ -147,7 +163,7 @@ class TestBreakpointAPICreate:
 
         # Create breakpoint with condition
         response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={
                 "routine_id": "target",
                 "slot_name": "input",
@@ -177,7 +193,7 @@ class TestBreakpointAPICreate:
 
         # Try to create breakpoint without routine_id
         response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={
                 "slot_name": "input",
             },
@@ -200,7 +216,7 @@ class TestBreakpointAPICreate:
 
         # Try to create breakpoint without slot_name
         response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={
                 "routine_id": "target",
             },
@@ -223,7 +239,7 @@ class TestBreakpointAPICreate:
 
         # Try to create breakpoint with non-existent routine
         response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={
                 "routine_id": "nonexistent_routine",
                 "slot_name": "input",
@@ -251,7 +267,7 @@ class TestBreakpointAPICreate:
 
         # Try to create breakpoint with non-existent slot
         response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={
                 "routine_id": "target",
                 "slot_name": "nonexistent_slot",
@@ -321,7 +337,7 @@ class TestBreakpointAPIList:
 
         # Create multiple breakpoints
         bp1_response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={"routine_id": "target", "slot_name": "input"},
         )
         assert bp1_response.status_code == 201
@@ -332,7 +348,7 @@ class TestBreakpointAPIList:
         data = response.json()
         assert data["total"] == 1
         assert len(data["breakpoints"]) == 1
-        
+
         bp = data["breakpoints"][0]
         assert bp["routine_id"] == "target"
         assert bp["slot_name"] == "input"
@@ -363,7 +379,7 @@ class TestBreakpointAPIDelete:
 
         # Create breakpoint
         bp_response = client.post(
-            f"/api/jobs/{job_id}/breakpoints",
+            f"/api/v1/jobs/{job_id}/breakpoints",
             json={"routine_id": "target", "slot_name": "input"},
         )
         breakpoint_id = bp_response.json()["breakpoint_id"]
@@ -373,7 +389,7 @@ class TestBreakpointAPIDelete:
         assert response.status_code == 204
 
         # Verify breakpoint is deleted
-        list_response = client.get(f"/api/jobs/{job_id}/breakpoints")
+        list_response = client.get(f"/api/v1/jobs/{job_id}/breakpoints")
         assert list_response.json()["total"] == 0
 
     def test_delete_breakpoint_nonexistent(self, client, setup_test_flow):
@@ -391,7 +407,7 @@ class TestBreakpointAPIDelete:
         job_id = response.json()["job_id"]
 
         # Try to delete non-existent breakpoint
-        response = client.delete(f"/api/jobs/{job_id}/breakpoints/nonexistent_bp_id")
+        response = client.delete(f"/api/v1/jobs/{job_id}/breakpoints/nonexistent_bp_id")
         assert response.status_code == 404
 
     def test_delete_breakpoint_nonexistent_job(self, client):
@@ -431,7 +447,14 @@ class TestBreakpointAPIResponseFormat:
         data = response.json()
 
         # Verify all required fields are present
-        required_fields = ["breakpoint_id", "job_id", "routine_id", "slot_name", "enabled", "hit_count"]
+        required_fields = [
+            "breakpoint_id",
+            "job_id",
+            "routine_id",
+            "slot_name",
+            "enabled",
+            "hit_count",
+        ]
         for field in required_fields:
             assert field in data, f"Response missing required field: {field}"
 
@@ -439,8 +462,14 @@ class TestBreakpointAPIResponseFormat:
         assert "condition" in data
 
         # Verify no deprecated fields
-        deprecated_fields = ["type", "event_name", "source_routine_id", "source_event_name", 
-                           "target_routine_id", "target_slot_name"]
+        deprecated_fields = [
+            "type",
+            "event_name",
+            "source_routine_id",
+            "source_event_name",
+            "target_routine_id",
+            "target_slot_name",
+        ]
         for field in deprecated_fields:
             assert field not in data, f"Response should not contain deprecated field: {field}"
 

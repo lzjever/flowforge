@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from routilux.core.context import JobContext
     from routilux.core.event import Event
     from routilux.core.flow import Flow
+    from routilux.core.slot import Slot
     from routilux.core.worker import WorkerState
 
 
@@ -31,6 +32,7 @@ class ExecutionHooksInterface(ABC):
         - on_routine_start: Routine begins execution
         - on_routine_end: Routine finishes execution
         - on_event_emit: Event is emitted
+        - on_slot_before_enqueue: Before data is enqueued to a slot
     """
 
     @abstractmethod
@@ -144,6 +146,42 @@ class ExecutionHooksInterface(ABC):
         """
         return True
 
+    @abstractmethod
+    def on_slot_before_enqueue(
+        self,
+        slot: Slot,
+        routine_id: str,
+        job_context: JobContext | None,
+        data: dict[str, Any],
+        flow_id: str,
+    ) -> tuple[bool, str | None]:
+        """Called before enqueueing data to a slot.
+
+        This hook allows intercepting slot enqueue operations, for example
+        to implement breakpoints or data validation.
+
+        Args:
+            slot: Slot that will receive the data
+            routine_id: ID of the routine that owns the slot
+            job_context: Current job context (may be None)
+            data: Data dictionary that will be enqueued
+            flow_id: ID of the flow containing the routine
+
+        Returns:
+            Tuple of (should_enqueue, reason):
+            - should_enqueue: True to proceed with enqueue, False to skip
+            - reason: Optional reason string if enqueue is skipped (for logging)
+
+        Examples:
+            >>> hooks = get_execution_hooks()
+            >>> should_enqueue, reason = hooks.on_slot_before_enqueue(
+            ...     slot, "routine_1", job_context, {"key": "value"}, "flow_1"
+            ... )
+            >>> if not should_enqueue:
+            ...     logger.info(f"Skipping enqueue: {reason}")
+        """
+        return True, None
+
 
 class NullExecutionHooks(ExecutionHooksInterface):
     """Null implementation of execution hooks (no-op).
@@ -196,6 +234,17 @@ class NullExecutionHooks(ExecutionHooksInterface):
         data: dict[str, Any] | None = None,
     ) -> bool:
         return True
+
+    def on_slot_before_enqueue(
+        self,
+        slot: Slot,
+        routine_id: str,
+        job_context: JobContext | None,
+        data: dict[str, Any],
+        flow_id: str,
+    ) -> tuple[bool, str | None]:
+        """Null implementation - always allows enqueue."""
+        return True, None
 
 
 # Global hooks instance (default: null implementation)
