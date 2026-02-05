@@ -151,46 +151,6 @@ class Routine(ConfigMixin, ExecutionMixin, LifecycleMixin, Serializable):
         """Return string representation of the Routine."""
         return f"{self.__class__.__name__}[{self._id}]"
 
-    def __call__(self, **kwargs) -> None:
-        r"""Execute routine (deprecated - use slot handlers instead).
-
-        .. deprecated::
-            Direct calling of routines is deprecated. Routines should be executed
-            through slot handlers. Entry routines should define a "trigger" slot
-            that will be called by Flow.execute().
-
-        This method is kept for backward compatibility but should not be used
-        in new code. Instead, define slot handlers that contain your execution logic.
-
-        Args:
-            ``**kwargs``: Parameters passed to the routine.
-
-        Note:
-            In the new architecture, routines should be triggered through
-            slots, and execution state should be tracked in JobState.
-
-        Examples:
-            Old way (deprecated):
-            >>> class MyRoutine(Routine):
-            ...     def __call__(self, \*\*kwargs):
-            ...         # This is deprecated
-            ...         pass
-
-            New way (recommended):
-            >>> class MyRoutine(Routine):
-            ...     def __init__(self):
-            ...         super().__init__()
-            ...         # Define trigger slot for entry routine
-            ...         self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-            ...
-            ...     def _handle_trigger(self, \*\*kwargs):
-            ...         # Execution logic here
-            ...         # Store execution state in JobState if needed
-        """
-        # Deprecated: Kept for compatibility, should not be overridden in new code
-        # Execution state should be tracked in JobState, not routine._stats
-        pass
-
     # Note: define_slot, define_event, emit, get_slot, get_event, _prepare_execution_data,
     # _extract_input_data are now provided by ExecutionMixin
 

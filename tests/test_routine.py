@@ -87,9 +87,8 @@ class TestRoutineEdgeCases:
         assert len(routine._slots) == 0
         assert len(routine._events) == 0
 
-        # Note: Direct calling is deprecated, but __call__ still works for compatibility
-        # In production, routines should be executed through slot handlers
-        routine()
+        # Note: Direct calling via __call__ has been removed.
+        # Routines are now executed through Flow.execute() with slot handlers.
 
     def test_duplicate_slot_name(self):
         """测试用例 7: 重复定义 Slot"""
