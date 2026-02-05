@@ -1,7 +1,5 @@
 """Benchmarks for slot receive performance."""
 
-import pytest
-
 from routilux import Routine
 
 

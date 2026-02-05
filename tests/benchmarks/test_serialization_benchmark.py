@@ -1,7 +1,5 @@
 """Benchmarks for serialization performance."""
 
-import pytest
-
 from routilux.job_state import JobState
 
 

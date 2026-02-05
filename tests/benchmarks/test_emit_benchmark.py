@@ -1,7 +1,5 @@
 """Benchmarks for event emission performance."""
 
-import pytest
-
 from routilux import Flow, Routine
 
 

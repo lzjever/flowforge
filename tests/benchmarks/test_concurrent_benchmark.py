@@ -1,7 +1,5 @@
 """Benchmarks for concurrent execution performance."""
 
-import pytest
-
 from routilux import Flow, JobState, Routine
 
 
