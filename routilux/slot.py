@@ -64,7 +64,6 @@ class Slot(Serializable):
           If multiple events send data simultaneously, race conditions may occur.
         - The handler is called immediately after each receive() with the
           merged data, not deferred until all data is collected.
-        - Parameter mapping (from Flow.connect()) is applied before merging.
 
     Examples:
         Override strategy (default):
@@ -153,12 +152,11 @@ class Slot(Serializable):
         else:
             return f"Slot[{self.name}]"
 
-    def connect(self, event: Event, param_mapping: dict[str, str] | None = None) -> None:
+    def connect(self, event: Event) -> None:
         """Connect to an event.
 
         Args:
             event: Event object to connect to.
-            param_mapping: Parameter mapping dictionary mapping event parameter names to slot parameter names.
         """
         if event not in self.connected_events:
             self.connected_events.append(event)

@@ -88,7 +88,7 @@ class Connection(Serializable):
         Returns:
             Serialized dictionary containing connection data.
         """
-        # Let base class handle registered fields (param_mapping)
+        # Let base class handle registered fields
         data = super().serialize()
 
         # Save event and slot names (Connection's responsibility)
@@ -114,7 +114,7 @@ class Connection(Serializable):
         target_routine_id = data.pop("_target_routine_id", None)
         target_slot_name = data.pop("_target_slot_name", None)
 
-        # Let base class handle registered fields (param_mapping)
+        # Let base class handle registered fields
         super().deserialize(data)
 
         # Save reference information to be restored by Flow.deserialize()

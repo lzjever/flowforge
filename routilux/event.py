@@ -31,14 +31,12 @@ class Event(Serializable):
         - Events are emitted using emit() or Routine.emit()
         - Events can connect to multiple slots (broadcast pattern)
         - Slots can connect to multiple events (aggregation pattern)
-        - Parameter mapping can transform data during transmission
 
     Connection Model:
         Events support many-to-many connections:
         - One event can connect to many slots (broadcasting)
         - One slot can connect to many events (aggregation)
         - Connections are managed via Flow.connect()
-        - Parameter mappings can rename parameters per connection
 
     Examples:
         Basic usage:
@@ -109,13 +107,11 @@ class Event(Serializable):
         else:
             return f"Event[{self.name}]"
 
-    def connect(self, slot: Slot, param_mapping: dict[str, str] | None = None) -> None:
+    def connect(self, slot: Slot) -> None:
         """Connect to a slot.
 
         Args:
             slot: Slot object to connect to.
-            param_mapping: Parameter mapping dictionary (managed by Connection,
-                this method only establishes the connection).
         """
         if slot not in self.connected_slots:
             self.connected_slots.append(slot)
@@ -149,11 +145,6 @@ class Event(Serializable):
             - Concurrent mode: max_workers>1, tasks execute in parallel
             - emit() is always non-blocking and returns immediately
 
-        Parameter Mapping:
-            If a Connection has param_mapping defined (via Flow.connect()),
-            parameter names are transformed before being sent to the slot.
-            Unmapped parameters are passed with their original names.
-
         Flow Context Auto-Detection:
             If flow parameter is None, this method automatically attempts to
             get the flow from the routine's context (routine._current_flow).
@@ -166,7 +157,7 @@ class Event(Serializable):
             flow: Optional Flow object. If None, automatically attempts to get
                 from routine._current_flow (set by Flow.execute()).
                 Required for:
-                - Finding Connection objects to apply parameter mappings
+                - Finding Connection objects
                 - Recording execution history in JobState
                 - Queue-based task execution
                 If no flow is available, falls back to direct slot.receive() call (legacy mode).
