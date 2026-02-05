@@ -362,5 +362,5 @@ References
 ----------
 
 - `Code Review <code_review.rst>`_
-- `Design Overview <design_overview.rst>`_
-- `Optimization Strategies <design_optimization.rst>`_
+- `Design Overview <overview.rst>`_
+- `Optimization Strategies <optimization.rst>`_
