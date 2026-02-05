@@ -7,9 +7,10 @@ This example demonstrates:
 3. Checkpoints for recovery
 """
 
-from routilux import Flow, Routine, JobState
 import json
 import time
+
+from routilux import Flow, JobState, Routine
 
 
 class Initializer(Routine):
@@ -57,7 +58,7 @@ class Finalizer(Routine):
     def finalize(self, step=None, total_steps=None, data=None, **kwargs):
         """Finalize process."""
         data = data if data is not None else kwargs.get("data", [])
-        print(f"Step 5: Finalizing process...")
+        print("Step 5: Finalizing process...")
         print(f"Complete! Processed {len(data)} steps")
         self.results = data
 

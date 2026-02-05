@@ -7,10 +7,11 @@ This example demonstrates:
 3. Fallback mechanisms
 """
 
+import random
+
 from routilux import Flow, Routine
 from routilux.exceptions import ExecutionError, RoutiluxError
 from routilux.job_state import JobState
-import random
 
 
 class RiskyOperation(Routine):
@@ -174,7 +175,7 @@ def main():
         job_state3 = flow3.execute(primary_id, entry_params={"test": True})
         JobState.wait_for_completion(flow3, job_state3, timeout=10.0)
         service_result["value"] = "primary"
-        print(f"  Result from: primary")
+        print("  Result from: primary")
     except ExecutionError:
         # Fall back to secondary
         print("  Primary failed, trying fallback...")
@@ -182,7 +183,7 @@ def main():
             job_state3 = flow3.execute(fallback_id, entry_params={"test": True})
             JobState.wait_for_completion(flow3, job_state3, timeout=10.0)
             service_result["value"] = "fallback"
-            print(f"  Result from: fallback")
+            print("  Result from: fallback")
         except RoutiluxError as e:
             print(f"  Fallback also failed: {e}")
 
@@ -207,7 +208,7 @@ def main():
     try:
         job_state4 = flow4.execute(validator_id, entry_params={"data": {"key": "value"}})
         JobState.wait_for_completion(flow4, job_state4, timeout=10.0)
-        print(f"  Valid data processed successfully")
+        print("  Valid data processed successfully")
     except RoutiluxError as e:
         print(f"  Unexpected error: {e}")
 

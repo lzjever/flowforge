@@ -7,9 +7,10 @@ This example demonstrates concurrent task execution:
 3. Handle timeouts and retries
 """
 
+import time
+
 from routilux import Flow, Routine
 from routilux.job_state import JobState
-import time
 
 
 class UserFetcher(Routine):
@@ -59,7 +60,7 @@ class PreferencesFetcher(Routine):
         user_id = user_id if user_id is not None else kwargs.get("user_id", 0)
         time.sleep(0.3)  # Simulate API call
         result = {"user_id": user_id, "notifications": True, "theme": "dark"}
-        print(f"  [Task 3] Fetched preferences")
+        print("  [Task 3] Fetched preferences")
         self.emit("output", **result)
 
 
@@ -82,10 +83,10 @@ class ProfileAggregator(Routine):
             print(f"  [Aggregator] Received user data: {data.get('name')}")
         elif "orders" in data:
             self.profile_data["orders"] = data
-            print(f"  [Aggregator] Received orders data")
+            print("  [Aggregator] Received orders data")
         elif "notifications" in data:
             self.profile_data["preferences"] = data
-            print(f"  [Aggregator] Received preferences data")
+            print("  [Aggregator] Received preferences data")
 
         # Check if we have all data (3 sources)
         if self.received_count == 3:
