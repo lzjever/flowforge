@@ -42,8 +42,9 @@ extensions = [
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
     'sphinx.ext.githubpages',
-    'sphinx_copybutton',  # Add copy button to code blocks
-    'sphinx_design',      # Add design components (cards, badges, etc.)
+    'sphinx.ext.graphviz',  # Support for Graphviz diagrams
+    'sphinx_copybutton',    # Add copy button to code blocks
+    'sphinx_design',        # Add design components (cards, badges, etc.)
 ]
 
 templates_path = ['_templates']
