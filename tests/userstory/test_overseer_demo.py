@@ -41,16 +41,10 @@ if str(examples_dir) not in sys.path:
     sys.path.insert(0, str(examples_dir))
 
 from overseer_demo_app import (
-    create_aggregator_flow,
-    create_branching_flow,
-    create_comprehensive_demo_flow,
-    create_debug_demo_flow,
-    create_error_handling_flow,
-    create_loop_flow,
-    create_multi_slot_flow,
-    create_queue_pressure_flow,
-    create_rate_limited_flow,
-    create_state_transition_flow,
+    create_batch_processing_flow,
+    create_countdown_flow,
+    create_loop_processing_flow,
+    create_simple_pipeline_flow,
 )
 
 
@@ -111,73 +105,62 @@ def setup_demo_flows():
 
     # Import routine classes
     from overseer_demo_app import (
-        DataAggregator,
-        DataSink,
-        DataSource,
-        DataTransformer,
-        DataValidator,
-        DebugTargetRoutine,
-        ErrorGenerator,
-        LoopController,
-        MultiSlotProcessor,
-        QueuePressureGenerator,
-        RateLimitedProcessor,
-        StateTransitionDemo,
+        BatchProcessor,
+        CountdownTimer,
+        CounterRoutine,
+        DataProcessorRoutine,
+        DelayRoutine,
+        EchoRoutine,
+        FilterRoutine,
+        LoopControllerRoutine,
+        SimplePrinter,
     )
 
     routines = [
-        ("data_source", DataSource, "Generates sample data with metadata", "data_generation"),
         (
-            "data_validator",
-            DataValidator,
-            "Validates input data with batch processing",
-            "validation",
+            "countdown_timer",
+            CountdownTimer,
+            "Countdown timer that emits progress events and prints to stdout",
+            "testing",
         ),
         (
-            "data_transformer",
-            DataTransformer,
-            "Transforms data with various transformations",
-            "transformation",
+            "batch_processor",
+            BatchProcessor,
+            "Processes data in batches with configurable batch size",
+            "processing",
+        ),
+        ("simple_printer", SimplePrinter, "Receives input and prints it (sink routine)", "sink"),
+        (
+            "delay_routine",
+            DelayRoutine,
+            "Delays data transmission by configured milliseconds",
+            "testing",
         ),
         (
-            "queue_pressure_generator",
-            QueuePressureGenerator,
-            "Generates queue pressure for monitoring",
-            "monitoring",
+            "echo_routine",
+            EchoRoutine,
+            "Simple echo - receives input and emits it unchanged",
+            "testing",
+        ),
+        ("counter_routine", CounterRoutine, "Counts received messages and emits count", "testing"),
+        (
+            "filter_routine",
+            FilterRoutine,
+            "Filters data based on simple threshold condition",
+            "processing",
         ),
         (
-            "debug_target",
-            DebugTargetRoutine,
-            "Routine designed for debugging demonstrations",
-            "debugging",
+            "data_processor",
+            DataProcessorRoutine,
+            "Generic data processing routine that executes code on input data",
+            "processing",
         ),
         (
-            "state_transition_demo",
-            StateTransitionDemo,
-            "Demonstrates job state transitions",
-            "state_management",
+            "loop_controller",
+            LoopControllerRoutine,
+            "Controls loop execution with exit condition",
+            "control_flow",
         ),
-        ("data_sink", DataSink, "Receives and stores final results", "sink"),
-        (
-            "rate_limited_processor",
-            RateLimitedProcessor,
-            "Processes data with rate limiting",
-            "rate_limiting",
-        ),
-        ("data_aggregator", DataAggregator, "Aggregates data from multiple sources", "aggregation"),
-        (
-            "error_generator",
-            ErrorGenerator,
-            "Generates errors for testing error handling",
-            "error_handling",
-        ),
-        (
-            "multi_slot_processor",
-            MultiSlotProcessor,
-            "Processes data from multiple slots",
-            "multi_slot",
-        ),
-        ("loop_controller", LoopController, "Controls loop execution in flows", "control_flow"),
     ]
 
     for name, routine_class, description, category in routines:
@@ -201,16 +184,10 @@ def setup_demo_flows():
     flows_data = []
 
     flow_creators = [
-        ("state_transition_flow", create_state_transition_flow),
-        ("queue_pressure_flow", create_queue_pressure_flow),
-        ("debug_demo_flow", create_debug_demo_flow),
-        ("comprehensive_demo_flow", create_comprehensive_demo_flow),
-        ("aggregator_flow", create_aggregator_flow),
-        ("branching_flow", create_branching_flow),
-        ("rate_limited_flow", create_rate_limited_flow),
-        ("error_handling_flow", create_error_handling_flow),
-        ("loop_flow", create_loop_flow),
-        ("multi_slot_flow", create_multi_slot_flow),
+        ("simple_pipeline_flow", create_simple_pipeline_flow),
+        ("batch_processing_flow", create_batch_processing_flow),
+        ("countdown_flow", create_countdown_flow),
+        ("loop_processing_flow", create_loop_processing_flow),
     ]
 
     for flow_id, creator in flow_creators:
@@ -262,9 +239,10 @@ class TestOverseerDemoSetup:
         data = response.json()
         assert "flows" in data
         flow_ids = [f["flow_id"] for f in data["flows"]]
-        assert "state_transition_flow" in flow_ids
-        assert "queue_pressure_flow" in flow_ids
-        assert "debug_demo_flow" in flow_ids
+        assert "simple_pipeline_flow" in flow_ids
+        assert "batch_processing_flow" in flow_ids
+        assert "countdown_flow" in flow_ids
+        assert "loop_processing_flow" in flow_ids
 
     def test_factory_objects_registered(self, client, setup_demo_flows):
         """Test that factory objects are registered."""
@@ -273,9 +251,11 @@ class TestOverseerDemoSetup:
         data = response.json()
         assert "objects" in data
         object_names = [o["name"] for o in data["objects"]]
-        assert "data_source" in object_names
-        assert "data_validator" in object_names
-        assert "data_transformer" in object_names
+        assert "countdown_timer" in object_names
+        assert "batch_processor" in object_names
+        assert "echo_routine" in object_names
+        assert "data_processor" in object_names
+        assert "loop_controller" in object_names
 
 
 class TestUserStory1_WorkerAndJobs:
@@ -294,12 +274,12 @@ class TestUserStory1_WorkerAndJobs:
         """Test creating a worker."""
         response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         assert response.status_code == 201
         data = response.json()
         assert "worker_id" in data
-        assert data["flow_id"] == "state_transition_flow"
+        assert data["flow_id"] == "simple_pipeline_flow"
         assert data["status"] in ["running", "pending"]
         # Note: worker_id is available in data["worker_id"] if needed by other tests
 
@@ -308,7 +288,7 @@ class TestUserStory1_WorkerAndJobs:
         # Create worker first
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -316,10 +296,10 @@ class TestUserStory1_WorkerAndJobs:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
                 "worker_id": worker_id,  # Use the created worker
             },
         )
@@ -335,7 +315,7 @@ class TestUserStory1_WorkerAndJobs:
         # Create worker
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -345,10 +325,10 @@ class TestUserStory1_WorkerAndJobs:
             response = client.post(
                 "/api/v1/jobs",
                 json={
-                    "flow_id": "state_transition_flow",
-                    "routine_id": "source",
+                    "flow_id": "simple_pipeline_flow",
+                    "routine_id": "echo",
                     "slot_name": "trigger",
-                    "data": {"data": f"test_data_{i}", "index": i},
+                    "data": {"data": f"test_data_{i}"},
                     "worker_id": worker_id,  # Use the same worker
                 },
             )
@@ -373,10 +353,10 @@ class TestUserStory1_WorkerAndJobs:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -400,7 +380,7 @@ class TestUserStory1_WorkerAndJobs:
         # Create worker and submit jobs
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -410,10 +390,10 @@ class TestUserStory1_WorkerAndJobs:
             job_response = client.post(
                 "/api/v1/jobs",
                 json={
-                    "flow_id": "state_transition_flow",
-                    "routine_id": "source",
+                    "flow_id": "simple_pipeline_flow",
+                    "routine_id": "echo",
                     "slot_name": "trigger",
-                    "data": {"data": f"test_data_{i}", "index": i},
+                    "data": {"data": f"test_data_{i}"},
                     "worker_id": worker_id,  # Use the same worker
                 },
             )
@@ -431,12 +411,12 @@ class TestUserStory1_WorkerAndJobs:
             assert job["worker_id"] == worker_id
 
         # Filter by flow_id
-        response = client.get("/api/v1/jobs?flow_id=state_transition_flow")
+        response = client.get("/api/v1/jobs?flow_id=simple_pipeline_flow")
         assert response.status_code == 200
         data = response.json()
         assert len(data["jobs"]) >= 3  # At least 3 jobs
         for job in data["jobs"]:
-            assert job["flow_id"] == "state_transition_flow"
+            assert job["flow_id"] == "simple_pipeline_flow"
 
 
 class TestUserStory2_MonitoringAndQueuePressure:
@@ -451,16 +431,16 @@ class TestUserStory2_MonitoringAndQueuePressure:
     5. User verifies queue pressure levels
     """
 
-    def test_queue_pressure_flow(self, client, setup_demo_flows):
-        """Test queue pressure flow creates queue pressure."""
-        # Submit job to queue pressure flow
+    def test_batch_processing_flow(self, client, setup_demo_flows):
+        """Test batch processing flow creates queue pressure."""
+        # Submit job to batch processing flow
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "queue_pressure_flow",
-                "routine_id": "source",
+                "flow_id": "batch_processing_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -494,10 +474,10 @@ class TestUserStory2_MonitoringAndQueuePressure:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -518,10 +498,10 @@ class TestUserStory2_MonitoringAndQueuePressure:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -530,7 +510,7 @@ class TestUserStory2_MonitoringAndQueuePressure:
         time.sleep(0.5)
 
         # Get routine status
-        response = client.get(f"/api/jobs/{job_id}/routines/source/status")
+        response = client.get(f"/api/jobs/{job_id}/routines/echo/status")
         if response.status_code == 200:
             data = response.json()
             assert "routine_id" in data or "status" in data
@@ -555,19 +535,19 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
 
-        # Set breakpoint on transformer's input slot (new slot-level API)
+        # Set breakpoint on delay's input slot (new slot-level API)
         response = client.post(
             f"/api/v1/jobs/{job_id}/breakpoints",
             json={
-                "routine_id": "transformer",
+                "routine_id": "delay",
                 "slot_name": "input",  # Required: slot name
                 "enabled": True,
             },
@@ -577,7 +557,7 @@ class TestUserStory3_Debugging:
         )
         data = response.json()
         assert "breakpoint_id" in data
-        assert data["routine_id"] == "transformer"
+        assert data["routine_id"] == "delay"
         assert data["slot_name"] == "input"
         assert data["job_id"] == job_id
         assert data["enabled"] is True
@@ -589,10 +569,10 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -608,10 +588,10 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -627,10 +607,10 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -639,7 +619,7 @@ class TestUserStory3_Debugging:
         bp_response = client.post(
             f"/api/v1/jobs/{job_id}/breakpoints",
             json={
-                "routine_id": "transformer",
+                "routine_id": "delay",
                 "slot_name": "input",
                 "enabled": True,
             },
@@ -675,10 +655,10 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -687,7 +667,7 @@ class TestUserStory3_Debugging:
         bp_response = client.post(
             f"/api/v1/jobs/{job_id}/breakpoints",
             json={
-                "routine_id": "transformer",
+                "routine_id": "delay",
                 "slot_name": "input",
                 "enabled": True,
             },
@@ -711,10 +691,10 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1, "value": 42},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -723,16 +703,16 @@ class TestUserStory3_Debugging:
         bp_response = client.post(
             f"/api/v1/jobs/{job_id}/breakpoints",
             json={
-                "routine_id": "transformer",
+                "routine_id": "delay",
                 "slot_name": "input",
-                "condition": "value > 40",
+                "condition": "data == 'test_data'",
                 "enabled": True,
             },
         )
         assert bp_response.status_code in [200, 201]
         data = bp_response.json()
-        assert data["condition"] == "value > 40"
-        assert data["routine_id"] == "transformer"
+        assert data["condition"] == "data == 'test_data'"
+        assert data["routine_id"] == "delay"
         assert data["slot_name"] == "input"
 
     def test_breakpoint_validation_errors(self, client, setup_demo_flows):
@@ -741,8 +721,8 @@ class TestUserStory3_Debugging:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "debug_demo_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
                 "data": {"data": "test_data"},
             },
@@ -759,7 +739,7 @@ class TestUserStory3_Debugging:
         # Test missing slot_name
         response = client.post(
             f"/api/v1/jobs/{job_id}/breakpoints",
-            json={"routine_id": "transformer"},
+            json={"routine_id": "delay"},
         )
         assert response.status_code == 422  # Validation error
 
@@ -777,7 +757,7 @@ class TestUserStory3_Debugging:
         response = client.post(
             f"/api/v1/jobs/{job_id}/breakpoints",
             json={
-                "routine_id": "transformer",
+                "routine_id": "delay",
                 "slot_name": "nonexistent_slot",
             },
         )
@@ -789,107 +769,88 @@ class TestUserStory4_FlowPatterns:
     User Story 4: User executes flows with different patterns.
 
     Tests:
-    - Linear flow (state_transition_flow)
-    - Branching flow (branching_flow)
-    - Aggregating flow (aggregator_flow)
-    - Looping flow (loop_flow)
-    - Multi-slot flow (multi_slot_flow)
+    - Simple pipeline flow (simple_pipeline_flow)
+    - Batch processing flow (batch_processing_flow)
+    - Countdown flow (countdown_flow)
     """
 
-    def test_linear_flow(self, client, setup_demo_flows):
-        """Test linear flow execution."""
+    def test_simple_pipeline_flow(self, client, setup_demo_flows):
+        """Test simple pipeline flow execution."""
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         assert response.status_code == 201
         job_id = response.json()["job_id"]
 
         # Wait for completion
-        time.sleep(0.5)  # Reduced from 2s
+        time.sleep(1.5)  # Delay routine takes 1 second
         status_response = client.get(f"/api/v1/jobs/{job_id}/status")
         assert status_response.status_code == 200
 
-    def test_branching_flow(self, client, setup_demo_flows):
-        """Test branching flow execution."""
+    def test_batch_processing_flow(self, client, setup_demo_flows):
+        """Test batch processing flow execution."""
+        # Submit multiple jobs to trigger batch processing
+        job_ids = []
+        for i in range(3):
+            response = client.post(
+                "/api/v1/jobs",
+                json={
+                    "flow_id": "batch_processing_flow",
+                    "routine_id": "echo",
+                    "slot_name": "trigger",
+                    "data": {"data": f"item_{i}"},
+                },
+            )
+            assert response.status_code == 201
+            job_ids.append(response.json()["job_id"])
+
+        # Wait for batch processing
+        time.sleep(0.5)
+        for job_id in job_ids:
+            status_response = client.get(f"/api/v1/jobs/{job_id}/status")
+            assert status_response.status_code == 200
+
+    def test_countdown_flow(self, client, setup_demo_flows):
+        """Test countdown flow execution."""
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "branching_flow",
-                "routine_id": "source",
+                "flow_id": "countdown_flow",
+                "routine_id": "countdown",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"delay_ms": 3000},  # 3 second countdown
             },
         )
         assert response.status_code == 201
         job_id = response.json()["job_id"]
 
-        # Wait for completion
-        time.sleep(0.5)  # Reduced from 2s
+        # Wait for countdown to complete
+        time.sleep(3.5)  # Wait for countdown + buffer
         status_response = client.get(f"/api/v1/jobs/{job_id}/status")
         assert status_response.status_code == 200
 
-    def test_aggregator_flow(self, client, setup_demo_flows):
-        """Test aggregator flow execution."""
-        # Aggregator flow needs data from both sources
-        # We'll submit to one source and see if it waits
+    def test_loop_processing_flow(self, client, setup_demo_flows):
+        """Test loop processing flow with exit condition."""
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "aggregator_flow",
-                "routine_id": "source1",
+                "flow_id": "loop_processing_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data_1", "index": 1},
+                "data": {"value": 0},
             },
         )
         assert response.status_code == 201
         job_id = response.json()["job_id"]
 
-        # Wait a bit
-        time.sleep(0.3)  # Reduced from 1s
-        status_response = client.get(f"/api/v1/jobs/{job_id}/status")
-        assert status_response.status_code == 200
-
-    def test_loop_flow(self, client, setup_demo_flows):
-        """Test loop flow execution."""
-        response = client.post(
-            "/api/v1/jobs",
-            json={
-                "flow_id": "loop_flow",
-                "routine_id": "source",
-                "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
-            },
-        )
-        assert response.status_code == 201
-        job_id = response.json()["job_id"]
-
-        # Wait for loop to complete
-        time.sleep(0.3)  # Reduced from 1s  # Reduced from 3s
-        status_response = client.get(f"/api/v1/jobs/{job_id}/status")
-        assert status_response.status_code == 200
-
-    def test_multi_slot_flow(self, client, setup_demo_flows):
-        """Test multi-slot flow execution."""
-        response = client.post(
-            "/api/v1/jobs",
-            json={
-                "flow_id": "multi_slot_flow",
-                "routine_id": "primary_source",
-                "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
-            },
-        )
-        assert response.status_code == 201
-        job_id = response.json()["job_id"]
-
-        # Wait for completion
-        time.sleep(0.5)  # Reduced from 2s
+        # Wait for loop to complete (should exit when value >= 10)
+        time.sleep(2.0)  # Allow time for loop iterations
         status_response = client.get(f"/api/v1/jobs/{job_id}/status")
         assert status_response.status_code == 200
 
@@ -906,21 +867,22 @@ class TestUserStory5_ErrorHandling:
     """
 
     def test_error_handling_flow(self, client, setup_demo_flows):
-        """Test error handling flow."""
+        """Test filter routine (can filter out data)."""
+        # Submit job with value that passes filter
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "error_handling_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         assert response.status_code == 201
         job_id = response.json()["job_id"]
 
-        # Wait for completion (may succeed or fail)
-        time.sleep(0.5)  # Reduced from 2s
+        # Wait for completion
+        time.sleep(1.5)
         status_response = client.get(f"/api/v1/jobs/{job_id}/status")
         assert status_response.status_code == 200
         status = status_response.json()["status"]
@@ -932,10 +894,10 @@ class TestUserStory5_ErrorHandling:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -956,10 +918,10 @@ class TestUserStory5_ErrorHandling:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = response.json()["job_id"]
@@ -1025,10 +987,10 @@ class TestExecuteEndpoint:
         response = client.post(
             "/api/v1/execute",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
                 "wait": False,
             },
         )
@@ -1042,10 +1004,10 @@ class TestExecuteEndpoint:
         response = client.post(
             "/api/v1/execute",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
                 "wait": True,
                 "timeout": 5.0,
             },
@@ -1077,7 +1039,7 @@ class TestBoundaryConditions:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
+                "flow_id": "simple_pipeline_flow",
                 "routine_id": "nonexistent_routine",
                 "slot_name": "trigger",
                 "data": {"data": "test_data"},
@@ -1090,8 +1052,8 @@ class TestBoundaryConditions:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "nonexistent_slot",
                 "data": {"data": "test_data"},
             },
@@ -1113,8 +1075,8 @@ class TestBoundaryConditions:
         response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
                 "data": {},
             },
@@ -1140,7 +1102,7 @@ class TestDataConsistency:
         # Create worker
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -1148,10 +1110,10 @@ class TestDataConsistency:
         job_response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
                 "worker_id": worker_id,  # Use the created worker
             },
         )
@@ -1169,7 +1131,7 @@ class TestDataConsistency:
         # Create worker
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -1179,10 +1141,10 @@ class TestDataConsistency:
             job_response = client.post(
                 "/api/v1/jobs",
                 json={
-                    "flow_id": "state_transition_flow",
-                    "routine_id": "source",
+                    "flow_id": "simple_pipeline_flow",
+                    "routine_id": "echo",
                     "slot_name": "trigger",
-                    "data": {"data": f"test_data_{i}", "index": i},
+                    "data": {"data": f"test_data_{i}"},
                     "worker_id": worker_id,  # Use the same worker
                 },
             )
@@ -1206,10 +1168,10 @@ class TestDataConsistency:
         job_response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = job_response.json()["job_id"]
@@ -1242,7 +1204,7 @@ class TestWorkerLifecycle:
         # Create worker
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -1263,7 +1225,7 @@ class TestWorkerLifecycle:
         # Create worker
         worker_response = client.post(
             "/api/v1/workers",
-            json={"flow_id": "state_transition_flow"},
+            json={"flow_id": "simple_pipeline_flow"},
         )
         worker_id = worker_response.json()["worker_id"]
 
@@ -1296,10 +1258,10 @@ class TestJobOutput:
         job_response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = job_response.json()["job_id"]
@@ -1320,10 +1282,10 @@ class TestJobOutput:
         job_response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = job_response.json()["job_id"]
@@ -1348,10 +1310,10 @@ class TestWaitForJob:
         job_response = client.post(
             "/api/v1/jobs",
             json={
-                "flow_id": "state_transition_flow",
-                "routine_id": "source",
+                "flow_id": "simple_pipeline_flow",
+                "routine_id": "echo",
                 "slot_name": "trigger",
-                "data": {"data": "test_data", "index": 1},
+                "data": {"data": "test_data"},
             },
         )
         job_id = job_response.json()["job_id"]

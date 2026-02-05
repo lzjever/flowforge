@@ -113,7 +113,9 @@ class Runtime:
         self.shutdown(wait=True)
         return False
 
-    def exec(self, flow_name: str, worker_state: WorkerState | None = None) -> WorkerState:
+    def exec(
+        self, flow_name: str, worker_state: WorkerState | None = None, worker_id: str | None = None
+    ) -> WorkerState:
         """Execute a flow and return immediately.
 
         This method starts flow execution in the background and returns
@@ -122,6 +124,7 @@ class Runtime:
         Args:
             flow_name: Name of the flow to execute (must be registered)
             worker_state: Optional existing WorkerState (for resuming)
+            worker_id: Optional custom worker ID. Ignored if worker_state is provided.
 
         Returns:
             WorkerState object (status will be RUNNING)
@@ -147,7 +150,7 @@ class Runtime:
         if worker_state is None:
             from routilux.core.worker import WorkerState
 
-            worker_state = WorkerState(flow_id=flow.flow_id)
+            worker_state = WorkerState(flow_id=flow.flow_id, worker_id=worker_id)
         else:
             if worker_state.flow_id != flow.flow_id:
                 raise ValueError(f"WorkerState flow_id ({worker_state.flow_id}) does not match")
@@ -321,22 +324,24 @@ class Runtime:
         This method retrieves the current ``JobContext`` from the thread-local context
         using ``get_current_job()``. The job_context is used for:
 
-        1. **Hook-based interception**: The `on_slot_before_enqueue` hook is called before
-           enqueueing data to slots. This allows breakpoints and other interceptors to
-           control whether data is enqueued. Without job_context, hooks may not function
-           correctly.
+        1. **Hook-based interception**: The `on_slot_before_enqueue` hook is called
+           before enqueueing data to slots. This allows breakpoints and other
+           interceptors to control whether data is enqueued. Without job_context,
+           hooks may not function correctly.
 
         2. **Execution hooks**: Hooks receive job_context for tracking and monitoring.
 
         3. **Event tracking**: Event emissions are recorded with job_id for debugging.
 
         **Important:**
+
         - This method is called from WorkerExecutor's event loop thread
         - WorkerExecutor sets job_context in the context before calling this method
-        - The job_context comes from EventRoutingTask.job_context, which was captured
-          when Event.emit() was called
+        - The job_context comes from EventRoutingTask.job_context, which was
+          captured when Event.emit() was called
 
         **For Testing:**
+
         When testing event routing directly, ensure job_context is set in the context:
 
         .. code-block:: python
@@ -351,10 +356,12 @@ class Runtime:
             source.output.emit(runtime=runtime, worker_state=worker_state, data="test")
 
         **Hook-Based Interception:**
-        Before enqueueing data to a slot, this method calls the `on_slot_before_enqueue`
-        hook. If the hook returns `should_enqueue=False`, the enqueue operation is
-        skipped. This mechanism is used by monitoring to implement breakpoints, but
-        can be used for other interception purposes as well.
+
+        Before enqueueing data to a slot, this method calls the
+        `on_slot_before_enqueue` hook. If the hook returns `should_enqueue=False`,
+        the enqueue operation is skipped. This mechanism is used by monitoring to
+        implement breakpoints, but can be used for other interception purposes
+        as well.
         """
         from routilux.core.hooks import get_execution_hooks
         from routilux.core.registry import FlowRegistry
@@ -498,9 +505,12 @@ class Runtime:
             if not should_activate:
                 return
 
-            # Get routine ID
-            flow = getattr(routine, "_current_flow", None)
-            routine_id = flow._get_routine_id(routine) if flow else None
+            # Get routine ID from execution context
+            from routilux.core.context import get_current_execution_context
+
+            ctx = get_current_execution_context()
+            routine_id = ctx.routine_id if ctx else None
+            flow = ctx.flow if ctx else None
 
             # Get job context from current context (should be set by EventRoutingTask)
             from routilux.core.context import get_current_job
@@ -519,7 +529,8 @@ class Runtime:
             # This ensures job_context is already bound from EventRoutingTask processing
             try:
                 # Set runtime context on routine for emit() to work
-                routine._current_runtime = self
+                # NOTE: No longer set routine._current_runtime
+                # Runtime is now accessible via worker_state._runtime
 
                 # Prepare arguments
                 slot_data_lists = []

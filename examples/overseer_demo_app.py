@@ -1,933 +1,1011 @@
 #!/usr/bin/env python
 """
-Overseer Comprehensive Demo App for Routilux
+Simplified Overseer Demo App for Routilux
 
-This comprehensive demo showcases ALL features of Routilux Overseer:
-✓ Flow Visualization - Linear, Branching, Aggregating, Complex patterns
-✓ Job State Transitions - pending -> running -> completed/failed/paused/cancelled
-✓ Queue Pressure Monitoring - Real-time queue status, pressure levels, usage percentages
-✓ Debugging - Breakpoints, variables, step execution, call stack
-✓ Error Handling - Multiple error scenarios
-✓ Concurrent Execution - Parallel routines
-✓ Performance Testing - Fast and slow routines
-✓ Real-time Events - WebSocket event streaming
-✓ Long-Running Flows - Extended execution with progress tracking
-✓ Loop Flows - Circular flow patterns with iteration control
+Simple, practical routines and flows for testing and demonstration.
 
-Key Features Demonstrated:
-- State Transitions: Jobs move through states (pending -> running -> completed)
-- Queue Pressure: Routines with varying queue loads show pressure levels (low/medium/high/critical)
-- Debug Process: Breakpoints can be set, jobs paused, variables inspected, step execution
-- Comprehensive Monitoring: Metrics, traces, logs, queue status, routine status
+This demo provides:
+✓ Simple routines with clear input/output formats
+✓ Practical flows for testing routed stdout, batch processing, and pipelines
+✓ Clear documentation in docstrings for each routine
 
 Author: Routilux Overseer Team
-Date: 2025-01-15
+Date: 2025-01-XX
 """
 
 import time
 from datetime import datetime
 
 from routilux import Flow, Routine
-from routilux.activation_policies import (
-    all_slots_ready_policy,
-    batch_size_policy,
-    immediate_policy,
-    time_interval_policy,
-)
+from routilux.activation_policies import batch_size_policy, immediate_policy
 from routilux.monitoring.registry import MonitoringRegistry
 
-# ===== Comprehensive Routines =====
+# ===== Routines =====
 
 
-class DataSource(Routine):
-    """Generates sample data with metadata - demonstrates state transitions"""
+class CountdownTimer(Routine):
+    """Countdown timer that emits progress events and prints to stdout.
 
-    def __init__(self, name="DataSource"):
+    Purpose:
+        Test routed stdout capture and display progress in client UI.
+        Receives a delay in milliseconds, then loops: sleep 1 second,
+        print remaining time, emit tick event. Continues until delay is exhausted.
+
+    Configuration:
+        None (all configuration comes from input data)
+
+    Input (via trigger slot):
+        {
+            "delay_ms": 5000  # Total delay in milliseconds (required)
+        }
+
+    Output (tick event):
+        {
+            "remaining_ms": 4000,    # Remaining milliseconds
+            "elapsed_ms": 1000,       # Elapsed milliseconds
+            "progress": 0.2,          # Progress ratio (0.0 to 1.0)
+            "total_ms": 5000          # Total delay
+        }
+
+    Print Output:
+        [CountdownTimer] Starting countdown: 5000ms
+        [CountdownTimer] Remaining: 4000ms (80% complete)
+        [CountdownTimer] Remaining: 3000ms (60% complete)
+        [CountdownTimer] Remaining: 2000ms (40% complete)
+        [CountdownTimer] Remaining: 1000ms (20% complete)
+        [CountdownTimer] Countdown complete!
+    """
+
+    def __init__(self):
         super().__init__()
-        self.set_config(name=name)
         self.trigger_slot = self.add_slot("trigger")
-        self.output_event = self.add_event("output", ["data", "index", "timestamp", "metadata"])
+        self.tick_event = self.add_event(
+            "tick", ["remaining_ms", "elapsed_ms", "progress", "total_ms"]
+        )
         self.set_activation_policy(immediate_policy())
-        self.set_logic(self._handle_trigger)
+        self.set_logic(self._handle_countdown)
 
-    def _handle_trigger(self, *slot_data_lists, policy_message, worker_state):
+    def _handle_countdown(self, *slot_data_lists, policy_message, worker_state):
         trigger_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
         data_dict = trigger_data[0] if trigger_data else {}
-        data = data_dict.get("data") if isinstance(data_dict, dict) else None
 
-        name = self.get_config("name", "DataSource")
+        delay_ms = data_dict.get("delay_ms") if isinstance(data_dict, dict) else None
+        if delay_ms is None:
+            print("[CountdownTimer] Error: delay_ms not provided")
+            return
 
-        # Get counter from WorkerState using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            counter = routine_state.get("counter", 0) + 1
-            worker_state.update_routine_state(routine_id, {"counter": counter})
-        else:
-            counter = 1
+        total_ms = int(delay_ms)
+        elapsed_ms = 0
+        remaining_ms = total_ms
 
-        output_data = data or f"test_data_{counter}"
-        index = data_dict.get("index", counter) if isinstance(data_dict, dict) else counter
-        timestamp = datetime.now().isoformat()
-        metadata = {
-            "source": name,
-            "counter": counter,
+        print(f"[CountdownTimer] Starting countdown: {total_ms}ms")
+
+        while remaining_ms > 0:
+            # Sleep for 1 second (1000ms) or remaining time if less
+            sleep_ms = min(1000, remaining_ms)
+            time.sleep(sleep_ms / 1000.0)
+
+            elapsed_ms += sleep_ms
+            remaining_ms = total_ms - elapsed_ms
+            progress = elapsed_ms / total_ms if total_ms > 0 else 0.0
+
+            # Print progress
+            progress_pct = int(progress * 100)
+            print(f"[CountdownTimer] Remaining: {remaining_ms}ms ({100 - progress_pct}% complete)")
+
+            # Emit tick event
+            self.emit(
+                "tick",
+                worker_state=worker_state,
+                remaining_ms=remaining_ms,
+                elapsed_ms=elapsed_ms,
+                progress=progress,
+                total_ms=total_ms,
+            )
+
+        print("[CountdownTimer] Countdown complete!")
+
+
+class BatchProcessor(Routine):
+    """Processes data in batches with configurable batch size.
+
+    Purpose:
+        Generic test routine that collects N messages before processing.
+        Uses batch_size_policy to control when to activate. Prints the entire
+        batch and emits it as output.
+
+    Configuration:
+        {
+            "batch_size": 3  # Number of items to collect before processing (required)
         }
 
-        print(f"[{name}] Emitting: {output_data} (#{index}) at {timestamp}")
-        self.emit(
-            "output",
-            worker_state=worker_state,
-            data=output_data,
-            index=index,
-            timestamp=timestamp,
-            metadata=metadata,
-        )
+    Input (via input slot):
+        {
+            "data": "item1",  # Data item
+            "index": 1        # Optional index
+        }
 
+    Output (output event):
+        {
+            "batch": [
+                {"data": "item1", "index": 1},
+                {"data": "item2", "index": 2},
+                {"data": "item3", "index": 3}
+            ],
+            "batch_size": 3,
+            "processed_at": "2025-01-20T10:00:00"
+        }
 
-class DataValidator(Routine):
-    """Validates input data - demonstrates queue pressure when processing multiple items"""
+    Print Output:
+        [BatchProcessor] Processing batch of 3 items:
+          - Item 1: item1
+          - Item 2: item2
+          - Item 3: item3
+    """
 
-    def __init__(self, name="Validator"):
+    def __init__(self):
         super().__init__()
-        self.set_config(name=name)
         self.input_slot = self.add_slot("input")
-        self.valid_event = self.add_event("valid", ["data", "index", "validation_details"])
-        self.invalid_event = self.add_event("invalid", ["error", "index", "original_data"])
-        # Use batch policy to create queue pressure scenarios
-        self.set_activation_policy(batch_size_policy(3))  # Process in batches of 3
-        self.set_logic(self.validate)
+        self.output_event = self.add_event("output", ["batch", "batch_size", "processed_at"])
+        # Default batch_size, will be updated from config if provided
+        self.set_activation_policy(batch_size_policy(3))
+        self.set_logic(self._handle_batch)
 
-    def validate(self, *slot_data_lists, policy_message, worker_state):
+    def set_config(self, **kwargs):
+        """Override set_config to update activation policy when batch_size changes."""
+        super().set_config(**kwargs)
+        # Update activation policy if batch_size is in config
+        if "batch_size" in kwargs:
+            batch_size = kwargs["batch_size"]
+            self.set_activation_policy(batch_size_policy(batch_size))
+
+    def _handle_batch(self, *slot_data_lists, policy_message, worker_state):
         input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
 
-        name = self.get_config("name", "Validator")
-        print(f"[{name}] Validating batch of {len(input_data)} items...")
-        time.sleep(0.3)  # Simulate processing time
+        batch_size = len(input_data)
+        print(f"[BatchProcessor] Processing batch of {batch_size} items:")
 
-        valid_count = 0
-        invalid_count = 0
-
-        for data_dict in input_data[:3]:  # Process batch
+        # Process and print each item
+        batch = []
+        for i, data_dict in enumerate(input_data, 1):
             if not isinstance(data_dict, dict):
                 continue
-            data = data_dict.get("data")
-            index = data_dict.get("index", 0)
+            data = data_dict.get("data", "unknown")
+            index = data_dict.get("index", i)
+            print(f"  - Item {i}: {data}")
+            batch.append({"data": data, "index": index})
 
-            is_valid = self._validate_data(data)
-
-            if is_valid:
-                valid_count += 1
-                validation_details = {
-                    "timestamp": datetime.now().isoformat(),
-                    "validator": name,
-                    "data_length": len(str(data)),
-                }
-                self.emit(
-                    "valid",
-                    worker_state=worker_state,
-                    data=data,
-                    index=index,
-                    validation_details=validation_details,
-                )
-            else:
-                invalid_count += 1
-                self.emit(
-                    "invalid",
-                    worker_state=worker_state,
-                    error="Validation failed",
-                    index=index,
-                    original_data=data,
-                )
-
-        # Update counts in WorkerState using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            total_valid = routine_state.get("valid_count", 0) + valid_count
-            total_invalid = routine_state.get("invalid_count", 0) + invalid_count
-            worker_state.update_routine_state(
-                routine_id, {"valid_count": total_valid, "invalid_count": total_invalid}
-            )
-
-        print(
-            f"[{name}] ✓ Validated: {valid_count} valid, {invalid_count} invalid (total: {total_valid}/{total_invalid})"
-        )
-
-    def _validate_data(self, data):
-        """Custom validation logic"""
-        if not data:
-            return False
-        if str(data).startswith("INVALID"):
-            return False
-        return len(str(data)) > 0
-
-
-class DataTransformer(Routine):
-    """Transforms data - good for debug breakpoint testing"""
-
-    def __init__(self, name="Transformer", transformation="uppercase"):
-        super().__init__()
-        self.set_config(name=name, transformation=transformation)
-        self.input_slot = self.add_slot("input")
-        self.output_event = self.add_event("output", ["result", "index", "transformation_type"])
-        self.set_activation_policy(immediate_policy())
-        self.set_logic(self.transform)
-
-    def transform(self, *slot_data_lists, policy_message, worker_state):
-        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        data_dict = input_data[0] if input_data else {}
-        data = data_dict.get("data") if isinstance(data_dict, dict) else None
-        index = data_dict.get("index", 0) if isinstance(data_dict, dict) else 0
-
-        name = self.get_config("name", "Transformer")
-        transformation = self.get_config("transformation", "uppercase")
-
-        print(f"[{name}] Transforming: {data} (mode: {transformation})")
-        time.sleep(0.2)  # Simulate processing - good for breakpoint testing
-
-        # Apply transformation
-        if transformation == "uppercase":
-            result = str(data).upper()
-        elif transformation == "lowercase":
-            result = str(data).lower()
-        elif transformation == "reverse":
-            result = str(data)[::-1]
-        elif transformation == "prefix":
-            result = f"TRANSFORMED_{data}"
-        else:
-            result = str(data)
-
-        # Update processed count in WorkerState using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            processed_count = routine_state.get("processed_count", 0) + 1
-            worker_state.update_routine_state(routine_id, {"processed_count": processed_count})
-
-        print(f"[{name}] → Result: {result}")
+        # Emit batch
         self.emit(
             "output",
             worker_state=worker_state,
-            result=result,
-            index=index,
-            transformation_type=transformation,
+            batch=batch,
+            batch_size=batch_size,
+            processed_at=datetime.now().isoformat(),
         )
 
 
-class QueuePressureGenerator(Routine):
-    """Generates queue pressure by processing items slowly - showcases queue monitoring"""
+class SimplePrinter(Routine):
+    """Receives input and prints it (sink routine for testing).
 
-    def __init__(self, name="QueuePressureGenerator", processing_delay=0.5):
-        super().__init__()
-        self.set_config(name=name, processing_delay=processing_delay)
-        self.input_slot = self.add_slot("input")
-        self.output_event = self.add_event("output", ["result", "index", "processed_at"])
-        # Use immediate policy but slow processing to build up queue
-        self.set_activation_policy(immediate_policy())
-        self.set_logic(self.process)
+    Purpose:
+        Simple sink routine that receives data and prints it.
+        No output events - used as a terminal node in flows.
 
-    def process(self, *slot_data_lists, policy_message, worker_state):
-        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        data_dict = input_data[0] if input_data else {}
-        data = data_dict.get("data") if isinstance(data_dict, dict) else None
-        index = data_dict.get("index", 0) if isinstance(data_dict, dict) else 0
+    Configuration:
+        None
 
-        name = self.get_config("name", "QueuePressureGenerator")
-        delay = self.get_config("processing_delay", 0.5)
-
-        print(f"[{name}] Processing: {data} (delay: {delay}s)")
-        time.sleep(delay)  # Slow processing creates queue pressure
-
-        result = f"Processed: {data}"
-        processed_at = datetime.now().isoformat()
-
-        print(f"[{name}] → {result}")
-        self.emit(
-            "output",
-            worker_state=worker_state,
-            result=result,
-            index=index,
-            processed_at=processed_at,
-        )
-
-
-class DebugTargetRoutine(Routine):
-    """Routine designed for debugging - has variables that can be inspected"""
-
-    def __init__(self, name="DebugTarget"):
-        super().__init__()
-        self.set_config(name=name)
-        self.input_slot = self.add_slot("input")
-        self.output_event = self.add_event("output", ["result", "computed_value", "step"])
-        self.set_activation_policy(immediate_policy())
-        self.set_logic(self.process)
-
-    def process(self, *slot_data_lists, policy_message, worker_state):
-        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        data_dict = input_data[0] if input_data else {}
-        data = data_dict.get("data") if isinstance(data_dict, dict) else None
-
-        name = self.get_config("name", "DebugTarget")
-
-        # These variables will be visible in debug session
-        step = 1
-        intermediate_value = str(data) if data else "default"
-        step = 2
-        computed_value = intermediate_value.upper() + "_PROCESSED"
-        step = 3
-
-        # Store in worker_state for debugging using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            routine_state["step"] = step
-            routine_state["intermediate_value"] = intermediate_value
-            routine_state["computed_value"] = computed_value
-            worker_state.update_routine_state(routine_id, routine_state)
-
-        print(f"[{name}] Step {step}: {intermediate_value} -> {computed_value}")
-        self.emit(
-            "output",
-            worker_state=worker_state,
-            result=f"Debug result: {computed_value}",
-            computed_value=computed_value,
-            step=step,
-        )
-
-
-class StateTransitionDemo(Routine):
-    """Demonstrates state transitions - can be paused/resumed/cancelled"""
-
-    def __init__(self, name="StateTransitionDemo"):
-        super().__init__()
-        self.set_config(name=name)
-        self.input_slot = self.add_slot("input")
-        self.output_event = self.add_event("output", ["result", "state_info"])
-        self.set_activation_policy(immediate_policy())
-        self.set_logic(self.process)
-
-    def process(self, *slot_data_lists, policy_message, worker_state):
-        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        data_dict = input_data[0] if input_data else {}
-        data = data_dict.get("data") if isinstance(data_dict, dict) else None
-
-        name = self.get_config("name", "StateTransitionDemo")
-
-        # Update state info using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            routine_state["processing_started"] = datetime.now().isoformat()
-            routine_state["status"] = "processing"
-            worker_state.update_routine_state(routine_id, routine_state)
-
-            print(f"[{name}] Processing: {data} (state: processing)")
-            time.sleep(0.5)
-
-            routine_state["status"] = "completed"
-            routine_state["processing_completed"] = datetime.now().isoformat()
-            worker_state.update_routine_state(routine_id, routine_state)
-
-        state_info = {
-            "started": routine_state["processing_started"],
-            "completed": routine_state["processing_completed"],
-            "status": "completed",
+    Input (via input slot):
+        {
+            "data": "any_data",  # Any data to print
+            "index": 1          # Optional index
         }
 
-        print(f"[{name}] → Completed")
-        self.emit(
-            "output", worker_state=worker_state, result=f"Processed: {data}", state_info=state_info
-        )
+    Output:
+        None (sink routine, no events)
 
+    Print Output:
+        [SimplePrinter] Received: any_data (index: 1)
+    """
 
-class DataSink(Routine):
-    """Receives and stores final result"""
-
-    def __init__(self, name="Sink"):
+    def __init__(self):
         super().__init__()
-        self.set_config(name=name)
         self.input_slot = self.add_slot("input")
         self.set_activation_policy(immediate_policy())
-        self.set_logic(self.receive)
+        self.set_logic(self._handle_print)
 
-    def receive(self, *slot_data_lists, policy_message, worker_state):
-        name = self.get_config("name", "Sink")
-
-        received_data = {}
-        if slot_data_lists and slot_data_lists[0]:
-            for data_dict in slot_data_lists[0]:
-                if isinstance(data_dict, dict):
-                    received_data.update(data_dict)
-
-        # Update state using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            received_count = routine_state.get("received_count", 0) + 1
-            worker_state.update_routine_state(
-                routine_id, {"received_count": received_count, "final_result": received_data}
-            )
-        print(f"[{name}] Receiving data (#{received_count})")
-        time.sleep(0.1)
-        print(f"[{name}] ✓ Final result: {received_data}")
-
-
-class RateLimitedProcessor(Routine):
-    """Processes data with rate limiting - demonstrates time_interval_policy"""
-
-    def __init__(self, name="RateLimitedProcessor", interval_seconds=2.0):
-        super().__init__()
-        self.set_config(name=name, interval_seconds=interval_seconds)
-        self.input_slot = self.add_slot("input")
-        self.output_event = self.add_event("output", ["result", "index", "rate_limited_at"])
-        self.set_activation_policy(time_interval_policy(interval_seconds))
-        self.set_logic(self.process)
-
-    def process(self, *slot_data_lists, policy_message, worker_state):
+    def _handle_print(self, *slot_data_lists, policy_message, worker_state):
         input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        name = self.get_config("name", "RateLimitedProcessor")
 
-        print(f"[{name}] Processing {len(input_data)} items (rate-limited)...")
-
-        # Process all items in the batch
         for data_dict in input_data:
             if not isinstance(data_dict, dict):
                 continue
-            data = data_dict.get("data")
+            data = data_dict.get("data", "unknown")
+            index = data_dict.get("index", "N/A")
+            print(f"[SimplePrinter] Received: {data} (index: {index})")
+
+
+class DelayRoutine(Routine):
+    """Delays data transmission by configured milliseconds.
+
+    Purpose:
+        Receives input data, sleeps for configured milliseconds, then emits
+        the same data. Useful for testing timing and simulating slow processing.
+
+    Configuration:
+        {
+            "delay_ms": 2000  # Delay in milliseconds before emitting (required)
+        }
+
+    Input (via input slot):
+        {
+            "data": "any_data"  # Data to delay
+        }
+
+    Output (output event):
+        {
+            "data": "any_data",      # Original data
+            "delayed_by_ms": 2000,    # Delay applied
+            "emitted_at": "2025-01-20T10:00:00"
+        }
+
+    Print Output:
+        [DelayRoutine] Delaying data for 2000ms...
+        [DelayRoutine] Data emitted after delay
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input_slot = self.add_slot("input")
+        self.output_event = self.add_event("output", ["data", "delayed_by_ms", "emitted_at"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_delay)
+
+    def _handle_delay(self, *slot_data_lists, policy_message, worker_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        data_dict = input_data[0] if input_data else {}
+
+        delay_ms = self.get_config("delay_ms", 1000)
+        data = data_dict.get("data") if isinstance(data_dict, dict) else data_dict
+
+        print(f"[DelayRoutine] Delaying data for {delay_ms}ms...")
+        time.sleep(delay_ms / 1000.0)
+
+        print("[DelayRoutine] Data emitted after delay")
+        self.emit(
+            "output",
+            worker_state=worker_state,
+            data=data,
+            delayed_by_ms=delay_ms,
+            emitted_at=datetime.now().isoformat(),
+        )
+
+
+class EchoRoutine(Routine):
+    """Simple echo - receives input and emits it unchanged.
+
+    Purpose:
+        Simple pass-through routine for testing event routing.
+        Receives input and emits the same data unchanged.
+        Can be triggered via trigger slot or input slot.
+
+    Configuration:
+        None
+
+    Input (via trigger or input slot):
+        {
+            "data": "any_data"  # Data to echo
+        }
+
+    Output (output event):
+        {
+            "data": "any_data"  # Same as input
+        }
+
+    Print Output:
+        [EchoRoutine] Echo: any_data
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.trigger_slot = self.add_slot("trigger")
+        self.input_slot = self.add_slot("input")
+        self.output_event = self.add_event("output", ["data"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_echo)
+
+    def _handle_echo(self, *slot_data_lists, policy_message, worker_state):
+        # Check trigger slot first, then input slot
+        trigger_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        input_data = slot_data_lists[1] if len(slot_data_lists) > 1 and slot_data_lists[1] else []
+
+        # Use trigger data if available, otherwise use input data
+        data_list = trigger_data if trigger_data else input_data
+        data_dict = data_list[0] if data_list else {}
+
+        # If data_dict has a "data" key, use that; otherwise use the whole dict
+        if isinstance(data_dict, dict) and "data" in data_dict:
+            data = data_dict["data"]
+        else:
+            data = data_dict if isinstance(data_dict, dict) else data_dict
+
+        print(f"[EchoRoutine] Echo: {data}")
+        # Emit the data directly (not wrapped in a "data" field)
+        # This allows downstream routines to receive the actual data
+        if isinstance(data, dict):
+            self.emit("output", worker_state=worker_state, **data)
+        else:
+            self.emit("output", worker_state=worker_state, data=data)
+
+
+class CounterRoutine(Routine):
+    """Counts received messages and emits count.
+
+    Purpose:
+        Maintains a counter of received messages and emits the current count.
+        Uses WorkerState to persist counter across multiple activations.
+
+    Configuration:
+        None
+
+    Input (via input slot):
+        {
+            "data": "any_data"  # Any data (ignored, only count matters)
+        }
+
+    Output (output event):
+        {
+            "count": 5,  # Current message count
+            "message": "Received 5 messages"
+        }
+
+    Print Output:
+        [CounterRoutine] Counter: 5 messages received
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input_slot = self.add_slot("input")
+        self.output_event = self.add_event("output", ["count", "message"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_count)
+
+    def _handle_count(self, *slot_data_lists, policy_message, worker_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+
+        # Get routine_id - REQUIRED, no fallback
+        ctx = self.get_execution_context()
+        routine_id = ctx.routine_id if ctx else None
+        if routine_id is None:
+            raise RuntimeError(
+                "CounterRoutine requires routine_id. "
+                "This routine must be added to a flow before execution."
+            )
+
+        # Get current count from WorkerState (already isolated by routine_id)
+        routine_state = worker_state.get_routine_state(routine_id) or {}
+        count = routine_state.get("count", 0) + len(input_data)
+        worker_state.update_routine_state(routine_id, {"count": count})
+
+        print(f"[CounterRoutine] Counter: {count} messages received")
+        self.emit(
+            "output",
+            worker_state=worker_state,
+            count=count,
+            message=f"Received {count} messages",
+        )
+
+
+class FilterRoutine(Routine):
+    """Filters data based on simple threshold condition.
+
+    Purpose:
+        Receives a value and compares it with a threshold from config.
+        Only emits output if value >= threshold. Always prints the result.
+
+    Configuration:
+        {
+            "threshold": 50  # Only emit if value >= threshold (required)
+        }
+
+    Input (via input slot):
+        {
+            "value": 42  # Value to filter
+        }
+
+    Output (output event, only if value >= threshold):
+        {
+            "value": 42,
+            "threshold": 50,
+            "passed": False  # Whether value passed filter
+        }
+
+    Print Output:
+        [FilterRoutine] Filter: value=42, threshold=50, passed=False
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input_slot = self.add_slot("input")
+        self.output_event = self.add_event("output", ["value", "threshold", "passed"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_filter)
+
+    def _handle_filter(self, *slot_data_lists, policy_message, worker_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        data_dict = input_data[0] if input_data else {}
+
+        threshold = self.get_config("threshold", 0)
+        value = data_dict.get("value") if isinstance(data_dict, dict) else None
+
+        if value is None:
+            print("[FilterRoutine] Error: value not provided")
+            return
+
+        passed = value >= threshold
+
+        print(f"[FilterRoutine] Filter: value={value}, threshold={threshold}, passed={passed}")
+
+        # Only emit if passed
+        if passed:
+            self.emit(
+                "output",
+                worker_state=worker_state,
+                value=value,
+                threshold=threshold,
+                passed=passed,
+            )
+
+
+class DataProcessorRoutine(Routine):
+    """Generic data processing routine that executes code on input data.
+
+    Purpose:
+        Receives input data and applies a code snippet from config to process it.
+        Uses eval() or exec() to execute the code snippet. The code should modify
+        the input data and return the result.
+
+    Configuration:
+        {
+            "code": "data['value'] = data.get('value', 0) + 1; result = data"  # Python code string (required)
+            # OR
+            "code": "data['value'] = data.get('value', 0) * 2"  # Code that modifies data in-place
+        }
+
+    Input (via input slot):
+        {
+            "value": 5,  # Any data structure
+            "other": "field"
+        }
+
+    Output (output event):
+        {
+            "value": 6,  # Processed data (after code execution)
+            "other": "field"
+        }
+
+    Print Output:
+        [DataProcessorRoutine] Processing data with code...
+        [DataProcessorRoutine] Result: {'value': 6, 'other': 'field'}
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input_slot = self.add_slot("input")
+        self.output_event = self.add_event("output", ["data", "processed"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_process)
+
+    def _handle_process(self, *slot_data_lists, policy_message, worker_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        data_dict = input_data[0] if input_data else {}
+
+        code = self.get_config("code", "")
+        if not code:
+            print("[DataProcessorRoutine] Error: code not provided in config")
+            return
+
+        # Use the whole dict as data (events emit data as dict fields)
+        data = dict(data_dict) if isinstance(data_dict, dict) else {"value": data_dict}
+
+        # Ensure data has at least a "value" field if empty
+        if not data:
+            data = {"value": 0}
+
+        try:
+            print("[DataProcessorRoutine] Processing data with code...")
+            # Execute code in a safe namespace
+            namespace = {"data": data.copy() if isinstance(data, dict) else data}
+            # Try exec first (for statements), then eval (for expressions)
+            try:
+                # Try exec for statements
+                exec(code, namespace)
+                # Get result from namespace
+                result = namespace.get("result")
+                if result is not None:
+                    data = (
+                        result if isinstance(result, dict) else {"result": result, "original": data}
+                    )
+                else:
+                    data = namespace.get("data", data)
+            except SyntaxError:
+                # If exec fails, try eval for expressions
+                try:
+                    result = eval(code, namespace)
+                    if result is not None:
+                        data = (
+                            result
+                            if isinstance(result, dict)
+                            else {"result": result, "original": data}
+                        )
+                    else:
+                        data = namespace.get("data", data)
+                except Exception:
+                    # If both fail, use modified data from namespace
+                    data = namespace.get("data", data)
+
+            print(f"[DataProcessorRoutine] Result: {data}")
+            # Emit data fields directly (not wrapped in "data" field)
+            # This allows LoopController to receive the actual data
+            emit_data = dict(data) if isinstance(data, dict) else {"result": data}
+            emit_data["processed"] = True
+            self.emit("output", worker_state=worker_state, **emit_data)
+        except Exception as e:
+            print(f"[DataProcessorRoutine] Error executing code: {e}")
+            import traceback
+
+            traceback.print_exc()
+            # Emit error result
+            self.emit(
+                "output",
+                worker_state=worker_state,
+                data={"error": str(e), "original": data},
+                processed=False,
+            )
+
+
+class LoopControllerRoutine(Routine):
+    """Controls loop execution with exit condition.
+
+    Purpose:
+        Controls loop execution by checking exit conditions. Maintains iteration
+        count and checks if loop should continue or exit based on config conditions.
+
+    Configuration:
+        {
+            "max_iterations": 5,  # Maximum number of iterations (required)
+            "exit_condition": "data.get('value', 0) >= 10"  # Python expression for exit condition (optional)
+        }
+
+    Input (via input slot):
+        {
+            "value": 5,  # Data to check
+            "data": {...}
+        }
+
+    Output (continue event, if loop should continue):
+        {
+            "data": {...},  # Data to continue with
+            "iteration": 2,  # Current iteration number
+            "should_continue": True
+        }
+
+    Output (done event, if loop should exit):
+        {
+            "data": {...},  # Final data
+            "iteration": 5,  # Final iteration number
+            "should_continue": False,
+            "reason": "max_iterations_reached"  # or "condition_met"
+        }
+
+    Print Output:
+        [LoopControllerRoutine] Iteration 2/5: Continuing loop
+        [LoopControllerRoutine] Iteration 5/5: Exiting loop (max_iterations_reached)
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input_slot = self.add_slot("input")
+        self.continue_event = self.add_event("continue", ["data", "iteration", "should_continue"])
+        self.done_event = self.add_event("done", ["data", "iteration", "should_continue", "reason"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_control)
+
+    def _handle_control(self, *slot_data_lists, policy_message, worker_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+        data_dict = input_data[0] if input_data else {}
+
+        # Use the whole dict as data (events emit data as dict fields)
+        actual_data = dict(data_dict) if isinstance(data_dict, dict) else {"value": data_dict}
+
+        # Get job context - REQUIRED, no fallback
+        from routilux.core import get_current_job
+
+        job = get_current_job()
+        if job is None:
+            raise RuntimeError(
+                "LoopControllerRoutine requires job context. "
+                "This routine must be executed within a job execution context."
+            )
+
+        # Get routine_id - REQUIRED, no fallback
+        ctx = self.get_execution_context()
+        routine_id = ctx.routine_id if ctx else None
+        if routine_id is None:
+            raise RuntimeError(
+                "LoopControllerRoutine requires routine_id. "
+                "This routine must be added to a flow before execution."
+            )
+
+        # Use convenient method (automatically namespaced by routine_id)
+        iteration = self.get_job_data("loop_iteration", 0) + 1
+        self.set_job_data("loop_iteration", iteration)
+
+        max_iterations = self.get_config("max_iterations", 5)
+        exit_condition = self.get_config("exit_condition", "")
+
+        # Check exit condition first (if provided)
+        condition_met = False
+        if exit_condition:
+            try:
+                namespace = {"data": actual_data, "__builtins__": __builtins__}
+                condition_met = bool(eval(exit_condition, namespace))
+            except Exception as e:
+                print(f"[LoopControllerRoutine] Error evaluating exit condition: {e}")
+                condition_met = False
+
+        # Decide whether to continue or exit
+        # Check exit condition first (priority), then max_iterations
+        if condition_met:
+            reason = "condition_met"
+            print(
+                f"[LoopControllerRoutine] Iteration {iteration}/{max_iterations}: Exiting loop ({reason})"
+            )
+            self.emit(
+                "done",
+                worker_state=worker_state,
+                data=actual_data,
+                iteration=iteration,
+                should_continue=False,
+                reason=reason,
+            )
+        elif iteration >= max_iterations:
+            reason = "max_iterations_reached"
+            print(
+                f"[LoopControllerRoutine] Iteration {iteration}/{max_iterations}: Exiting loop ({reason})"
+            )
+            self.emit(
+                "done",
+                worker_state=worker_state,
+                data=actual_data,
+                iteration=iteration,
+                should_continue=False,
+                reason=reason,
+            )
+        else:
+            print(
+                f"[LoopControllerRoutine] Iteration {iteration}/{max_iterations}: Continuing loop"
+            )
+            # For continue, send data fields directly (not wrapped) so DataProcessor can process it
+            emit_data = (
+                dict(actual_data) if isinstance(actual_data, dict) else {"value": actual_data}
+            )
+            emit_data["iteration"] = iteration
+            emit_data["should_continue"] = True
+            self.emit("continue", worker_state=worker_state, **emit_data)
+
+
+class DataSource(Routine):
+    """Generates sample data for testing pipelines.
+
+    Purpose:
+        Generates a configurable number of data items. Used as a source
+        routine in test pipelines (data_source -> data_transformer -> data_sink).
+
+    Configuration:
+        {
+            "count": 3  # Number of data items to generate (default: 3)
+        }
+
+    Input (via trigger slot):
+        None (can be triggered externally)
+
+    Output (output event):
+        {
+            "data": "item1",  # Generated data item
+            "index": 1,       # Item index (1-based)
+            "total": 3        # Total items to generate
+        }
+
+    Print Output:
+        [DataSource] Generating 3 items...
+        [DataSource] Generated item 1/3
+        [DataSource] Generated item 2/3
+        [DataSource] Generated item 3/3
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.trigger_slot = self.add_slot("trigger")
+        self.output_event = self.add_event("output", ["data", "index", "total"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_generate)
+
+    def _handle_generate(self, *slot_data_lists, policy_message, worker_state):
+        count = self.get_config("count", 3)
+        print(f"[DataSource] Generating {count} items...")
+
+        for i in range(1, count + 1):
+            item_data = f"item{i}"
+            print(f"[DataSource] Generated item {i}/{count}")
+            self.emit(
+                "output",
+                worker_state=worker_state,
+                data=item_data,
+                index=i,
+                total=count,
+            )
+
+
+class DataTransformer(Routine):
+    """Transforms input data (simple transformation for testing).
+
+    Purpose:
+        Simple transformation routine that receives data and transforms it.
+        Used in test pipelines (data_source -> data_transformer -> data_sink).
+
+    Configuration:
+        None
+
+    Input (via input slot):
+        {
+            "data": "item1",  # Input data
+            "index": 1        # Optional index
+        }
+
+    Output (output event):
+        {
+            "data": "transformed_item1",  # Transformed data
+            "index": 1,                    # Original index
+            "transformed": True            # Transformation marker
+        }
+
+    Print Output:
+        [DataTransformer] Transforming: item1
+        [DataTransformer] Transformed to: transformed_item1
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.input_slot = self.add_slot("input")
+        self.output_event = self.add_event("output", ["data", "index", "transformed"])
+        self.set_activation_policy(immediate_policy())
+        self.set_logic(self._handle_transform)
+
+    def _handle_transform(self, *slot_data_lists, policy_message, worker_state):
+        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
+
+        for data_dict in input_data:
+            if not isinstance(data_dict, dict):
+                continue
+
+            original_data = data_dict.get("data", "unknown")
             index = data_dict.get("index", 0)
 
-            result = f"Rate-limited: {data}"
-            rate_limited_at = datetime.now().isoformat()
+            print(f"[DataTransformer] Transforming: {original_data}")
+            transformed_data = f"transformed_{original_data}"
+            print(f"[DataTransformer] Transformed to: {transformed_data}")
 
             self.emit(
                 "output",
                 worker_state=worker_state,
-                result=result,
+                data=transformed_data,
                 index=index,
-                rate_limited_at=rate_limited_at,
+                transformed=True,
             )
 
-        print(f"[{name}] ✓ Processed {len(input_data)} items")
 
+class DataSink(Routine):
+    """Receives and stores final results (sink routine for testing).
 
-class DataAggregator(Routine):
-    """Aggregates data from multiple sources - demonstrates all_slots_ready_policy"""
+    Purpose:
+        Simple sink routine that receives transformed data and stores it.
+        Used as terminal node in test pipelines (data_source -> data_transformer -> data_sink).
 
-    def __init__(self, name="Aggregator"):
-        super().__init__()
-        self.set_config(name=name)
-        self.input1_slot = self.add_slot("input1")
-        self.input2_slot = self.add_slot("input2")
-        self.output_event = self.add_event("output", ["aggregated_data", "sources", "count"])
-        # Wait for both inputs before processing
-        self.set_activation_policy(all_slots_ready_policy())
-        self.set_logic(self.aggregate)
+    Configuration:
+        None
 
-    def aggregate(self, *slot_data_lists, policy_message, worker_state):
-        input1_data = (
-            slot_data_lists[0]
-            if slot_data_lists and len(slot_data_lists) > 0 and slot_data_lists[0]
-            else []
-        )
-        input2_data = (
-            slot_data_lists[1]
-            if slot_data_lists and len(slot_data_lists) > 1 and slot_data_lists[1]
-            else []
-        )
-
-        name = self.get_config("name", "Aggregator")
-
-        # Extract data from both inputs
-        data1 = input1_data[0] if input1_data and isinstance(input1_data[0], dict) else {}
-        data2 = input2_data[0] if input2_data and isinstance(input2_data[0], dict) else {}
-
-        # Aggregate
-        aggregated = {
-            "from_input1": data1.get("data") if isinstance(data1, dict) else None,
-            "from_input2": data2.get("data") if isinstance(data2, dict) else None,
-            "timestamp": datetime.now().isoformat(),
+    Input (via input slot):
+        {
+            "data": "transformed_item1",  # Transformed data
+            "index": 1,                    # Item index
+            "transformed": True            # Optional transformation marker
         }
 
-        sources = []
-        if data1:
-            sources.append("input1")
-        if data2:
-            sources.append("input2")
+    Output:
+        None (sink routine, no events)
 
-        print(f"[{name}] Aggregating from {len(sources)} sources: {aggregated}")
+    Print Output:
+        [DataSink] Received: transformed_item1 (index: 1)
+    """
 
-        self.emit(
-            "output",
-            worker_state=worker_state,
-            aggregated_data=aggregated,
-            sources=sources,
-            count=len(sources),
-        )
-
-
-class ErrorGenerator(Routine):
-    """Generates errors for testing error handling - demonstrates error scenarios"""
-
-    def __init__(self, name="ErrorGenerator", error_rate=0.3):
+    def __init__(self):
         super().__init__()
-        self.set_config(name=name, error_rate=error_rate)
         self.input_slot = self.add_slot("input")
-        self.success_event = self.add_event("success", ["result", "index"])
-        self.error_event = self.add_event("error", ["error", "index", "original_data"])
         self.set_activation_policy(immediate_policy())
-        self.set_logic(self.process)
+        self.set_logic(self._handle_sink)
 
-    def process(self, *slot_data_lists, policy_message, worker_state):
+    def _handle_sink(self, *slot_data_lists, policy_message, worker_state):
         input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        name = self.get_config("name", "ErrorGenerator")
-        error_rate = self.get_config("error_rate", 0.3)
-
-        import random
 
         for data_dict in input_data:
             if not isinstance(data_dict, dict):
                 continue
-            data = data_dict.get("data")
-            index = data_dict.get("index", 0)
 
-            # Randomly generate errors based on error_rate
-            if random.random() < error_rate:
-                error_msg = f"Simulated error processing: {data}"
-                print(f"[{name}] ✗ Error: {error_msg}")
-                self.emit(
-                    "error",
-                    worker_state=worker_state,
-                    error=error_msg,
-                    index=index,
-                    original_data=data,
-                )
-            else:
-                result = f"Successfully processed: {data}"
-                print(f"[{name}] ✓ {result}")
-                self.emit("success", worker_state=worker_state, result=result, index=index)
-
-
-class MultiSlotProcessor(Routine):
-    """Processes data from multiple slots with different logic"""
-
-    def __init__(self, name="MultiSlotProcessor"):
-        super().__init__()
-        self.set_config(name=name)
-        self.primary_slot = self.add_slot("primary")
-        self.secondary_slot = self.add_slot("secondary")
-        self.output_event = self.add_event("output", ["result", "primary_data", "secondary_data"])
-        # Process when primary has data (secondary is optional)
-        self.set_activation_policy(immediate_policy())
-        self.set_logic(self.process)
-
-    def process(self, *slot_data_lists, policy_message, worker_state):
-        primary_data = (
-            slot_data_lists[0]
-            if slot_data_lists and len(slot_data_lists) > 0 and slot_data_lists[0]
-            else []
-        )
-        secondary_data = (
-            slot_data_lists[1]
-            if slot_data_lists and len(slot_data_lists) > 1 and slot_data_lists[1]
-            else []
-        )
-
-        name = self.get_config("name", "MultiSlotProcessor")
-
-        primary = primary_data[0] if primary_data and isinstance(primary_data[0], dict) else {}
-        secondary = (
-            secondary_data[0] if secondary_data and isinstance(secondary_data[0], dict) else {}
-        )
-
-        primary_value = primary.get("data") if isinstance(primary, dict) else None
-        secondary_value = secondary.get("data") if isinstance(secondary, dict) else None
-
-        result = f"Processed primary: {primary_value}, secondary: {secondary_value}"
-        print(f"[{name}] {result}")
-
-        self.emit(
-            "output",
-            worker_state=worker_state,
-            result=result,
-            primary_data=primary_value,
-            secondary_data=secondary_value,
-        )
-
-
-class LoopController(Routine):
-    """Controls loop execution - can emit to create loops in flows"""
-
-    def __init__(self, name="LoopController", max_iterations=5):
-        super().__init__()
-        self.set_config(name=name, max_iterations=max_iterations)
-        self.input_slot = self.add_slot("input")
-        self.continue_event = self.add_event("continue", ["iteration", "data", "should_continue"])
-        self.done_event = self.add_event("done", ["final_data", "iterations"])
-        self.set_activation_policy(immediate_policy())
-        self.set_logic(self.control)
-
-    def control(self, *slot_data_lists, policy_message, worker_state):
-        input_data = slot_data_lists[0] if slot_data_lists and slot_data_lists[0] else []
-        name = self.get_config("name", "LoopController")
-        max_iterations = self.get_config("max_iterations", 5)
-
-        # Update state using execution context
-        ctx = self.get_execution_context()
-        routine_id = ctx.routine_id if ctx else None
-        if routine_id:
-            routine_state = worker_state.get_routine_state(routine_id) or {}
-            iteration = routine_state.get("iteration", 0) + 1
-            routine_state["iteration"] = iteration
-            worker_state.update_routine_state(routine_id, routine_state)
-        else:
-            iteration = 1
-
-        data_dict = input_data[0] if input_data and isinstance(input_data[0], dict) else {}
-        data = data_dict.get("data") if isinstance(data_dict, dict) else None
-
-        if iteration < max_iterations:
-            should_continue = True
-            print(f"[{name}] Iteration {iteration}/{max_iterations}: Continuing loop with {data}")
-            self.emit(
-                "continue",
-                worker_state=worker_state,
-                iteration=iteration,
-                data=data,
-                should_continue=should_continue,
-            )
-        else:
-            should_continue = False
-            print(f"[{name}] Iteration {iteration}/{max_iterations}: Loop complete")
-            self.emit("done", worker_state=worker_state, final_data=data, iterations=iteration)
+            data = data_dict.get("data", "unknown")
+            index = data_dict.get("index", "N/A")
+            print(f"[DataSink] Received: {data} (index: {index})")
 
 
 # ===== Flows =====
 
 
-def create_state_transition_flow():
-    """Flow demonstrating state transitions: pending -> running -> completed"""
+def create_simple_pipeline_flow():
+    """Simple linear flow: Echo -> Delay -> Printer
+
+    Flow ID: simple_pipeline_flow
+    Entry Point: echo.trigger
+
+    Structure:
+        EchoRoutine -> DelayRoutine -> SimplePrinter
+
+    Use Case: Test basic event routing, delay functionality
+    """
     from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="state_transition_flow")
+    flow = Flow(flow_id="simple_pipeline_flow")
 
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "Source"})
-    processor = factory.create("state_transition_demo", config={"name": "Processor"})
-    sink = factory.create("data_sink", config={"name": "Sink"})
+    echo = factory.create("echo_routine", config={})
+    delay = factory.create("delay_routine", config={"delay_ms": 1000})
+    printer = factory.create("simple_printer", config={})
 
-    src_id = flow.add_routine(source, "source")
-    proc_id = flow.add_routine(processor, "processor")
-    sink_id = flow.add_routine(sink, "sink")
+    echo_id = flow.add_routine(echo, "echo")
+    delay_id = flow.add_routine(delay, "delay")
+    printer_id = flow.add_routine(printer, "printer")
 
-    flow.connect(src_id, "output", proc_id, "input")
-    flow.connect(proc_id, "output", sink_id, "input")
+    flow.connect(echo_id, "output", delay_id, "input")
+    flow.connect(delay_id, "output", printer_id, "input")
 
-    return flow, src_id
+    return flow, echo_id
 
 
-def create_queue_pressure_flow():
-    """Flow demonstrating queue pressure monitoring"""
+def create_batch_processing_flow():
+    """Batch processing flow: Echo -> BatchProcessor -> Printer
+
+    Flow ID: batch_processing_flow
+    Entry Point: echo.trigger
+
+    Structure:
+        EchoRoutine -> BatchProcessor -> SimplePrinter
+
+    Use Case: Test batch processing, demonstrate batch_size_policy
+    """
     from routilux.tools.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="queue_pressure_flow")
+    flow = Flow(flow_id="batch_processing_flow")
 
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "FastSource"})
-    # Validator uses batch policy - will create queue pressure
-    validator = factory.create("data_validator", config={"name": "BatchValidator"})
-    # Slow processor creates more pressure
+    echo = factory.create("echo_routine", config={})
+    # BatchProcessor will update its activation policy when config is set
+    batch_processor = factory.create("batch_processor", config={"batch_size": 3})
+    printer = factory.create("simple_printer", config={})
+
+    echo_id = flow.add_routine(echo, "echo")
+    batch_id = flow.add_routine(batch_processor, "batch_processor")
+    printer_id = flow.add_routine(printer, "printer")
+
+    flow.connect(echo_id, "output", batch_id, "input")
+    flow.connect(batch_id, "output", printer_id, "input")
+
+    return flow, echo_id
+
+
+def create_countdown_flow():
+    """Countdown flow: CountdownTimer -> Printer
+
+    Flow ID: countdown_flow
+    Entry Point: countdown.trigger
+
+    Structure:
+        CountdownTimer -> SimplePrinter
+
+    Use Case: Test routed stdout capture, progress display in UI
+    """
+    from routilux.tools.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
+    flow = Flow(flow_id="countdown_flow")
+
+    countdown = factory.create("countdown_timer", config={})
+    printer = factory.create("simple_printer", config={})
+
+    countdown_id = flow.add_routine(countdown, "countdown")
+    printer_id = flow.add_routine(printer, "printer")
+
+    flow.connect(countdown_id, "tick", printer_id, "input")
+
+    return flow, countdown_id
+
+
+def create_loop_processing_flow():
+    """Loop processing flow with exit condition: Echo -> DataProcessor -> LoopController -> (loop or exit)
+
+    Flow ID: loop_processing_flow
+    Entry Point: echo.trigger
+
+    Structure:
+        EchoRoutine -> DataProcessorRoutine -> LoopControllerRoutine -> (loop back to DataProcessor or exit to Printer)
+
+    Loop Logic:
+        - DataProcessor increments value by 1 each iteration
+        - LoopController checks if value >= 10 or max_iterations reached
+        - If condition met or max_iterations reached, exits to Printer
+        - Otherwise, loops back to DataProcessor
+
+    Use Case: Test loop processing with exit conditions
+    """
+    from routilux.tools.factory import ObjectFactory
+
+    factory = ObjectFactory.get_instance()
+    flow = Flow(flow_id="loop_processing_flow")
+
+    echo = factory.create("echo_routine", config={})
     processor = factory.create(
-        "queue_pressure_generator", config={"name": "SlowProcessor", "processing_delay": 0.8}
+        "data_processor",
+        config={"code": "data['value'] = data.get('value', 0) + 1; result = data"},
     )
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src_id = flow.add_routine(source, "source")
-    val_id = flow.add_routine(validator, "validator")
-    proc_id = flow.add_routine(processor, "processor")
-    sink_id = flow.add_routine(sink, "sink")
-
-    flow.connect(src_id, "output", val_id, "input")
-    flow.connect(val_id, "valid", proc_id, "input")
-    flow.connect(proc_id, "output", sink_id, "input")
-
-    return flow, src_id
-
-
-def create_debug_demo_flow():
-    """Flow designed for debugging demonstrations"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="debug_demo_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "Source"})
-    transformer = factory.create(
-        "data_transformer", config={"name": "Transformer", "transformation": "uppercase"}
-    )
-    debug_target = factory.create("debug_target", config={"name": "DebugTarget"})
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src_id = flow.add_routine(source, "source")
-    trans_id = flow.add_routine(transformer, "transformer")
-    debug_id = flow.add_routine(debug_target, "debug_target")
-    sink_id = flow.add_routine(sink, "sink")
-
-    flow.connect(src_id, "output", trans_id, "input")
-    flow.connect(trans_id, "output", debug_id, "input")
-    flow.connect(debug_id, "output", sink_id, "input")
-
-    return flow, src_id
-
-
-def create_comprehensive_demo_flow():
-    """Comprehensive flow showcasing all features"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="comprehensive_demo_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source1 = factory.create("data_source", config={"name": "Source1"})
-    source2 = factory.create("data_source", config={"name": "Source2"})
-    validator = factory.create("data_validator", config={"name": "Validator"})
-    transformer = factory.create(
-        "data_transformer", config={"name": "Transformer", "transformation": "uppercase"}
-    )
-    queue_processor = factory.create(
-        "queue_pressure_generator", config={"name": "QueueProcessor", "processing_delay": 0.3}
-    )
-    debug_target = factory.create("debug_target", config={"name": "DebugTarget"})
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src1_id = flow.add_routine(source1, "source1")
-    src2_id = flow.add_routine(source2, "source2")
-    val_id = flow.add_routine(validator, "validator")
-    trans_id = flow.add_routine(transformer, "transformer")
-    queue_id = flow.add_routine(queue_processor, "queue_processor")
-    debug_id = flow.add_routine(debug_target, "debug_target")
-    sink_id = flow.add_routine(sink, "sink")
-
-    # Multiple sources -> validator (creates queue pressure)
-    flow.connect(src1_id, "output", val_id, "input")
-    flow.connect(src2_id, "output", val_id, "input")
-    # Validator -> transformer -> queue processor -> debug target -> sink
-    flow.connect(val_id, "valid", trans_id, "input")
-    flow.connect(trans_id, "output", queue_id, "input")
-    flow.connect(queue_id, "output", debug_id, "input")
-    flow.connect(debug_id, "output", sink_id, "input")
-
-    return flow, src1_id
-
-
-def create_aggregator_flow():
-    """Flow demonstrating aggregator pattern with all_slots_ready_policy"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="aggregator_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source1 = factory.create("data_source", config={"name": "Source1"})
-    source2 = factory.create("data_source", config={"name": "Source2"})
-    aggregator = factory.create("data_aggregator", config={"name": "Aggregator"})
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src1_id = flow.add_routine(source1, "source1")
-    src2_id = flow.add_routine(source2, "source2")
-    agg_id = flow.add_routine(aggregator, "aggregator")
-    sink_id = flow.add_routine(sink, "sink")
-
-    # Both sources -> aggregator (waits for both)
-    flow.connect(src1_id, "output", agg_id, "input1")
-    flow.connect(src2_id, "output", agg_id, "input2")
-    flow.connect(agg_id, "output", sink_id, "input")
-
-    return flow, src1_id
-
-
-def create_branching_flow():
-    """Flow demonstrating branching pattern - one source to multiple processors"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="branching_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "Source"})
-    transformer1 = factory.create(
-        "data_transformer", config={"name": "Transformer1", "transformation": "uppercase"}
-    )
-    transformer2 = factory.create(
-        "data_transformer", config={"name": "Transformer2", "transformation": "lowercase"}
-    )
-    transformer3 = factory.create(
-        "data_transformer", config={"name": "Transformer3", "transformation": "reverse"}
-    )
-    aggregator = factory.create("data_aggregator", config={"name": "FinalAggregator"})
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src_id = flow.add_routine(source, "source")
-    trans1_id = flow.add_routine(transformer1, "transformer1")
-    trans2_id = flow.add_routine(transformer2, "transformer2")
-    trans3_id = flow.add_routine(transformer3, "transformer3")
-    agg_id = flow.add_routine(aggregator, "aggregator")
-    sink_id = flow.add_routine(sink, "sink")
-
-    # Source branches to three transformers
-    flow.connect(src_id, "output", trans1_id, "input")
-    flow.connect(src_id, "output", trans2_id, "input")
-    flow.connect(src_id, "output", trans3_id, "input")
-    # Two transformers -> aggregator, one goes directly to sink
-    flow.connect(trans1_id, "output", agg_id, "input1")
-    flow.connect(trans2_id, "output", agg_id, "input2")
-    flow.connect(trans3_id, "output", sink_id, "input")  # Direct path
-    flow.connect(agg_id, "output", sink_id, "input")  # Aggregated path
-
-    return flow, src_id
-
-
-def create_rate_limited_flow():
-    """Flow demonstrating rate limiting with time_interval_policy"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="rate_limited_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "FastSource"})
-    rate_limited = factory.create(
-        "rate_limited_processor", config={"name": "RateLimited", "interval_seconds": 2.0}
-    )
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src_id = flow.add_routine(source, "source")
-    rate_id = flow.add_routine(rate_limited, "rate_limited")
-    sink_id = flow.add_routine(sink, "sink")
-
-    flow.connect(src_id, "output", rate_id, "input")
-    flow.connect(rate_id, "output", sink_id, "input")
-
-    return flow, src_id
-
-
-def create_error_handling_flow():
-    """Flow demonstrating error handling scenarios"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="error_handling_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "Source"})
-    error_gen = factory.create(
-        "error_generator", config={"name": "ErrorGenerator", "error_rate": 0.4}
-    )
-    transformer = factory.create(
-        "data_transformer", config={"name": "Transformer", "transformation": "uppercase"}
-    )
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src_id = flow.add_routine(source, "source")
-    err_id = flow.add_routine(error_gen, "error_generator")
-    trans_id = flow.add_routine(transformer, "transformer")
-    sink_id = flow.add_routine(sink, "sink")
-
-    # Source -> error generator -> transformer (success path) -> sink
-    flow.connect(src_id, "output", err_id, "input")
-    flow.connect(err_id, "success", trans_id, "input")
-    flow.connect(trans_id, "output", sink_id, "input")
-    # Error path goes directly to sink
-    flow.connect(err_id, "error", sink_id, "input")
-
-    return flow, src_id
-
-
-def create_loop_flow():
-    """Flow demonstrating loop pattern with LoopController"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="loop_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source = factory.create("data_source", config={"name": "Source"})
     loop_controller = factory.create(
-        "loop_controller", config={"name": "LoopController", "max_iterations": 5}
+        "loop_controller",
+        config={"max_iterations": 10, "exit_condition": "data.get('value', 0) >= 10"},
     )
-    processor = factory.create(
-        "data_transformer", config={"name": "Processor", "transformation": "uppercase"}
-    )
-    sink = factory.create("data_sink", config={"name": "Sink"})
+    printer = factory.create("simple_printer", config={})
 
-    src_id = flow.add_routine(source, "source")
-    loop_id = flow.add_routine(loop_controller, "loop_controller")
-    proc_id = flow.add_routine(processor, "processor")
-    sink_id = flow.add_routine(sink, "sink")
+    echo_id = flow.add_routine(echo, "echo")
+    processor_id = flow.add_routine(processor, "processor")
+    controller_id = flow.add_routine(loop_controller, "controller")
+    printer_id = flow.add_routine(printer, "printer")
 
-    # Source -> loop controller -> processor -> loop controller (loop) or sink (done)
-    flow.connect(src_id, "output", loop_id, "input")
-    flow.connect(loop_id, "continue", proc_id, "input")
-    flow.connect(proc_id, "output", loop_id, "input")  # Loop back
-    flow.connect(loop_id, "done", sink_id, "input")
+    # Initial flow: echo -> processor -> controller
+    flow.connect(echo_id, "output", processor_id, "input")
+    flow.connect(processor_id, "output", controller_id, "input")
 
-    return flow, src_id
+    # Loop: controller.continue -> processor (loop back)
+    flow.connect(controller_id, "continue", processor_id, "input")
 
+    # Exit: controller.done -> printer
+    flow.connect(controller_id, "done", printer_id, "input")
 
-def create_multi_slot_flow():
-    """Flow demonstrating multi-slot processing"""
-    from routilux.tools.factory import ObjectFactory
-
-    factory = ObjectFactory.get_instance()
-    flow = Flow(flow_id="multi_slot_flow")
-
-    # Use factory to create routines (required for DSL export)
-    source1 = factory.create("data_source", config={"name": "PrimarySource"})
-    source2 = factory.create("data_source", config={"name": "SecondarySource"})
-    multi_processor = factory.create("multi_slot_processor", config={"name": "MultiSlotProcessor"})
-    sink = factory.create("data_sink", config={"name": "Sink"})
-
-    src1_id = flow.add_routine(source1, "primary_source")
-    src2_id = flow.add_routine(source2, "secondary_source")
-    multi_id = flow.add_routine(multi_processor, "multi_processor")
-    sink_id = flow.add_routine(sink, "sink")
-
-    flow.connect(src1_id, "output", multi_id, "primary")
-    flow.connect(src2_id, "output", multi_id, "secondary")
-    flow.connect(multi_id, "output", sink_id, "input")
-
-    return flow, src1_id
+    return flow, echo_id
 
 
 # ===== Main =====
 
 
 def main():
-    """Create and register all demo flows"""
+    """Create and register all demo routines and flows"""
     print("=" * 80)
-    print(" " * 15 + "Routilux Overseer - Comprehensive Demo")
+    print(" " * 20 + "Routilux Overseer - Simplified Demo")
     print("=" * 80)
-    print("\nThis demo showcases ALL features of Routilux Overseer:")
-    print("  ✓ Flow Visualization - Multiple flow patterns")
-    print("  ✓ Job State Transitions - pending -> running -> completed/failed/paused/cancelled")
-    print("  ✓ Queue Pressure Monitoring - Real-time queue status, pressure levels")
-    print("  ✓ Debugging - Breakpoints, variables, step execution, call stack")
-    print("  ✓ Error Handling - Various error scenarios")
-    print("  ✓ Performance Testing - Fast and slow routines")
-    print("  ✓ Real-time Events - WebSocket event streaming")
+    print("\nSimple, practical routines and flows for testing:")
+    print("  ✓ Countdown timer with stdout output")
+    print("  ✓ Batch processing with configurable size")
+    print("  ✓ Simple pipeline flows")
+    print("  ✓ Routed stdout testing")
     print("\n" + "=" * 80)
 
     # Enable monitoring BEFORE importing flow_store
-    print("\n[1/6] Enabling monitoring...")
+    print("\n[1/5] Enabling monitoring...")
     MonitoringRegistry.enable()
 
     # Import AFTER enabling monitoring
@@ -938,7 +1016,7 @@ def main():
     from routilux.tools.factory import ObjectFactory, ObjectMetadata
 
     # Register runtimes in RuntimeRegistry
-    print("\n[2/6] Registering runtimes in RuntimeRegistry...")
+    print("\n[2/5] Registering runtimes in RuntimeRegistry...")
     runtime_registry = RuntimeRegistry.get_instance()
 
     # Create and register three runtimes for testing
@@ -957,98 +1035,110 @@ def main():
         print(f"    {description}")
 
     # Register routines in factory
-    print("\n[3/6] Registering routines in factory...")
+    print("\n[3/5] Registering routines in factory...")
     factory = ObjectFactory.get_instance()
 
     routine_registrations = [
         (
+            "countdown_timer",
+            CountdownTimer,
+            "Countdown timer that emits progress events and prints to stdout",
+            "testing",
+            ["countdown", "timer", "stdout"],
+        ),
+        (
+            "batch_processor",
+            BatchProcessor,
+            "Processes data in batches with configurable batch size",
+            "processing",
+            ["batch", "processor"],
+        ),
+        (
+            "simple_printer",
+            SimplePrinter,
+            "Receives input and prints it (sink routine)",
+            "sink",
+            ["printer", "sink"],
+        ),
+        (
+            "delay_routine",
+            DelayRoutine,
+            "Delays data transmission by configured milliseconds",
+            "testing",
+            ["delay", "timing"],
+        ),
+        (
+            "echo_routine",
+            EchoRoutine,
+            "Simple echo - receives input and emits it unchanged",
+            "testing",
+            ["echo", "passthrough"],
+        ),
+        (
+            "counter_routine",
+            CounterRoutine,
+            "Counts received messages and emits count",
+            "testing",
+            ["counter", "state"],
+        ),
+        (
+            "filter_routine",
+            FilterRoutine,
+            "Filters data based on simple threshold condition",
+            "processing",
+            ["filter", "threshold"],
+        ),
+        (
+            "data_processor",
+            DataProcessorRoutine,
+            "Generic data processing routine that executes code on input data",
+            "processing",
+            ["processor", "eval", "code"],
+        ),
+        (
+            "loop_controller",
+            LoopControllerRoutine,
+            "Controls loop execution with exit condition",
+            "control_flow",
+            ["loop", "controller", "iteration"],
+        ),
+        (
             "data_source",
             DataSource,
-            "Generates sample data with metadata",
+            "Generates sample data for testing pipelines",
             "data_generation",
             ["source", "generator"],
         ),
         (
-            "data_validator",
-            DataValidator,
-            "Validates input data with batch processing",
-            "validation",
-            ["validator", "batch"],
-        ),
-        (
             "data_transformer",
             DataTransformer,
-            "Transforms data with various transformations",
+            "Transforms input data (simple transformation for testing)",
             "transformation",
             ["transformer", "processor"],
         ),
         (
-            "queue_pressure_generator",
-            QueuePressureGenerator,
-            "Generates queue pressure for monitoring",
-            "monitoring",
-            ["queue", "pressure"],
-        ),
-        (
-            "debug_target",
-            DebugTargetRoutine,
-            "Routine designed for debugging demonstrations",
-            "debugging",
-            ["debug", "inspection"],
-        ),
-        (
-            "state_transition_demo",
-            StateTransitionDemo,
-            "Demonstrates job state transitions",
-            "state_management",
-            ["state", "transition"],
-        ),
-        ("data_sink", DataSink, "Receives and stores final results", "sink", ["sink", "collector"]),
-        (
-            "rate_limited_processor",
-            RateLimitedProcessor,
-            "Processes data with rate limiting",
-            "rate_limiting",
-            ["rate_limit", "throttle"],
-        ),
-        (
-            "data_aggregator",
-            DataAggregator,
-            "Aggregates data from multiple sources",
-            "aggregation",
-            ["aggregator", "merge"],
-        ),
-        (
-            "error_generator",
-            ErrorGenerator,
-            "Generates errors for testing error handling",
-            "error_handling",
-            ["error", "testing"],
-        ),
-        (
-            "multi_slot_processor",
-            MultiSlotProcessor,
-            "Processes data from multiple slots",
-            "multi_slot",
-            ["multi_slot", "parallel"],
-        ),
-        (
-            "loop_controller",
-            LoopController,
-            "Controls loop execution in flows",
-            "control_flow",
-            ["loop", "control"],
+            "data_sink",
+            DataSink,
+            "Receives and stores final results (sink routine for testing)",
+            "sink",
+            ["sink", "collector"],
         ),
     ]
 
     for name, routine_class, description, category, tags in routine_registrations:
+        # Automatically extract docstring if available
+        docstring = None
+        if hasattr(routine_class, "__doc__") and routine_class.__doc__:
+            docstring = routine_class.__doc__.strip()
+
         metadata = ObjectMetadata(
             name=name,
             description=description,
             category=category,
             tags=tags,
-            example_config={"name": f"Example{name.title()}"},
+            example_config={},
             version="1.0.0",
+            docstring=docstring,
         )
         factory.register(name, routine_class, metadata=metadata)
         print(f"  ✓ Registered: {name} ({category})")
@@ -1056,19 +1146,13 @@ def main():
     flows = []
 
     # Create all flows
-    print("\n[4/6] Creating demo flows...")
+    print("\n[4/5] Creating demo flows...")
 
     flows_to_create = [
-        ("State Transition Flow", create_state_transition_flow),
-        ("Queue Pressure Flow", create_queue_pressure_flow),
-        ("Debug Demo Flow", create_debug_demo_flow),
-        ("Comprehensive Demo Flow", create_comprehensive_demo_flow),
-        ("Aggregator Flow", create_aggregator_flow),
-        ("Branching Flow", create_branching_flow),
-        ("Rate Limited Flow", create_rate_limited_flow),
-        ("Error Handling Flow", create_error_handling_flow),
-        ("Loop Flow", create_loop_flow),
-        ("Multi Slot Flow", create_multi_slot_flow),
+        ("Simple Pipeline Flow", create_simple_pipeline_flow),
+        ("Batch Processing Flow", create_batch_processing_flow),
+        ("Countdown Flow", create_countdown_flow),
+        ("Loop Processing Flow", create_loop_processing_flow),
     ]
 
     for i, (name, creator) in enumerate(flows_to_create, 1):
@@ -1096,7 +1180,7 @@ def main():
         print("     ✓ Registered in factory")
 
     print("\n" + "=" * 80)
-    print("[6/6] All flows created successfully!")
+    print("[5/5] All flows created successfully!")
     print("=" * 80)
     print(f"\nTotal flows created: {len(flows)}")
     print("\nFlow Summary:")
@@ -1105,7 +1189,7 @@ def main():
         print(f"    Routines: {len(flow.routines):2d} | Connections: {len(flow.connections):2d}")
 
     # Register flows in registry by name
-    print("\n[5/6] Registering flows in registry...")
+    print("\n[5/5] Registering flows in registry...")
     registry = FlowRegistry.get_instance()
     for name, flow, entry in flows:
         # Use a clean name for registry
@@ -1121,145 +1205,62 @@ def main():
     print("\n" + "=" * 80)
     print("Testing Scenarios")
     print("=" * 80)
-    print("\n1️⃣  State Transition Flow - Job state transitions")
+    print("\n1️⃣  Simple Pipeline Flow - Basic event routing")
     print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "state_transition_flow"}')
+    print('     {"flow_id": "simple_pipeline_flow"}')
     print("   Submit job: POST /api/v1/jobs")
     print(
-        '     {"flow_id": "state_transition_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+        '     {"flow_id": "simple_pipeline_flow", "routine_id": "echo", "slot_name": "trigger", "data": {"data": "test"}}'
     )
-    print("   Monitor: Job status changes (pending -> running -> completed)")
-    print("   API: GET /api/v1/jobs/{job_id} to see status transitions")
-    print("\n2️⃣  Queue Pressure Flow - Queue monitoring")
+    print("   Monitor: Data flows through echo -> delay -> printer")
+
+    print("\n2️⃣  Batch Processing Flow - Batch processing")
     print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "queue_pressure_flow"}')
+    print('     {"flow_id": "batch_processing_flow"}')
+    print("   Submit multiple jobs: POST /api/v1/jobs")
+    print(
+        '     {"flow_id": "batch_processing_flow", "routine_id": "echo", "slot_name": "trigger", "data": {"data": "item1"}}'
+    )
+    print(
+        '     {"flow_id": "batch_processing_flow", "routine_id": "echo", "slot_name": "trigger", "data": {"data": "item2"}}'
+    )
+    print(
+        '     {"flow_id": "batch_processing_flow", "routine_id": "echo", "slot_name": "trigger", "data": {"data": "item3"}}'
+    )
+    print("   Monitor: Batch processor collects 3 items before processing")
+
+    print("\n3️⃣  Countdown Flow - Routed stdout testing")
+    print("   Create worker: POST /api/v1/workers")
+    print('     {"flow_id": "countdown_flow"}')
     print("   Submit job: POST /api/v1/jobs")
     print(
-        '     {"flow_id": "queue_pressure_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+        '     {"flow_id": "countdown_flow", "routine_id": "countdown", "slot_name": "trigger", "data": {"delay_ms": 5000}}'
     )
-    print("   Monitor: Queue status, pressure levels (low/medium/high/critical)")
-    print("   API: GET /api/v1/jobs/{job_id}/routines/{routine_id}/queue-status")
-    print("\n3️⃣  Debug Demo Flow - Debugging features")
+    print("   Monitor: Countdown prints progress, stdout captured by job")
+    print("   API: GET /api/v1/jobs/{job_id}/output to see stdout")
+
+    print("\n4️⃣  Loop Processing Flow - Loop with exit condition")
     print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "debug_demo_flow"}')
+    print('     {"flow_id": "loop_processing_flow"}')
     print("   Submit job: POST /api/v1/jobs")
     print(
-        '     {"flow_id": "debug_demo_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
+        '     {"flow_id": "loop_processing_flow", "routine_id": "echo", "slot_name": "trigger", "data": {"value": 0}}'
     )
-    print("   Set breakpoint: POST /api/jobs/{job_id}/breakpoints")
-    print('     {"type": "routine", "routine_id": "debug_target"}')
-    print("   List breakpoints: GET /api/jobs/{job_id}/breakpoints")
-    print("   Enable/disable: PUT /api/v1/workers/{worker_id}/breakpoints/{breakpoint_id}")
-    print("   Resume worker: POST /api/v1/workers/{worker_id}/resume")
-    print("\n4️⃣  Comprehensive Demo Flow - All features combined")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "comprehensive_demo_flow"}')
-    print("   Submit job: POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "comprehensive_demo_flow", "routine_id": "source1", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: State transitions, queue pressure, debug capabilities")
-    print("   API: GET /api/v1/jobs/{job_id}/metrics")
-    print("\n5️⃣  Aggregator Flow - Multiple sources aggregation")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "aggregator_flow"}')
-    print("   Submit multiple jobs to trigger aggregation:")
-    print("     POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "aggregator_flow", "worker_id": "{worker_id}", "routine_id": "source1", "slot_name": "trigger", "data": {}}'
-    )
-    print("     POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "aggregator_flow", "worker_id": "{worker_id}", "routine_id": "source2", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: Aggregator waits for both inputs (all_slots_ready_policy)")
-    print("   API: GET /api/v1/jobs/{job_id}/routines/aggregator/status")
-    print("\n6️⃣  Branching Flow - One source to multiple processors")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "branching_flow"}')
-    print("   Submit job: POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "branching_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: Parallel processing in multiple transformers")
-    print("   API: GET /api/v1/jobs/{job_id}/routines")
-    print("\n7️⃣  Rate Limited Flow - Rate limiting demonstration")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "rate_limited_flow"}')
-    print("   Submit job: POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "rate_limited_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: Rate-limited processing (time_interval_policy)")
-    print("   API: GET /api/v1/jobs/{job_id}/routines/rate-limited/status")
-    print("\n8️⃣  Error Handling Flow - Error scenarios")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "error_handling_flow"}')
-    print("   Submit job: POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "error_handling_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: Success and error paths")
-    print("   API: GET /api/v1/jobs/{job_id}/routines/error-generator/status")
-    print("\n9️⃣  Loop Flow - Loop pattern demonstration")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "loop_flow"}')
-    print("   Submit job: POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "loop_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: Loop controller iterations")
-    print("   API: GET /api/v1/jobs/{job_id}/routines/loop-controller/status")
-    print("\n🔟  Multi Slot Flow - Multi-slot processing")
-    print("   Create worker: POST /api/v1/workers")
-    print('     {"flow_id": "multi_slot_flow"}')
-    print("   Submit jobs to different slots:")
-    print("     POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "multi_slot_flow", "worker_id": "{worker_id}", "routine_id": "primary_source", "slot_name": "trigger", "data": {}}'
-    )
-    print("     POST /api/v1/jobs")
-    print(
-        '     {"flow_id": "multi_slot_flow", "worker_id": "{worker_id}", "routine_id": "secondary_source", "slot_name": "trigger", "data": {}}'
-    )
-    print("   Monitor: Processing from multiple input slots")
-    print("   API: GET /api/v1/jobs/{job_id}/routines/multi-processor/status")
+    print("   Monitor: DataProcessor increments value, LoopController checks exit condition")
+    print("   Loop exits when value >= 10 or max_iterations (10) reached")
+
     print("\n📦 Factory Objects - Registered routines")
     print("   List: GET /api/factory/objects")
     print("   Details: GET /api/factory/objects/{name}")
-    print("   Interface: GET /api/factory/objects/{name}/interface")
-    print("   Filter by category: GET /api/factory/objects?category=data_generation")
-    print("   Filter by type: GET /api/factory/objects?object_type=routine")
-    print(
-        "   Combined filter: GET /api/factory/objects?category=data_generation&object_type=routine"
-    )
+    print("   Filter by category: GET /api/factory/objects?category=testing")
 
     print("\n⚙️  Runtime Management - Registered runtimes")
     print("   List: GET /api/runtimes")
-    print("   Details: GET /api/runtimes/{runtime_id}")
-    print("   Create: POST /api/runtimes")
     print("   Available runtimes:")
     for runtime_id, thread_pool_size, is_default, description in runtimes_to_create:
         default_marker = " (default)" if is_default else ""
         pool_info = "shared pool" if thread_pool_size == 0 else f"{thread_pool_size} threads"
         print(f"     • {runtime_id}: {description} ({pool_info}){default_marker}")
-    print("\n   Note: Runtime selection is now handled via Worker creation.")
-    print("   The RuntimeRegistry manages multiple Runtime instances for different environments.")
-    print("\n   Worker/Job API (v1):")
-    print("     • Create Worker: POST /api/v1/workers")
-    print('       {"flow_id": "state_transition_flow"}')
-    print("     • Submit Job: POST /api/v1/jobs")
-    print(
-        '       {"flow_id": "state_transition_flow", "routine_id": "source", "slot_name": "trigger", "data": {}}'
-    )
-    print("     • List Workers: GET /api/v1/workers")
-    print("     • Get Worker: GET /api/v1/workers/{worker_id}")
-    print("     • List Jobs: GET /api/v1/jobs")
-    print("     • Get Job: GET /api/v1/jobs/{job_id}")
-    print("\n   Test different runtimes:")
-    print("     • Production: Uses shared thread pool (recommended)")
-    print("     • Development: Small independent thread pool (5 threads)")
-    print("     • Testing: Minimal thread pool (2 threads) for isolation")
 
     # Start API server
     print("\n" + "=" * 80)

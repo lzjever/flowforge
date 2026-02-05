@@ -144,13 +144,36 @@ class TestWorkerEndpoints:
         assert data["jobs_failed"] == 0
 
     def test_create_worker_with_custom_id(self, client, sample_flow):
-        """Test creating worker with custom ID (currently not supported but should not error)."""
+        """Test creating worker with custom ID."""
+        custom_id = "custom-worker-123"
         response = client.post(
-            "/api/v1/workers", json={"flow_id": "test_flow_v1", "worker_id": "custom-worker-123"}
+            "/api/v1/workers", json={"flow_id": "test_flow_v1", "worker_id": custom_id}
         )
-        # Should succeed but may ignore custom ID
         assert response.status_code == 201
-        assert "worker_id" in response.json()
+        data = response.json()
+        assert "worker_id" in data
+        assert data["worker_id"] == custom_id
+        assert data["flow_id"] == "test_flow_v1"
+        assert data["status"] == "running"
+
+    def test_create_worker_duplicate_id(self, client, sample_flow):
+        """Test creating worker with duplicate worker_id should fail."""
+        custom_id = "duplicate-worker-456"
+        # Create first worker
+        response1 = client.post(
+            "/api/v1/workers", json={"flow_id": "test_flow_v1", "worker_id": custom_id}
+        )
+        assert response1.status_code == 201
+        assert response1.json()["worker_id"] == custom_id
+
+        # Try to create another worker with same ID
+        response2 = client.post(
+            "/api/v1/workers", json={"flow_id": "test_flow_v1", "worker_id": custom_id}
+        )
+        assert response2.status_code == 409
+        data = response2.json()
+        assert "error" in data
+        assert data["error"]["code"] == "WORKER_ALREADY_EXISTS"
 
     def test_create_worker_flow_not_found(self, client):
         """Test creating worker with non-existent flow."""

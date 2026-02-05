@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
 if TYPE_CHECKING:
-    from routilux.core.routine import ExecutionContext
+    from routilux.core.context import ExecutionContext
 
 
 @dataclass

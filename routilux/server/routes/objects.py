@@ -221,6 +221,7 @@ async def get_factory_object_metadata(name: str):
         tags=metadata.tags,
         example_config=metadata.example_config,
         version=metadata.version,
+        docstring=metadata.docstring,
     )
 
 

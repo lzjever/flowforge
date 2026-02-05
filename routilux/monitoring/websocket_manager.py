@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 if TYPE_CHECKING:
     from fastapi import WebSocket
 
-    from routilux.core.routine import ExecutionContext
+    from routilux.core.context import ExecutionContext
     from routilux.monitoring.breakpoint_manager import Breakpoint
     from routilux.monitoring.monitor_collector import ExecutionEvent, ExecutionMetrics
 

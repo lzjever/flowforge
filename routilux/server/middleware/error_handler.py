@@ -85,17 +85,35 @@ async def http_exception_handler(request: Request, exc):
     # Plain string detail
     message = str(exc.detail) if exc.detail else "An error occurred"
 
-    # Map status codes to error codes
-    error_code_map = {
-        400: ErrorCode.VALIDATION_ERROR,
-        401: ErrorCode.INTERNAL_ERROR,  # AUTH error not defined, use internal
-        403: ErrorCode.INTERNAL_ERROR,
-        404: ErrorCode.INTERNAL_ERROR,
-        409: ErrorCode.INTERNAL_ERROR,
-        500: ErrorCode.INTERNAL_ERROR,
-        503: ErrorCode.RUNTIME_SHUTDOWN,
-    }
-    error_code = error_code_map.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
+    # If detail is a string, the endpoint didn't use structured error response
+    # This should be considered a code defect, but we handle it for backward compatibility
+    if exc.status_code == 404:
+        logger.warning(
+            f"404 error with plain string detail (should use structured error): {message}. "
+            f"Path: {request.url.path}"
+        )
+        # Try to infer error type from message (temporary solution until all endpoints use structured errors)
+        if "Flow" in message:
+            error_code = ErrorCode.FLOW_NOT_FOUND
+        elif "Worker" in message:
+            error_code = ErrorCode.WORKER_NOT_FOUND
+        elif "Job" in message:
+            error_code = ErrorCode.JOB_NOT_FOUND
+        elif "Routine" in message:
+            error_code = ErrorCode.ROUTINE_NOT_FOUND
+        else:
+            error_code = ErrorCode.INTERNAL_ERROR
+    else:
+        # Other status codes mapping remains unchanged
+        error_code_map = {
+            400: ErrorCode.VALIDATION_ERROR,
+            401: ErrorCode.INTERNAL_ERROR,  # AUTH error not defined, use internal
+            403: ErrorCode.INTERNAL_ERROR,
+            409: ErrorCode.INTERNAL_ERROR,  # Should be provided by endpoint with specific error code
+            500: ErrorCode.INTERNAL_ERROR,
+            503: ErrorCode.RUNTIME_SHUTDOWN,
+        }
+        error_code = error_code_map.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
 
     return JSONResponse(
         status_code=exc.status_code,

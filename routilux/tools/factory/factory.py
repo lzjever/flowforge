@@ -89,6 +89,16 @@ class ObjectFactory:
             # Determine if prototype is a class or instance
             if isinstance(prototype, type):
                 # Class prototype
+                # Auto-extract docstring if metadata not provided
+                if metadata is None:
+                    docstring = (
+                        prototype.__doc__.strip()
+                        if hasattr(prototype, "__doc__") and prototype.__doc__
+                        else None
+                    )
+                    metadata = ObjectMetadata(
+                        name=name, description=description, docstring=docstring
+                    )
                 self._registry[name] = {
                     "type": "class",
                     "prototype": prototype,
@@ -96,7 +106,7 @@ class ObjectFactory:
                     "activation_policy": None,
                     "logic": None,
                     "error_handler": None,
-                    "metadata": metadata or ObjectMetadata(name=name, description=description),
+                    "metadata": metadata,
                 }
                 # Build reverse mapping
                 self._class_to_name[prototype] = name
@@ -112,6 +122,16 @@ class ObjectFactory:
                     # For Flow instances, store the original instance for cloning
                     # We'll clone it when creating new instances
                     # Note: Flow doesn't have _config like Routine, so we don't extract it
+                    # Auto-extract docstring if metadata not provided
+                    if metadata is None:
+                        docstring = (
+                            prototype_class.__doc__.strip()
+                            if hasattr(prototype_class, "__doc__") and prototype_class.__doc__
+                            else None
+                        )
+                        metadata = ObjectMetadata(
+                            name=name, description=description, docstring=docstring
+                        )
                     self._registry[name] = {
                         "type": "instance",
                         "prototype": prototype_class,
@@ -120,7 +140,7 @@ class ObjectFactory:
                         "activation_policy": None,
                         "logic": None,
                         "error_handler": getattr(prototype, "error_handler", None),
-                        "metadata": metadata or ObjectMetadata(name=name, description=description),
+                        "metadata": metadata,
                     }
                     # Build reverse mapping
                     self._class_to_name[prototype_class] = name
@@ -135,6 +155,16 @@ class ObjectFactory:
                     slots = getattr(prototype, "_slots", {}).copy()
                     events = getattr(prototype, "_events", {}).copy()
 
+                    # Auto-extract docstring if metadata not provided
+                    if metadata is None:
+                        docstring = (
+                            prototype_class.__doc__.strip()
+                            if hasattr(prototype_class, "__doc__") and prototype_class.__doc__
+                            else None
+                        )
+                        metadata = ObjectMetadata(
+                            name=name, description=description, docstring=docstring
+                        )
                     self._registry[name] = {
                         "type": "instance",
                         "prototype": prototype_class,
@@ -144,7 +174,7 @@ class ObjectFactory:
                         "error_handler": error_handler,
                         "slots": slots,
                         "events": events,
-                        "metadata": metadata or ObjectMetadata(name=name, description=description),
+                        "metadata": metadata,
                     }
                     # Build reverse mapping
                     self._class_to_name[prototype_class] = name

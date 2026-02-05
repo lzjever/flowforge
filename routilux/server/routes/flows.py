@@ -20,6 +20,7 @@ from routilux.server.models.flow import (
     FlowResponse,
     RoutineInfo,
 )
+from routilux.server.errors import ErrorCode, create_error_response
 from routilux.server.validators import (
     validate_dsl_size,
     validate_routine_id_conflict,
@@ -230,7 +231,14 @@ async def get_flow(flow_id: str):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
     return _flow_to_response(flow)
 
 
@@ -263,6 +271,11 @@ async def create_flow(request: FlowCreateRequest):
     }
     ```
     Note: `class` field must be a factory name (e.g., "data_source"), not a class path.
+    
+    **Note on flow_id Priority**:
+    - If both `request.flow_id` and DSL contain `flow_id`, `request.flow_id` takes precedence
+    - This allows creating new flows from templates by overriding the template's flow_id
+    - Example: `{"flow_id": "new_flow", "dsl": "flow_id: template_flow\n..."}` will create a flow with ID "new_flow"
 
     **3. From JSON DSL**:
     ```json
@@ -280,6 +293,7 @@ async def create_flow(request: FlowCreateRequest):
       }
     }
     ```
+    **Note on flow_id Priority**: Same as YAML DSL - `request.flow_id` overrides DSL `flow_id`.
 
     **Response Example**:
     ```json
@@ -293,7 +307,8 @@ async def create_flow(request: FlowCreateRequest):
     ```
 
     **Error Responses**:
-    - `400 Bad Request`: Invalid DSL format, flow_id already exists, or creation failed
+    - `400 Bad Request`: Invalid DSL format or creation failed
+    - `409 Conflict`: Flow with this flow_id already exists (returns `FLOW_ALREADY_EXISTS` error code)
     - `422 Validation Error`: Invalid request parameters
 
     **Best Practices**:
@@ -332,24 +347,58 @@ async def create_flow(request: FlowCreateRequest):
             dsl_dict = yaml.safe_load(request.dsl)
             if not isinstance(dsl_dict, dict):
                 raise ValueError("DSL YAML must parse to a dictionary")
+            # If request.flow_id is provided, override DSL flow_id
+            if request.flow_id:
+                dsl_dict["flow_id"] = request.flow_id
             flow = factory.load_flow_from_dsl(dsl_dict)
         elif request.dsl_dict:
+            # If request.flow_id is provided, override DSL flow_id
+            if request.flow_id:
+                request.dsl_dict["flow_id"] = request.flow_id
             # Load from factory using dict
             flow = factory.load_flow_from_dsl(request.dsl_dict)
         else:
             # Create empty flow
             flow = Flow(flow_id=request.flow_id)
 
+        # Check for duplicate flow_id
+        # Only check local store, not registry (registry may have flows from previous tests)
+        # We check _flows directly to avoid fallback to registry
+        if flow.flow_id:
+            with flow_store._lock:
+                if flow.flow_id in flow_store._flows:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=create_error_response(
+                            ErrorCode.FLOW_ALREADY_EXISTS,
+                            f"Flow '{flow.flow_id}' already exists",
+                            details={"flow_id": flow.flow_id},
+                        ),
+                    )
+
         # Store flow
         flow_store.add(flow)
 
         return _flow_to_response(flow)
+    except HTTPException:
+        # Re-raise HTTPException to preserve status code and error details
+        raise
     except ValueError as e:
         raise HTTPException(
-            status_code=400, detail=f"Failed to create flow from DSL: {str(e)}"
+            status_code=400,
+            detail=create_error_response(
+                ErrorCode.VALIDATION_ERROR,
+                f"Failed to create flow from DSL: {str(e)}",
+            ),
         ) from e
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to create flow: {str(e)}") from e
+        raise HTTPException(
+            status_code=400,
+            detail=create_error_response(
+                ErrorCode.INTERNAL_ERROR,
+                f"Failed to create flow: {str(e)}",
+            ),
+        ) from e
 
 
 @router.delete("/flows/{flow_id}", status_code=204, dependencies=[RequireAuth])
@@ -393,7 +442,14 @@ async def delete_flow(flow_id: str):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
     flow_store.remove(flow_id)
 
 
@@ -402,7 +458,14 @@ async def get_flow_metrics(flow_id: str):
     """Get aggregated metrics for all jobs of a flow."""
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     registry = MonitoringRegistry.get_instance()
     collector = registry.monitor_collector
@@ -538,7 +601,14 @@ async def export_flow_dsl(
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     # Use factory to export DSL (factory-only components)
     from routilux.tools.factory.factory import ObjectFactory
@@ -630,7 +700,14 @@ async def validate_flow(flow_id: str):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     issues = flow.validate()
     # Separate errors from warnings
@@ -655,13 +732,33 @@ async def get_routine_info(flow_id: str, routine_id: str):
     """Get routine metadata information (policy, config, slots, events)."""
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     service = get_monitor_service()
     try:
         return service.get_routine_info(flow_id, routine_id)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        error_msg = str(e)
+        # Determine error code based on error message
+        if "routine" in error_msg.lower():
+            error_code = ErrorCode.ROUTINE_NOT_FOUND
+        else:
+            error_code = ErrorCode.FLOW_NOT_FOUND
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                error_code,
+                error_msg,
+                details={"flow_id": flow_id, "routine_id": routine_id},
+            ),
+        )
 
 
 @router.get(
@@ -730,7 +827,14 @@ async def list_flow_routines(flow_id: str):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     routines = {}
     for routine_id, routine in flow.routines.items():
@@ -842,7 +946,14 @@ async def list_flow_connections(flow_id: str):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     connections = []
     for i, conn in enumerate(flow.connections):
@@ -1055,7 +1166,14 @@ async def add_connection_to_flow(flow_id: str, request: AddConnectionRequest):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     # SECURITY FIX: Validate that source and target routines exist and are Routine instances
     from routilux.core.routine import Routine
@@ -1156,10 +1274,24 @@ async def remove_routine_from_flow(flow_id: str, routine_id: str):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     if routine_id not in flow.routines:
-        raise HTTPException(status_code=404, detail=f"Routine '{routine_id}' not found in flow")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.ROUTINE_NOT_FOUND,
+                f"Routine '{routine_id}' not found in flow",
+                details={"flow_id": flow_id, "routine_id": routine_id},
+            ),
+        )
 
     # Fix: Remove dead code - line 306 did nothing (flow.routines[routine_id] accessed but didn't use result)
     # Remove connections involving this routine
@@ -1248,7 +1380,14 @@ async def remove_connection_from_flow(flow_id: str, connection_index: int):
     """
     flow = flow_store.get(flow_id)
     if not flow:
-        raise HTTPException(status_code=404, detail=f"Flow '{flow_id}' not found")
+        raise HTTPException(
+            status_code=404,
+            detail=create_error_response(
+                ErrorCode.FLOW_NOT_FOUND,
+                f"Flow '{flow_id}' not found",
+                details={"flow_id": flow_id},
+            ),
+        )
 
     if connection_index < 0 or connection_index >= len(flow.connections):
         raise HTTPException(

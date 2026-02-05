@@ -34,6 +34,7 @@ from routilux.core.connection import Connection
 
 # Context management
 from routilux.core.context import (
+    ExecutionContext,
     JobContext,
     get_current_job,
     get_current_job_id,
@@ -79,10 +80,7 @@ from routilux.core.registry import (
 )
 
 # Routine
-from routilux.core.routine import (
-    ExecutionContext,
-    Routine,
-)
+from routilux.core.routine import Routine
 
 # Runtime
 from routilux.core.runtime import Runtime

@@ -9,7 +9,7 @@ import ast
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
-    from routilux.core.routine import ExecutionContext
+    from routilux.core.context import ExecutionContext
 
 
 def evaluate_condition(

@@ -15,7 +15,7 @@ from routilux.activation_policies import (
     time_interval_policy,
 )
 from routilux.core.connection import Connection
-from routilux.core.context import JobContext
+from routilux.core.context import ExecutionContext, JobContext
 from routilux.core.error import ErrorHandler, ErrorStrategy
 from routilux.core.event import Event
 
@@ -38,7 +38,7 @@ from routilux.core.registry import (
     get_flow_registry,
     get_worker_registry,
 )
-from routilux.core.routine import ExecutionContext, Routine
+from routilux.core.routine import Routine
 from routilux.core.runtime import Runtime
 from routilux.core.slot import Slot
 from routilux.core.status import ExecutionStatus, JobStatus, RoutineStatus
@@ -138,4 +138,4 @@ if _analysis_available:
 # Note: All backward compatibility aliases removed
 # Use WorkerState, WorkerManager, WorkerExecutor, get_worker_manager instead
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"

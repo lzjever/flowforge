@@ -1,56 +1,71 @@
 Flow API
 ========
 
-The Flow module has been refactored into a modular structure for better maintainability.
-The main ``Flow`` class and related components are organized as follows:
+The ``Flow`` class orchestrates multiple routines and manages their connections.
 
-Main Flow Class
----------------
+Overview
+--------
 
-.. automodule:: routilux.flow
+A ``Flow`` is a container that manages:
+
+* **Routine Management**: Add, organize, and track routines
+* **Connection Management**: Link routines via events and slots
+* **Execution Control**: Execute workflows via Runtime
+* **Error Handling**: Apply error handling strategies
+
+Basic Usage
+-----------
+
+.. code-block:: python
+
+    from routilux import Flow, Routine
+
+    # Create a flow
+    flow = Flow("my_workflow")
+
+    # Add routines
+    routine1 = DataProcessor()
+    routine2 = DataValidator()
+    flow.add_routine(routine1, "processor")
+    flow.add_routine(routine2, "validator")
+
+    # Connect events to slots
+    flow.connect("processor", "output", "validator", "input")
+
+    # Register flow
+    from routilux import FlowRegistry
+    FlowRegistry.get_instance().register_by_name("my_workflow", flow)
+
+.. automodule:: routilux.core.flow
    :members:
    :undoc-members:
    :show-inheritance:
 
-Flow Submodules
----------------
+Key Methods
+-----------
 
-The Flow functionality is organized into the following submodules:
+.. automethod:: routilux.core.flow.Flow.__init__
+   :no-index:
+.. automethod:: routilux.core.flow.Flow.add_routine
+   :no-index:
+.. automethod:: routilux.core.flow.Flow.connect
+   :no-index:
+.. automethod:: routilux.core.flow.Flow.set_error_handler
+   :no-index:
+.. automethod:: routilux.core.flow.Flow.get_error_handler
+   :no-index:
+.. automethod:: routilux.core.flow.Flow.validate
+   :no-index:
 
-**flow.flow**
-    Main Flow class that orchestrates workflow execution.
+Additional Methods
+------------------
 
-**flow.task**
-    Task-related classes including ``TaskPriority`` enum and ``SlotActivationTask`` dataclass.
+.. automethod:: routilux.core.flow.Flow.find_routines_by_type
+.. automethod:: routilux.core.flow.Flow.get_connections_for_event
 
-**flow.execution**
-    Execution logic for sequential and concurrent workflow execution.
+WorkerNotRunningError
+---------------------
 
-**flow.event_loop**
-    Event loop and task queue management.
-
-**flow.error_handling**
-    Error handling logic for task errors and error handler resolution.
-
-**flow.state_management**
-    State management including pause, resume, cancel, and task serialization.
-
-**flow.dependency**
-    Dependency graph building and querying.
-
-**flow.serialization**
-    Flow serialization and deserialization logic.
-
-**flow.completion**
-    Execution completion detection and waiting mechanism. Provides systematic
-    completion checking to avoid race conditions and handle long-running tasks.
-
-For most use cases, you only need to import from the main ``routilux.flow`` module:
-
-.. code-block:: python
-
-   from routilux import Flow
-   from routilux.flow import TaskPriority, SlotActivationTask  # If needed
-
-The submodules are internal implementation details and typically don't need to be imported directly.
-
+.. autoclass:: routilux.core.flow.WorkerNotRunningError
+   :members:
+   :show-inheritance:

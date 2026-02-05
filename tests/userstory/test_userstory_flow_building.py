@@ -431,3 +431,96 @@ class TestCompleteFlowBuildingWorkflow:
         flow_info = flow_builder.get_flow()
         assert len(flow_info["routines"]) == 3
         assert len(flow_info["connections"]) == 2
+
+
+class TestFlowAPIDesignConsistency:
+    """Test API design consistency improvements.
+
+    These tests verify that Flow API follows the same design patterns
+    as Workers and Jobs APIs, including proper error handling and
+    resource creation semantics.
+    """
+
+    def test_create_flow_duplicate_id_returns_409(self, api_client):
+        """Test creating flow with duplicate flow_id should fail with 409 Conflict."""
+        flow_id = "duplicate_test_flow"
+        # Create first flow
+        response1 = api_client.post("/api/v1/flows", json={"flow_id": flow_id})
+        assert response1.status_code == 201
+        assert response1.json()["flow_id"] == flow_id
+
+        # Try to create duplicate
+        response2 = api_client.post("/api/v1/flows", json={"flow_id": flow_id})
+        assert response2.status_code == 409
+        error = response2.json()
+        assert "error" in error
+        assert error["error"]["code"] == "FLOW_ALREADY_EXISTS"
+        assert flow_id in error["error"]["message"]
+        assert error["error"]["details"]["flow_id"] == flow_id
+
+    def test_flow_id_priority_over_dsl_yaml(self, api_client):
+        """Test that request.flow_id overrides DSL flow_id in YAML."""
+        request_flow_id = "override_flow_yaml"
+        dsl_flow_id = "dsl_flow_yaml"
+        dsl = f"flow_id: {dsl_flow_id}\nroutines: {{}}\nconnections: []"
+
+        response = api_client.post(
+            "/api/v1/flows", json={"flow_id": request_flow_id, "dsl": dsl}
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["flow_id"] == request_flow_id
+
+        # Verify the flow exists with the override ID
+        get_response = api_client.get(f"/api/v1/flows/{request_flow_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["flow_id"] == request_flow_id
+
+    def test_flow_id_priority_over_dsl_json(self, api_client):
+        """Test that request.flow_id overrides DSL flow_id in JSON."""
+        request_flow_id = "override_flow_json"
+        dsl_flow_id = "dsl_flow_json"
+        dsl_dict = {
+            "flow_id": dsl_flow_id,
+            "routines": {},
+            "connections": [],
+        }
+
+        response = api_client.post(
+            "/api/v1/flows", json={"flow_id": request_flow_id, "dsl_dict": dsl_dict}
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["flow_id"] == request_flow_id
+
+        # Verify the flow exists with the override ID
+        get_response = api_client.get(f"/api/v1/flows/{request_flow_id}")
+        assert get_response.status_code == 200
+        assert get_response.json()["flow_id"] == request_flow_id
+
+    def test_delete_flow_not_found_error_code(self, api_client):
+        """Test that deleting non-existent flow returns FLOW_NOT_FOUND."""
+        response = api_client.delete("/api/v1/flows/non_existent_flow_12345")
+        assert response.status_code == 404
+        error = response.json()
+        assert "error" in error
+        assert error["error"]["code"] == "FLOW_NOT_FOUND"
+        assert "non_existent_flow_12345" in error["error"]["message"]
+        assert error["error"]["details"]["flow_id"] == "non_existent_flow_12345"
+
+    def test_get_flow_not_found_error_code(self, api_client):
+        """Test that getting non-existent flow returns FLOW_NOT_FOUND."""
+        response = api_client.get("/api/v1/flows/non_existent_flow_67890")
+        assert response.status_code == 404
+        error = response.json()
+        assert "error" in error
+        assert error["error"]["code"] == "FLOW_NOT_FOUND"
+        assert "non_existent_flow_67890" in error["error"]["message"]
+
+    def test_export_dsl_not_found_error_code(self, api_client):
+        """Test that exporting DSL for non-existent flow returns FLOW_NOT_FOUND."""
+        response = api_client.get("/api/v1/flows/non_existent_flow_dsl/dsl")
+        assert response.status_code == 404
+        error = response.json()
+        assert "error" in error
+        assert error["error"]["code"] == "FLOW_NOT_FOUND"

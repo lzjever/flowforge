@@ -11,7 +11,6 @@ Tests cover:
 - Error handling
 """
 
-
 import pytest
 
 from routilux.monitoring.breakpoint_manager import Breakpoint, BreakpointManager

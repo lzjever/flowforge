@@ -4,7 +4,7 @@ Pydantic models for Object API.
 All models include detailed field descriptions and examples for frontend developers.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -66,6 +66,14 @@ class ObjectMetadataResponse(BaseModel):
         ...,
         description="Version string for this object. Useful for tracking object versions.",
         examples=["1.0.0"],
+    )
+    docstring: Optional[str] = Field(
+        None,
+        description="Full docstring from the class/object. Returned as-is for client parsing and display. "
+        "Contains detailed documentation including purpose, configuration, input/output formats, etc.",
+        examples=[
+            "Generates sample data for testing pipelines.\n\nPurpose:\n    Generates a configurable number..."
+        ],
     )
 
 

@@ -24,8 +24,11 @@ if TYPE_CHECKING:
     from routilux.core.worker import WorkerState
 
 from routilux.core.context import (
+    ExecutionContext,
     _current_job,
     _current_worker_state,
+    get_current_execution_context,
+    set_current_execution_context,
     set_current_job,
     set_current_worker_state,
 )
@@ -95,9 +98,8 @@ class WorkerExecutor:
         # Set executor reference in WorkerState
         worker_state._executor = self
 
-        # Set flow context for all routines
-        for routine in flow.routines.values():
-            routine._current_flow = flow
+        # NOTE: No longer set routine._current_flow
+        # Flow context is now provided via ExecutionContext in _execute_task()
 
     def start(self) -> None:
         """Start worker execution.
@@ -221,30 +223,42 @@ class WorkerExecutor:
     def _execute_task(self, task: SlotActivationTask) -> None:
         """Execute a single task.
 
-        This method sets the worker_state and job_context in context variables
-        before executing the task.
+        This method sets the unified execution context (ExecutionContext) in context variables
+        before executing the task. This provides a single source of truth for all execution
+        context information.
 
         Args:
             task: SlotActivationTask to execute
         """
-        # Save old context
+        # Save old context for restoration
+        old_execution_context = get_current_execution_context()
         old_worker_state = _current_worker_state.get(None)
         old_job = _current_job.get(None)
 
         try:
-            # Set context variables
+            # Get routine_id before setting context
+            routine_id = ""
+            if task.slot.routine:
+                routine_id = self.flow._get_routine_id(task.slot.routine) or ""
+
+            # Build complete ExecutionContext
+            ctx = ExecutionContext(
+                flow=self.flow,
+                worker_state=self.worker_state,
+                routine_id=routine_id,
+                job_context=task.job_context,
+            )
+
+            # Set unified execution context
+            set_current_execution_context(ctx)
             set_current_worker_state(self.worker_state)
             if task.job_context:
                 set_current_job(task.job_context)
 
             mapped_data = task.data
 
-            # Set routine context
-            if task.slot.routine:
-                task.slot.routine._current_flow = self.flow
-                runtime = getattr(self.worker_state, "_runtime", None)
-                if runtime:
-                    task.slot.routine._current_runtime = runtime
+            # NOTE: No longer set routine._current_flow or routine._current_runtime
+            # All context information is now available via ExecutionContext
 
             # Enqueue data to slot
             from datetime import datetime
@@ -302,11 +316,16 @@ class WorkerExecutor:
                             self.worker_state,
                         )
         finally:
-            # Restore context
-            try:
+            # Restore old context
+            set_current_execution_context(old_execution_context)
+            if old_worker_state:
                 set_current_worker_state(old_worker_state)
+            else:
+                set_current_worker_state(None)
+            if old_job:
                 set_current_job(old_job)
-            except Exception:
+            else:
+                set_current_job(None)
                 logger.exception("Failed to restore context variables")
 
     def enqueue_task(self, task: Any) -> None:

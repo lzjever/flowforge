@@ -7,44 +7,21 @@ Improved Routine mechanism supporting slots (input) and events (output).
 from __future__ import annotations
 
 import threading
-from contextvars import ContextVar
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from serilux import Serializable
 
+# Import worker state context from context.py
+from routilux.core.context import get_current_worker_state as _get_current_worker_state
+
 if TYPE_CHECKING:
-    from routilux.core.context import JobContext
+    from routilux.core.context import ExecutionContext
     from routilux.core.error import ErrorHandler
     from routilux.core.event import Event
-    from routilux.core.flow import Flow
     from routilux.core.slot import Slot
     from routilux.core.worker import WorkerState
 
 T = TypeVar("T")
-
-# Context variable for thread-safe worker_state access
-_current_worker_state: ContextVar[WorkerState | None] = ContextVar(
-    "_current_worker_state", default=None
-)
-
-
-class ExecutionContext(NamedTuple):
-    """Execution context containing flow, worker_state, and routine_id.
-
-    Returned by Routine.get_execution_context() to provide convenient
-    access to execution-related handles during routine execution.
-
-    Attributes:
-        flow: The Flow object managing this execution
-        worker_state: The WorkerState object tracking this execution
-        routine_id: The string ID of this routine in the flow
-        job_context: Optional JobContext for the current job
-    """
-
-    flow: Flow
-    worker_state: WorkerState
-    routine_id: str
-    job_context: JobContext | None = None
 
 
 # Note: Not using @register_serializable to avoid conflict with legacy module
@@ -203,11 +180,11 @@ class Routine(Serializable):
 
         This method uses context variables to automatically retrieve missing parameters:
 
-        1. **runtime**: If not provided, retrieved from ``self._current_runtime``
-           (set by Runtime during routine execution)
+        1. **runtime**: If not provided, retrieved from ``worker_state._runtime``
+           (set by Runtime during worker creation)
 
         2. **worker_state**: If not provided, retrieved from thread-local context
-           using ``_current_worker_state.get(None)`` (set by WorkerExecutor)
+           using ``get_current_worker_state()`` (set by WorkerExecutor)
 
         3. **job_context**: The underlying ``Event.emit()`` method automatically
            retrieves job_context from thread-local context using ``get_current_job()``
@@ -246,9 +223,11 @@ class Routine(Serializable):
 
         event = self._events[event_name]
 
-        # Get runtime from instance attribute if not provided
+        # Get runtime from worker_state if not provided
         if runtime is None:
-            runtime = getattr(self, "_current_runtime", None)
+            worker_state_for_runtime = worker_state or _get_current_worker_state()
+            if worker_state_for_runtime:
+                runtime = getattr(worker_state_for_runtime, "_runtime", None)
             if runtime is None:
                 raise RuntimeError(
                     "Runtime is required for emit(). "
@@ -256,7 +235,7 @@ class Routine(Serializable):
                 )
 
         if worker_state is None:
-            worker_state = _current_worker_state.get(None)
+            worker_state = _get_current_worker_state()
             if worker_state is None:
                 raise RuntimeError(
                     "WorkerState is required for emit(). Provide worker_state parameter."
@@ -290,7 +269,10 @@ class Routine(Serializable):
         """
         with self._config_lock:
             # Prevent modification during execution
-            if hasattr(self, "_current_flow") and getattr(self, "_current_flow", None):
+            from routilux.core.context import get_current_execution_context
+
+            ctx = get_current_execution_context()
+            if ctx is not None:
                 raise RuntimeError(
                     "Cannot modify _config during execution. "
                     "Use WorkerState for execution-specific state."
@@ -392,34 +374,14 @@ class Routine(Serializable):
         return self
 
     def get_execution_context(self) -> ExecutionContext | None:
-        """Get execution context (flow, worker_state, routine_id, job_context).
+        """Get execution context from ContextVar (direct access).
 
         Returns:
             ExecutionContext if in execution context, None otherwise
         """
-        flow = getattr(self, "_current_flow", None)
-        if flow is None:
-            return None
+        from routilux.core.context import get_current_execution_context
 
-        worker_state = _current_worker_state.get(None)
-        if worker_state is None:
-            return None
-
-        routine_id = flow._get_routine_id(self) if hasattr(flow, "_get_routine_id") else None
-        if routine_id is None:
-            return None
-
-        # Get job context
-        from routilux.core.context import get_current_job
-
-        job_context = get_current_job()
-
-        return ExecutionContext(
-            flow=flow,
-            worker_state=worker_state,
-            routine_id=routine_id,
-            job_context=job_context,
-        )
+        return get_current_execution_context()
 
     def get_state(
         self, worker_state: WorkerState, key: str | None = None, default: Any = None
@@ -434,12 +396,13 @@ class Routine(Serializable):
         Returns:
             Routine state or specific key value
         """
-        flow = getattr(self, "_current_flow", None)
-        routine_id = flow._get_routine_id(self) if flow else None
-        if routine_id is None:
+        from routilux.core.context import get_current_execution_context
+
+        ctx = get_current_execution_context()
+        if ctx is None or not ctx.routine_id:
             return default if key else default
 
-        state = worker_state.get_routine_state(routine_id)
+        state = worker_state.get_routine_state(ctx.routine_id)
         if state is None:
             return default if key else default
 
@@ -455,14 +418,15 @@ class Routine(Serializable):
             key: Key to set
             value: Value to set
         """
-        flow = getattr(self, "_current_flow", None)
-        routine_id = flow._get_routine_id(self) if flow else None
-        if routine_id is None:
+        from routilux.core.context import get_current_execution_context
+
+        ctx = get_current_execution_context()
+        if ctx is None or not ctx.routine_id:
             return
 
-        current_state = worker_state.get_routine_state(routine_id) or {}
+        current_state = worker_state.get_routine_state(ctx.routine_id) or {}
         current_state[key] = value
-        worker_state.update_routine_state(routine_id, current_state)
+        worker_state.update_routine_state(ctx.routine_id, current_state)
 
     def update_state(self, worker_state: WorkerState, updates: dict[str, Any]) -> None:
         """Update multiple routine-specific state keys at once.
@@ -471,14 +435,75 @@ class Routine(Serializable):
             worker_state: WorkerState object
             updates: Dictionary of key-value pairs to update
         """
-        flow = getattr(self, "_current_flow", None)
-        routine_id = flow._get_routine_id(self) if flow else None
-        if routine_id is None:
+        from routilux.core.context import get_current_execution_context
+
+        ctx = get_current_execution_context()
+        if ctx is None or not ctx.routine_id:
             return
 
-        current_state = worker_state.get_routine_state(routine_id) or {}
+        current_state = worker_state.get_routine_state(ctx.routine_id) or {}
         current_state.update(updates)
-        worker_state.update_routine_state(routine_id, current_state)
+        worker_state.update_routine_state(ctx.routine_id, current_state)
+
+    def set_job_data(self, key: str, value: Any) -> None:
+        """Set job-level data for this routine (automatically namespaced by routine_id).
+
+        This is the recommended way to store routine-specific job state.
+        Automatically uses routine_id as namespace to prevent key collisions.
+
+        Args:
+            key: Data key (without routine_id prefix)
+            value: Data value
+
+        Raises:
+            RuntimeError: If job context or routine_id is not available
+        """
+        from routilux.core.context import get_current_execution_context, get_current_job
+
+        ctx = get_current_execution_context()
+        if ctx is None:
+            raise RuntimeError(
+                "set_job_data requires execution context. "
+                "This method must be called during routine execution."
+            )
+
+        if not ctx.routine_id:
+            raise RuntimeError(
+                "set_job_data requires routine_id. "
+                "This routine must be added to a flow before execution."
+            )
+
+        job = get_current_job()
+        if job is None:
+            raise RuntimeError("set_job_data requires job context")
+
+        # Direct access to routine_id from ExecutionContext
+        full_key = f"{ctx.routine_id}_{key}"
+        job.data[full_key] = value
+
+    def get_job_data(self, key: str, default: Any = None) -> Any:
+        """Get job-level data for this routine (automatically namespaced by routine_id).
+
+        Args:
+            key: Data key (without routine_id prefix)
+            default: Default value if key doesn't exist
+
+        Returns:
+            Data value or default
+        """
+        from routilux.core.context import get_current_execution_context, get_current_job
+
+        ctx = get_current_execution_context()
+        if ctx is None or not ctx.routine_id:
+            return default
+
+        job = get_current_job()
+        if job is None:
+            return default
+
+        # Direct access to routine_id from ExecutionContext
+        full_key = f"{ctx.routine_id}_{key}"
+        return job.data.get(full_key, default)
 
     def __call__(self, **kwargs: Any) -> None:
         """Execute routine (deprecated - use slot handlers instead).
@@ -524,14 +549,3 @@ class Routine(Serializable):
             del data["_events"]
 
         super().deserialize(data, strict=strict, registry=registry)
-
-
-# Convenience function
-def get_current_worker_state() -> WorkerState | None:
-    """Get the current worker state from context."""
-    return _current_worker_state.get(None)
-
-
-def set_current_worker_state(worker_state: WorkerState | None) -> None:
-    """Set the current worker state in context (internal use)."""
-    _current_worker_state.set(worker_state)

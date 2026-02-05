@@ -106,15 +106,16 @@ class WorkerState(Serializable):
         >>> worker.record_execution("processor", "output", {"result": "success"})
     """
 
-    def __init__(self, flow_id: str = ""):
+    def __init__(self, flow_id: str = "", worker_id: str | None = None):
         """Initialize WorkerState.
 
         Args:
             flow_id: Flow identifier
+            worker_id: Optional custom worker ID. If not provided, a UUID will be generated.
         """
         super().__init__()
         self.flow_id: str = flow_id
-        self.worker_id: str = str(uuid.uuid4())
+        self.worker_id: str = worker_id if worker_id is not None else str(uuid.uuid4())
         self.status: str | ExecutionStatus = ExecutionStatus.PENDING
 
         # Worker-level state tracking

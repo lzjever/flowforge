@@ -4,7 +4,6 @@ API tests for breakpoint endpoints.
 Tests the breakpoint API endpoints with the new slot-level breakpoint design.
 """
 
-
 import pytest
 from fastapi.testclient import TestClient
 

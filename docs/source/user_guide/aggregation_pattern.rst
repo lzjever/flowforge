@@ -159,9 +159,25 @@ Complete Example: Search Result Aggregation
 Here's a complete example that aggregates search results from multiple
 search engines:
 
-.. literalinclude:: ../../../examples/aggregator_demo.py
-   :language: python
-   :linenos:
+.. code-block:: python
+
+   from routilux import Routine, Flow, FlowBuilder
+   from routilux.activation_policies import batch_size_policy
+
+   class SearchAggregator(Routine):
+       def __init__(self):
+           super().__init__()
+           self.add_slot("results", merge_strategy="append")
+           self.add_event("aggregated")
+
+           def aggregate_handler(results, source_id, **kwargs):
+               # Check if we have results from all sources
+               if source_id and len(source_id) >= 3:
+                   # Process aggregated results
+                   self.emit("aggregated", results=results)
+
+           self.set_logic(aggregate_handler)
+           self.set_activation_policy(batch_size_policy(3))
 
 Key Points
 ----------

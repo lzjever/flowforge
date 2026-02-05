@@ -6,21 +6,31 @@ A simple example demonstrating basic routine and flow usage.
 Example Code
 ------------
 
-.. literalinclude:: ../../../examples/basic_example.py
+.. literalinclude:: ../../../examples/hello_world.py
    :language: python
    :linenos:
 
 This example demonstrates:
 
 * Creating routines with slots and events
-* Automatic flow detection in ``emit()`` calls (no need to pass flow parameter)
-* Connecting routines in a flow
-* Executing a flow
-* Checking execution status
+* Using activation policies to control execution
+* Building flows with FlowBuilder
+* Executing a flow with Runtime
+* Posting data to trigger execution
 
 **Key Features**:
 
-* **Automatic Flow Detection**: The ``emit()`` method automatically detects the flow from routine context
-* **Non-blocking emit()**: Event emission returns immediately after enqueuing tasks
-* **Event Queue Architecture**: All execution uses a unified event queue mechanism
+* **Event-Driven Execution**: Routines communicate via events and slots
+* **Flow Builder**: Declarative flow construction using fluent API
+* **Runtime**: Centralized execution management with thread pool
+* **Activation Policies**: Control when routines execute
 
+Running the Example
+-------------------
+
+To run this example:
+
+.. code-block:: bash
+
+    cd examples
+    python hello_world.py

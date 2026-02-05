@@ -80,16 +80,44 @@ import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
+    from routilux.core.flow import Flow
     from routilux.core.worker import WorkerState
+
+
+# ExecutionContext: Single source of truth for execution context
+class ExecutionContext(NamedTuple):
+    """Execution context containing flow, worker_state, routine_id, and job_context.
+
+    This is the single source of truth for all execution context information.
+    Set by WorkerExecutor before routine execution, accessed via ContextVar.
+
+    Attributes:
+        flow: The Flow object managing this execution
+        worker_state: The WorkerState object tracking this execution
+        routine_id: The string ID of this routine in the flow
+        job_context: Optional JobContext for the current job
+    """
+
+    flow: Flow
+    worker_state: WorkerState
+    routine_id: str
+    job_context: JobContext | None = None
+
 
 # Context Variables for thread-safe access
 _current_worker_state: ContextVar[WorkerState | None] = ContextVar(
     "_current_worker_state", default=None
 )
 _current_job: ContextVar[JobContext | None] = ContextVar("_current_job", default=None)
+_current_execution_context: ContextVar[ExecutionContext | None] = ContextVar(
+    "_current_execution_context", default=None
+)
+_current_execution_context: ContextVar[ExecutionContext | None] = ContextVar(
+    "_current_execution_context", default=None
+)
 
 
 @dataclass
@@ -219,9 +247,13 @@ class JobContext:
         )
 
     def set_data(self, key: str, value: Any) -> None:
-        """Set job-level data.
+        """Set job-level shared data (across routines).
 
         This replaces WorkerState.shared_data for job-scoped data sharing.
+        Use this for data that needs to be shared between multiple routines.
+
+        For routine-specific data, use Routine.set_job_data() inside routines,
+        or JobContext.set_routine_data() outside routine execution context.
 
         Args:
             key: Data key
@@ -230,7 +262,7 @@ class JobContext:
         self.data[key] = value
 
     def get_data(self, key: str, default: Any = None) -> Any:
-        """Get job-level data.
+        """Get job-level shared data (across routines).
 
         Args:
             key: Data key
@@ -240,6 +272,37 @@ class JobContext:
             Value for key, or default
         """
         return self.data.get(key, default)
+
+    def set_routine_data(self, routine_id: str, key: str, value: Any) -> None:
+        """Set routine-specific data in job (automatically namespaced).
+
+        Used for setting routine-specific data outside routine execution context.
+        Inside routines, use Routine.set_job_data() instead.
+
+        Args:
+            routine_id: Routine identifier
+            key: Data key (without routine_id prefix)
+            value: Data value
+        """
+        full_key = f"{routine_id}_{key}"
+        self.data[full_key] = value
+
+    def get_routine_data(self, routine_id: str, key: str, default: Any = None) -> Any:
+        """Get routine-specific data from job (automatically namespaced).
+
+        Used for getting routine-specific data outside routine execution context.
+        Inside routines, use Routine.get_job_data() instead.
+
+        Args:
+            routine_id: Routine identifier
+            key: Data key (without routine_id prefix)
+            default: Default value if key doesn't exist
+
+        Returns:
+            Data value or default
+        """
+        full_key = f"{routine_id}_{key}"
+        return self.data.get(full_key, default)
 
     def start(self) -> None:
         """Mark job as running."""
@@ -473,3 +536,72 @@ def set_current_worker_state(worker: WorkerState | None) -> None:
         routine.emit("output", runtime=runtime, data="test")
     """
     _current_worker_state.set(worker)
+
+
+def get_current_execution_context() -> ExecutionContext | None:
+    """Get current execution context from ContextVar.
+
+    This is the unified way to access all execution context information.
+    The ExecutionContext contains flow, worker_state, routine_id, and job_context.
+
+    Returns:
+        ExecutionContext if in execution context, None otherwise
+
+    **When Available:**
+    - Automatically available during routine execution (set by WorkerExecutor)
+    - NOT available in test threads unless explicitly set with ``set_current_execution_context()``
+
+    **Usage:**
+    .. code-block:: python
+
+        from routilux.core.context import get_current_execution_context
+
+        def logic(self, input_data, **kwargs):
+            ctx = get_current_execution_context()
+            if ctx:
+                routine_id = ctx.routine_id
+                flow = ctx.flow
+                worker_state = ctx.worker_state
+                job = ctx.job_context
+    """
+    return _current_execution_context.get(None)
+
+
+def set_current_execution_context(ctx: ExecutionContext | None) -> None:
+    """Set current execution context in ContextVar.
+
+    This function sets the complete ExecutionContext in the current thread's context variable.
+    It is primarily used by WorkerExecutor before routine execution, and in tests.
+
+    Args:
+        ctx: ExecutionContext to set, or None to clear
+
+    **When to Use:**
+    - WorkerExecutor sets this automatically before routine execution
+    - In tests when calling methods directly that need execution context
+    - NOT needed during normal routine execution (WorkerExecutor handles it)
+
+    **Example in Tests:**
+    .. code-block:: python
+
+        from routilux.core.context import ExecutionContext, set_current_execution_context
+
+        ctx = ExecutionContext(
+            flow=flow,
+            worker_state=worker_state,
+            routine_id="test_routine",
+            job_context=job,
+        )
+        set_current_execution_context(ctx)
+
+    **Thread Safety:**
+    Context variables are thread-local, so each thread has its own context.
+    Setting execution context in one thread does not affect other threads.
+
+    **Clearing Context:**
+    Pass None to clear the context:
+    .. code-block:: python
+
+        set_current_execution_context(None)  # Clear context
+    """
+    _current_execution_context.set(ctx)

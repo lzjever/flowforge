@@ -161,14 +161,40 @@ async def create_worker(request: WorkerCreateRequest):
         )
 
     try:
+        # Validate custom worker_id if provided
+        if request.worker_id:
+            # Check if worker_id already exists in Runtime active workers
+            with runtime._worker_lock:
+                if request.worker_id in runtime._active_workers:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=create_error_response(
+                            ErrorCode.WORKER_ALREADY_EXISTS,
+                            f"Worker '{request.worker_id}' already exists",
+                        ),
+                    )
+
+            # Also check WorkerRegistry
+            worker_registry = get_worker_registry()
+            existing_worker = worker_registry.get(request.worker_id)
+            if existing_worker is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=create_error_response(
+                        ErrorCode.WORKER_ALREADY_EXISTS,
+                        f"Worker '{request.worker_id}' already exists",
+                    ),
+                )
+
         # Create worker via Runtime.exec()
-        # Note: Runtime.exec() doesn't support custom worker_id yet
-        # If request.worker_id is provided, we could validate it doesn't exist
-        worker_state = runtime.exec(flow_name=request.flow_id)
+        worker_state = runtime.exec(flow_name=request.flow_id, worker_id=request.worker_id)
 
         logger.info(f"Created worker {worker_state.worker_id} for flow {request.flow_id}")
         return _worker_to_response(worker_state)
 
+    except HTTPException:
+        # Re-raise HTTPException to preserve status code and error details
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=404, detail=create_error_response(ErrorCode.FLOW_NOT_FOUND, str(e))

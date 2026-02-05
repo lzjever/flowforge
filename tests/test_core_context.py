@@ -178,3 +178,66 @@ class TestContextVariables:
         # Note: We can't easily test setting worker state without creating
         # a WorkerState, which requires a Flow. This will be tested in
         # integration tests.
+
+    def test_set_routine_data(self):
+        """Test setting routine-specific data with automatic namespacing."""
+        job = JobContext(job_id="test-job")
+
+        job.set_routine_data("routine1", "key1", "value1")
+        job.set_routine_data("routine1", "key2", 42)
+        job.set_routine_data("routine2", "key1", "value2")
+
+        # Verify namespacing
+        assert job.data["routine1_key1"] == "value1"
+        assert job.data["routine1_key2"] == 42
+        assert job.data["routine2_key1"] == "value2"
+
+    def test_get_routine_data(self):
+        """Test getting routine-specific data with automatic namespacing."""
+        job = JobContext(job_id="test-job")
+
+        # Set data directly (simulating namespaced keys)
+        job.data["routine1_key1"] = "value1"
+        job.data["routine1_key2"] = 42
+        job.data["routine2_key1"] = "value2"
+
+        # Get data using method
+        assert job.get_routine_data("routine1", "key1") == "value1"
+        assert job.get_routine_data("routine1", "key2") == 42
+        assert job.get_routine_data("routine2", "key1") == "value2"
+        assert job.get_routine_data("routine1", "nonexistent") is None
+        assert job.get_routine_data("routine1", "nonexistent", "default") == "default"
+
+    def test_routine_data_isolation(self):
+        """Test that routine data is isolated between different routines."""
+        job = JobContext(job_id="test-job")
+
+        # Set same key for different routines
+        job.set_routine_data("routine1", "shared_key", "value1")
+        job.set_routine_data("routine2", "shared_key", "value2")
+
+        # Each routine should see its own value
+        assert job.get_routine_data("routine1", "shared_key") == "value1"
+        assert job.get_routine_data("routine2", "shared_key") == "value2"
+
+        # Verify namespacing
+        assert job.data["routine1_shared_key"] == "value1"
+        assert job.data["routine2_shared_key"] == "value2"
+
+    def test_shared_data_vs_routine_data(self):
+        """Test that shared data and routine data don't conflict."""
+        job = JobContext(job_id="test-job")
+
+        # Set shared data
+        job.set_data("shared_key", "shared_value")
+
+        # Set routine-specific data
+        job.set_routine_data("routine1", "shared_key", "routine_value")
+
+        # They should not conflict
+        assert job.get_data("shared_key") == "shared_value"
+        assert job.get_routine_data("routine1", "shared_key") == "routine_value"
+
+        # Verify both exist in job.data
+        assert job.data["shared_key"] == "shared_value"
+        assert job.data["routine1_shared_key"] == "routine_value"

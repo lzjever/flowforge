@@ -1,130 +1,144 @@
-Monitoring API Reference
-========================
+Monitoring & Debugging API
+==========================
 
-This section documents the monitoring and debugging APIs.
+Optional monitoring, debugging, and real-time event streaming capabilities.
 
-.. contents::
-   :local:
-   :depth: 2
+.. note::
+   All monitoring features are **disabled by default** and have **zero overhead**
+   when not enabled. Enable monitoring via ``MonitoringRegistry.enable()`` or by
+   setting the ``ROUTILUX_ENABLE_MONITORING=true`` environment variable.
 
-Monitoring Registry
+Overview
+--------
+
+The monitoring module provides:
+
+* **Breakpoint Management**: Set breakpoints on routines with conditions
+* **Debug Sessions**: Interactive debugging workflows
+* **Real-time Events**: Event streaming via WebSocket
+* **Execution Metrics**: Performance metrics and execution traces
+* **Zero Overhead**: No performance impact when disabled
+
+Enabling Monitoring
 -------------------
 
-.. autoclass:: routilux.monitoring.MonitoringRegistry
-   :members:
-   :undoc-members:
+.. code-block:: python
 
-Monitor Collector
------------------
+    from routilux.monitoring import MonitoringRegistry
 
-.. autoclass:: routilux.monitoring.MonitorCollector
-   :members:
-   :undoc-members:
+    # Enable monitoring programmatically
+    MonitoringRegistry.enable()
 
-.. autoclass:: routilux.monitoring.monitor_collector.ExecutionEvent
+    # Or use environment variable:
+    # export ROUTILUX_ENABLE_MONITORING=true
+
+Core Components
+---------------
+
+MonitoringRegistry
+~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: routilux.monitoring.registry.MonitoringRegistry
    :members:
-   :undoc-members:
    :show-inheritance:
+
+MonitorCollector
+~~~~~~~~~~~~~~~~
+
+.. autoclass:: routilux.monitoring.monitor_collector.MonitorCollector
+   :members:
+   :show-inheritance:
+
+ExecutionMetrics
+^^^^^^^^^^^^^^^^
+
+.. autoclass:: routilux.monitoring.monitor_collector.ExecutionMetrics
+   :members:
+   :show-inheritance:
+
+RoutineMetrics
+^^^^^^^^^^^^^^
 
 .. autoclass:: routilux.monitoring.monitor_collector.RoutineMetrics
    :members:
-   :undoc-members:
    :show-inheritance:
 
-Breakpoint Manager
-------------------
+ExecutionEvent
+^^^^^^^^^^^^^^
+
+.. autoclass:: routilux.monitoring.monitor_collector.ExecutionEvent
+   :members:
+   :show-inheritance:
+
+Breakpoints
+-----------
+
+BreakpointManager
+~~~~~~~~~~~~~~~~~
 
 .. autoclass:: routilux.monitoring.breakpoint_manager.BreakpointManager
    :members:
-   :undoc-members:
+   :show-inheritance:
+
+Breakpoint
+~~~~~~~~~~
 
 .. autoclass:: routilux.monitoring.breakpoint_manager.Breakpoint
    :members:
-   :undoc-members:
    :show-inheritance:
 
-Debug Session Store
--------------------
+Debug Sessions
+--------------
 
-.. autoclass:: routilux.monitoring.debug_session.DebugSessionStore
-   :members:
-   :undoc-members:
+DebugSession
+~~~~~~~~~~~~
 
 .. autoclass:: routilux.monitoring.debug_session.DebugSession
    :members:
-   :undoc-members:
    :show-inheritance:
 
-Job Event Manager
------------------
+DebugSessionStore
+~~~~~~~~~~~~~~~~~
+
+.. autoclass:: routilux.monitoring.debug_session.DebugSessionStore
+   :members:
+   :show-inheritance:
+
+CallFrame
+~~~~~~~~~
+
+.. autoclass:: routilux.monitoring.debug_session.CallFrame
+   :members:
+   :show-inheritance:
+
+Event Manager
+-------------
+
+JobEventManager
+~~~~~~~~~~~~~~~
 
 .. autoclass:: routilux.monitoring.event_manager.JobEventManager
    :members:
-   :undoc-members:
+   :show-inheritance:
 
-HTTP API Overview
------------------
+Helper Functions
+----------------
 
-The monitoring system provides a comprehensive HTTP API for:
+.. autofunction:: routilux.monitoring.event_manager.get_event_manager
 
-* **Flow Management**: Create, read, update, and delete flows
-* **Job Execution**: Start, monitor, pause, resume, and cancel jobs
-* **Metrics & Tracing**: Get execution metrics and detailed traces
-* **Breakpoints**: Set, list, update, and delete breakpoints
-* **Debug Controls**: Step over/into, get variables and call stack
-* **WebSocket Monitoring**: Real-time event streaming
+Execution Hooks
+---------------
 
-For detailed API documentation, see the :doc:`User Guide <../user_guide/monitoring_debugging>`.
+MonitoringExecutionHooks
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Key Endpoints
-~~~~~~~~~~~~~
-
-**Flows**
-
-* ``GET /api/flows`` - List all flows
-* ``GET /api/flows/{flow_id}`` - Get a specific flow
-* ``POST /api/flows`` - Create a new flow
-
-**Jobs**
-
-* ``GET /api/jobs`` - List all jobs
-* ``GET /api/jobs/{job_id}`` - Get job details
-* ``POST /api/jobs`` - Start a new job execution
-* ``POST /api/jobs/{job_id}/pause`` - Pause a running job
-* ``POST /api/jobs/{job_id}/resume`` - Resume a paused job
-* ``POST /api/jobs/{job_id}/cancel`` - Cancel a job
-
-**Metrics & Tracing**
-
-* ``GET /api/jobs/{job_id}/metrics`` - Get job execution metrics
-* ``GET /api/jobs/{job_id}/trace`` - Get execution trace
-
-**Breakpoints**
-
-* ``GET /api/jobs/{job_id}/breakpoints`` - List breakpoints
-* ``POST /api/jobs/{job_id}/breakpoints`` - Set a breakpoint
-* ``DELETE /api/jobs/{job_id}/breakpoints/{id}`` - Delete a breakpoint
-
-**Debug Controls**
-
-* ``POST /api/jobs/{job_id}/debug/step_over`` - Step over next routine
-* ``POST /api/jobs/{job_id}/debug/step_into`` - Step into routine
-* ``GET /api/jobs/{job_id}/debug/variables`` - Get debug variables
-* ``GET /api/jobs/{job_id}/debug/call_stack`` - Get call stack
-
-**WebSocket**
-
-* ``WS /api/ws/jobs/{job_id}/monitor`` - Real-time job monitoring
-* ``WS /api/ws/jobs/{job_id}/debug`` - Interactive debug session
-* ``WS /api/ws/flows/{flow_id}/monitor`` - Flow-wide monitoring
-
-Storage
--------
-
-.. autoclass:: routilux.monitoring.storage.FlowStore
+.. autoclass:: routilux.monitoring.execution_hooks.MonitoringExecutionHooks
    :members:
-   :undoc-members:
+   :show-inheritance:
 
-.. autoclass:: routilux.monitoring.storage.JobStore
-   :members:
-   :undoc-members:
+Helper Functions
+----------------
+
+.. autofunction:: routilux.monitoring.execution_hooks.enable_monitoring_hooks
+.. autofunction:: routilux.monitoring.execution_hooks.disable_monitoring_hooks
+.. autofunction:: routilux.monitoring.execution_hooks.get_monitoring_hooks
