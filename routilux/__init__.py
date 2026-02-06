@@ -5,14 +5,6 @@ Provides flexible connection, state management, and workflow orchestration capab
 """
 
 # Import metrics
-from routilux.metrics import (
-    Counter,
-    Gauge,
-    Histogram,
-    MetricTimer,
-    MetricsCollector,
-)
-
 # Import analysis tools
 from routilux.analysis import (
     BaseFormatter,
@@ -55,6 +47,13 @@ from routilux.exceptions import (
 from routilux.execution_tracker import ExecutionTracker
 from routilux.flow import Flow
 from routilux.job_state import ExecutionRecord, JobState
+from routilux.metrics import (
+    Counter,
+    Gauge,
+    Histogram,
+    MetricsCollector,
+    MetricTimer,
+)
 from routilux.output_handler import (
     CallbackOutputHandler,
     NullOutputHandler,
