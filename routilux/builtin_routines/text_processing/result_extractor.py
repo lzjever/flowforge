@@ -103,7 +103,7 @@ class ResultExtractor(Routine):
             "output", ["extracted_result", "format", "metadata", "confidence", "extraction_path"]
         )
 
-    def _register_builtin_extractors(self):
+    def _register_builtin_extractors(self) -> None:
         """Register built-in extractor functions."""
         if not hasattr(self, "_extractors"):
             self._extractors: dict[str, Callable] = {}

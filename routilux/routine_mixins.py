@@ -11,7 +11,7 @@ Mixin Architecture:
 The Routine class inherits from all three mixins in order.
 """
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, cast
 
 # TYPE_CHECKING imports to avoid circular dependencies
 if TYPE_CHECKING:
@@ -42,7 +42,7 @@ class ConfigMixin:
         _config: Dictionary of configuration parameters.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize ConfigMixin.
 
         Note: This is a mixin, called via super().__init__() from Routine.
@@ -131,7 +131,7 @@ class ExecutionMixin:
         _events: Dictionary of event name to Event object.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize ExecutionMixin.
 
         Note: This is a mixin, called via super().__init__() from Routine.
@@ -354,7 +354,7 @@ class LifecycleMixin:
         _after_hooks: List of functions to call after execution.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize LifecycleMixin.
 
         Note: This is a mixin, called via super().__init__() from Routine.

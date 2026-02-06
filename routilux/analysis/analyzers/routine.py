@@ -27,7 +27,7 @@ class RoutineAnalyzer:
     conversion to visualization formats like D2.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the routine analyzer."""
         self.routines: list[dict[str, Any]] = []
 

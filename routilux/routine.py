@@ -122,7 +122,7 @@ class Routine(ConfigMixin, ExecutionMixin, LifecycleMixin, Serializable):
             ...             job_state.update_routine_state(routine_id, {'counter': counter + 1})
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Routine object.
 
         Note:
