@@ -297,7 +297,9 @@ class RoutineAnalyzer:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value
         elif isinstance(node, ast.Str):  # Python < 3.8 compatibility
-            return node.s
+            # node.s is typed as Any, so we need to cast it
+            s_val: Any = node.s
+            return s_val if isinstance(s_val, str) else None
         return None
 
     def _extract_literal_value(self, node: ast.AST) -> Any:

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from routilux.event import Event
     from routilux.flow import Flow
     from routilux.job_state import JobState
+    from routilux.routine import Routine
     from routilux.slot import Slot
 
 

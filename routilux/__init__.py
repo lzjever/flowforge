@@ -4,6 +4,15 @@ Routilux - Event-driven workflow orchestration framework
 Provides flexible connection, state management, and workflow orchestration capabilities.
 """
 
+# Import metrics
+from routilux.metrics import (
+    Counter,
+    Gauge,
+    Histogram,
+    MetricTimer,
+    MetricsCollector,
+)
+
 # Import analysis tools
 from routilux.analysis import (
     BaseFormatter,
@@ -96,6 +105,12 @@ __all__ = [
     "DataValidator",
     # Built-in routines - Control flow
     "ConditionalRouter",
+    # Metrics
+    "MetricsCollector",
+    "Counter",
+    "Gauge",
+    "Histogram",
+    "MetricTimer",
     # Analysis tools
     "RoutineAnalyzer",
     "analyze_routine_file",

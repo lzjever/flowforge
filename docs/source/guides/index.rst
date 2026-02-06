@@ -6,3 +6,4 @@ Guides
 
     performance_tuning
     concurrency
+    metrics

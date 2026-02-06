@@ -171,9 +171,8 @@ class ErrorHandler(Serializable):
         super().__init__()
         # Support both string and enum
         if isinstance(strategy, str):
-            self.strategy: ErrorStrategy = ErrorStrategy(strategy)
-        else:
-            self.strategy: ErrorStrategy = strategy
+            strategy = ErrorStrategy(strategy)
+        self.strategy: ErrorStrategy = strategy
         self.max_retries: int = max_retries
         self.retry_delay: float = retry_delay
         self.retry_backoff: float = retry_backoff

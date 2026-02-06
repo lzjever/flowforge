@@ -184,12 +184,14 @@ class WorkflowAnalyzer:
             source_file = inspect.getfile(routine.__class__)
             if source_file and Path(source_file).exists():
                 # Analyze the file
-                analysis = self.routine_analyzer.analyze_file(source_file)
+                analysis: dict[str, Any] = self.routine_analyzer.analyze_file(source_file)
 
                 # Find the specific routine class in the analysis
-                for routine_data in analysis.get("routines", []):
-                    if routine_data["name"] == routine.__class__.__name__:
-                        return routine_data
+                routines_list = analysis.get("routines", [])
+                if isinstance(routines_list, list):
+                    for routine_data in routines_list:
+                        if isinstance(routine_data, dict) and routine_data.get("name") == routine.__class__.__name__:
+                            return routine_data
         except (OSError, TypeError):
             # Source file not available (e.g., built-in, dynamically created)
             pass
@@ -262,12 +264,13 @@ class WorkflowAnalyzer:
             source_routine = connection.source_event.routine
             target_routine = connection.target_slot.routine
 
-            source_routine_id = self._get_routine_id(source_routine, flow)
-            target_routine_id = self._get_routine_id(target_routine, flow)
+            if source_routine is not None and target_routine is not None:
+                source_routine_id = self._get_routine_id(source_routine, flow)
+                target_routine_id = self._get_routine_id(target_routine, flow)
 
-            if source_routine_id and target_routine_id and source_routine_id != target_routine_id:
-                if source_routine_id not in dependency_graph[target_routine_id]:
-                    dependency_graph[target_routine_id].append(source_routine_id)
+                if source_routine_id and target_routine_id and source_routine_id != target_routine_id:
+                    if source_routine_id not in dependency_graph[target_routine_id]:
+                        dependency_graph[target_routine_id].append(source_routine_id)
 
         return dependency_graph
 
@@ -506,10 +509,10 @@ class WorkflowAnalyzer:
             file_path = Path(routine_analysis)
             if file_path.exists():
                 with open(file_path, encoding="utf-8") as f:
-                    return json.load(f)
-        except (OSError, json.JSONDecodeError) as e:
+                    result: Any = json.load(f)
+                    return result if isinstance(result, dict) else None
+        except (OSError, json.JSONDecodeError):
             # Silently fail - will use basic info
-            e
             pass
 
         return None
@@ -533,9 +536,10 @@ class WorkflowAnalyzer:
         routines_list = routine_analysis_data.get("routines", [])
 
         # Find matching routine by class name
-        for routine_info in routines_list:
-            if routine_info.get("name") == class_name:
-                return routine_info
+        if isinstance(routines_list, list):
+            for routine_info in routines_list:
+                if isinstance(routine_info, dict) and routine_info.get("name") == class_name:
+                    return routine_info
 
         return None
 

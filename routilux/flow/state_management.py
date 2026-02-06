@@ -348,12 +348,12 @@ def resume_flow(flow: "Flow", job_state: "JobState") -> "JobState":
 
     # Process deferred events (emit them before processing pending tasks)
     for event_info in job_state.deferred_events:
-        routine_id = event_info.get("routine_id")
+        event_routine_id: Optional[str] = event_info.get("routine_id")
         event_name = event_info.get("event_name")
         event_data = event_info.get("data", {})
 
-        if routine_id in flow.routines:
-            routine = flow.routines[routine_id]
+        if event_routine_id in flow.routines:
+            routine = flow.routines[event_routine_id]
             try:
                 # Ensure routine has the corresponding event
                 if event_name and routine.get_event(str(event_name)):
@@ -362,7 +362,7 @@ def resume_flow(flow: "Flow", job_state: "JobState") -> "JobState":
                     import warnings
 
                     warnings.warn(
-                        f"Deferred event '{event_name}' not found in routine '{routine_id}'"
+                        f"Deferred event '{event_name}' not found in routine '{event_routine_id}'"
                     )
             except Exception as e:
                 import warnings

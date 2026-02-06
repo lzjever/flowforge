@@ -37,11 +37,14 @@ def build_dependency_graph(
 
     for conn in connections:
         if conn.source_event is not None and conn.target_slot is not None:
-            source_rid = get_routine_id(conn.source_event.routine)
-            target_rid = get_routine_id(conn.target_slot.routine)
+            source_event_routine = conn.source_event.routine
+            target_slot_routine = conn.target_slot.routine
+            if source_event_routine is not None and target_slot_routine is not None:
+                source_rid = get_routine_id(source_event_routine)
+                target_rid = get_routine_id(target_slot_routine)
 
-            if source_rid and target_rid and source_rid != target_rid:
-                graph[target_rid].add(source_rid)
+                if source_rid and target_rid and source_rid != target_rid:
+                    graph[target_rid].add(source_rid)
 
     return graph
 

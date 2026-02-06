@@ -70,7 +70,7 @@ class Event(Serializable):
         """
         super().__init__()
         self.name: str = name
-        self.routine: Routine = routine
+        self.routine: Routine | None = routine
         self.output_params: list[str] = output_params or []
         self.connected_slots: list[Slot] = []
 

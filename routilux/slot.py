@@ -134,7 +134,7 @@ class Slot(Serializable):
         """
         super().__init__()
         self.name: str = name
-        self.routine: Routine = routine
+        self.routine: Routine | None = routine
         self.handler: Callable | None = handler
         self.merge_strategy: Any = merge_strategy
         self.validator: Validator | None = validator
@@ -452,9 +452,13 @@ class Slot(Serializable):
 
             # Update self._data with the merged result
             # This ensures state consistency for future merges
-            self._data = merged_result.copy() if isinstance(merged_result, dict) else merged_result
-
-            return merged_result
+            if isinstance(merged_result, dict):
+                self._data = merged_result.copy()
+                return merged_result
+            else:
+                # Non-dict result: still store it, but return empty dict for type safety
+                self._data = merged_result  # type: ignore[assignment]
+                return {}
 
         else:
             # Fallback: treat unknown strategy as "override"

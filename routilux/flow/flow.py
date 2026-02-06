@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from routilux.event import Event
     from routilux.execution_tracker import ExecutionTracker
     from routilux.job_state import JobState
+    from routilux.metrics import MetricsCollector
     from routilux.routine import Routine
     from routilux.slot import Slot
 
@@ -103,6 +104,7 @@ class Flow(Serializable):
         self._current_flow: Flow | None = None
         self.execution_tracker: ExecutionTracker | None = None
         self.error_handler: ErrorHandler | None = None
+        self.metrics_collector: MetricsCollector | None = None
         self._paused: bool = False
 
         self.execution_strategy: str = execution_strategy
