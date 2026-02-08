@@ -21,17 +21,20 @@ if TYPE_CHECKING:
     from routilux.core.worker import WorkerState
 
 from routilux.core.context import JobContext
+from routilux.core.interfaces import IEventHandler
 from routilux.core.slot import SlotQueueFullError
 from routilux.core.status import ExecutionStatus
 
 logger = logging.getLogger(__name__)
 
 
-class Runtime:
+class Runtime(IEventHandler):
     """Centralized execution manager for workflow execution.
 
     The Runtime manages all workflow executions with a shared thread pool,
     provides worker tracking, and handles event routing.
+
+    Implements IEventHandler for processing emitted events.
 
     Key Features:
         - Thread pool management (shared across all workers)

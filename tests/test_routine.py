@@ -138,3 +138,65 @@ class TestRoutineIntegration:
         assert config["initialized"] is True
         assert "output" in routine._events
         assert "input" in routine._slots
+
+
+class TestRoutineExecutionContext:
+    """Routine ExecutionContext 集成测试"""
+
+    def test_emit_uses_execution_context(self):
+        """Test that emit() can access worker_state through ExecutionContext."""
+        from routilux.core import Flow, Runtime
+        from routilux.core.context import ExecutionContext, set_current_execution_context
+
+        # Create test routines
+        class TestSourceRoutine(Routine):
+            def __init__(self):
+                super().__init__()
+                self.output = self.add_event("output", ["data"])
+
+        class TestDestRoutine(Routine):
+            def __init__(self):
+                super().__init__()
+                self.input = self.add_slot("input")
+                self.last_input = None
+
+        # Create flow with routines
+        flow = Flow("test_flow")
+        runtime = Runtime()
+
+        source = TestSourceRoutine()
+        dest = TestDestRoutine()
+        flow.add_routine(source, "source")
+        flow.add_routine(dest, "dest")
+        flow.connect("source", "output", "dest", "input")
+
+        # Register flow
+        from routilux.core.registry import FlowRegistry
+        FlowRegistry.get_instance().register(flow)
+
+        # Create worker state
+        worker_state = runtime.exec("test_flow")
+
+        # Set execution context
+        ctx = ExecutionContext(
+            flow=flow,
+            worker_state=worker_state,
+            routine_id="source",
+            job_context=None
+        )
+        set_current_execution_context(ctx)
+
+        # Emit should work without explicit runtime parameter
+        # It should get worker_state from ExecutionContext
+        source.emit("output", data="test")
+
+        # Give some time for the event to be processed
+        import time
+        time.sleep(0.1)
+
+        # Verify dest received the data in its slot
+        assert len(dest.input._queue) > 0
+        assert dest.input._queue[0].data.get("data") == "test"
+
+        # Cleanup
+        runtime.shutdown(wait=False)

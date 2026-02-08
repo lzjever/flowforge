@@ -115,9 +115,6 @@ _current_job: ContextVar[JobContext | None] = ContextVar("_current_job", default
 _current_execution_context: ContextVar[ExecutionContext | None] = ContextVar(
     "_current_execution_context", default=None
 )
-_current_execution_context: ContextVar[ExecutionContext | None] = ContextVar(
-    "_current_execution_context", default=None
-)
 
 
 @dataclass

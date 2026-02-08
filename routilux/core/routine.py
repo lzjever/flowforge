@@ -223,23 +223,30 @@ class Routine(Serializable):
 
         event = self._events[event_name]
 
-        # Get runtime from worker_state if not provided
-        if runtime is None:
-            worker_state_for_runtime = worker_state or _get_current_worker_state()
-            if worker_state_for_runtime:
-                runtime = getattr(worker_state_for_runtime, "_runtime", None)
-            if runtime is None:
-                raise RuntimeError(
-                    "Runtime is required for emit(). "
-                    "Provide runtime parameter or ensure routine is executing within Runtime context."
-                )
+        # Try to get context from ExecutionContext first
+        from routilux.core.context import get_current_execution_context
+
+        ctx = get_current_execution_context()
+
+        # Determine worker_state
+        if worker_state is None:
+            if ctx:
+                worker_state = ctx.worker_state
+            else:
+                worker_state = _get_current_worker_state()
 
         if worker_state is None:
-            worker_state = _get_current_worker_state()
-            if worker_state is None:
-                raise RuntimeError(
-                    "WorkerState is required for emit(). Provide worker_state parameter."
-                )
+            raise RuntimeError(
+                "WorkerState is required for emit(). "
+                "Provide worker_state parameter or ensure routine is executing within Runtime context."
+            )
+
+        # Determine runtime (for backwards compatibility)
+        if runtime is None:
+            runtime = getattr(worker_state, "_runtime", None)
+            if runtime is None and ctx:
+                # Use ExecutionContext - Flow in ctx implements routing interface
+                runtime = ctx
 
         event.emit(runtime=runtime, worker_state=worker_state, **kwargs)
 

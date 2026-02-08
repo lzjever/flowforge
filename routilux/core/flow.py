@@ -23,12 +23,15 @@ logger = logging.getLogger(__name__)
 SERIALIZATION_VERSION = 1
 SUPPORTED_SERIALIZATION_VERSIONS = {1}
 
+# Direct imports for data classes (no circular dependency)
+from routilux.core.connection import Connection
+from routilux.core.event import Event
+from routilux.core.slot import Slot
+
+# Keep TYPE_CHECKING for classes with potential circular dependency
 if TYPE_CHECKING:
-    from routilux.core.connection import Connection
     from routilux.core.error import ErrorHandler
-    from routilux.core.event import Event
     from routilux.core.routine import Routine
-    from routilux.core.slot import Slot
 
 
 class WorkerNotRunningError(ValueError):
