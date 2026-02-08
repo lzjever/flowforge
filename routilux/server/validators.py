@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from routilux.flow import Flow
+from routilux.core import Flow
 from routilux.monitoring.storage import flow_store
 
 

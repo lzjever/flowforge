@@ -5,12 +5,14 @@ This is the entry point for the Routilux monitoring and flow builder API.
 """
 
 import os
+import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from routilux.server.audit import get_audit_logger, hash_api_key
 from routilux.server.middleware.auth import RequireAuth
 from routilux.server.routes import (
     breakpoints,
@@ -164,6 +166,44 @@ app.add_middleware(
 
 # GZip middleware for response compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Audit middleware for logging all HTTP requests
+audit_logger = get_audit_logger()
+
+
+@app.middleware("http")
+async def audit_middleware(request: Request, call_next):
+    """Middleware to audit all HTTP requests."""
+    start_time = time.time()
+    client_ip = request.client.host if request.client else None
+    api_key = request.headers.get("X-API-Key")
+    api_key_hash = hash_api_key(api_key) if api_key else None
+
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - start_time) * 1000
+
+        audit_logger.log_api_call(
+            endpoint=str(request.url.path),
+            method=request.method,
+            status=response.status_code,
+            duration_ms=duration_ms,
+            api_key_hash=api_key_hash,
+            ip_address=client_ip,
+        )
+        return response
+    except Exception:
+        duration_ms = (time.time() - start_time) * 1000
+        audit_logger.log_api_call(
+            endpoint=str(request.url.path),
+            method=request.method,
+            status=500,
+            duration_ms=duration_ms,
+            api_key_hash=api_key_hash,
+            ip_address=client_ip,
+        )
+        raise
+
 
 # Setup rate limiting
 from routilux.server.middleware.rate_limit import setup_rate_limiting  # noqa: E402

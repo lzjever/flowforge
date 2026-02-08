@@ -3,8 +3,8 @@
 import pytest
 
 from routilux import Routine
-from routilux.job_state import JobState
-from routilux.slot import Slot
+from routilux.core import WorkerState
+from routilux.core import Slot
 
 
 class TestSlotMergeDataEdgeCases:
@@ -206,7 +206,7 @@ class TestSlotReceiveEdgeCases:
 
     def test_receive_with_job_state_context(self):
         """Test that job_state is set in context during handler execution."""
-        from routilux.routine import _current_job_state
+        from routilux.core import get_current_job
 
         result_context = []
 
@@ -338,7 +338,7 @@ class TestSlotConnectionEdgeCases:
 
     def test_connect_same_event_twice(self):
         """Test connecting the same event twice."""
-        from routilux.event import Event
+        from routilux.core import Event
 
         slot = Slot(name="test")
         event = Event(name="test_event")
@@ -351,7 +351,7 @@ class TestSlotConnectionEdgeCases:
 
     def test_disconnect_non_connected_event(self):
         """Test disconnecting an event that is not connected."""
-        from routilux.event import Event
+        from routilux.core import Event
 
         slot = Slot(name="test")
         event = Event(name="test_event")
@@ -363,7 +363,7 @@ class TestSlotConnectionEdgeCases:
 
     def test_connect_multiple_events(self):
         """Test connecting multiple events."""
-        from routilux.event import Event
+        from routilux.core import Event
 
         slot = Slot(name="test")
         event1 = Event(name="event1")
@@ -381,7 +381,7 @@ class TestSlotConnectionEdgeCases:
 
     def test_disconnect_from_multiple_events(self):
         """Test disconnecting from multiple events."""
-        from routilux.event import Event
+        from routilux.core import Event
 
         slot = Slot(name="test")
         event1 = Event(name="event1")

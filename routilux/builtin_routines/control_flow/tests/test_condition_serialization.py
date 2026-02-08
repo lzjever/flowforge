@@ -6,7 +6,7 @@ import unittest
 
 from routilux import Flow
 from routilux.builtin_routines.control_flow import ConditionalRouter
-from routilux.slot import Slot
+from routilux.core import Slot
 
 
 # Module-level function for testing function condition serialization

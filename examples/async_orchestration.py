@@ -10,7 +10,7 @@ This example demonstrates concurrent task execution:
 import time
 
 from routilux import Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class UserFetcher(Routine):

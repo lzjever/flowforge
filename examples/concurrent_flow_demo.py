@@ -329,7 +329,7 @@ def test_concurrent_execution():
     # Wait for all concurrent tasks to complete
     # In concurrent mode, tasks run asynchronously, so we need to wait
     # Using JobState.wait_for_completion() is the proper way to wait
-    from routilux.job_state import JobState
+    from routilux.core import WorkerState
 
     if flow.execution_strategy == "concurrent":
         JobState.wait_for_completion(flow, job_state, timeout=2.0)
@@ -366,7 +366,7 @@ def test_sequential_vs_concurrent():
         execution_time = time.time() - start_time
 
         # Wait for completion (concurrent tasks run asynchronously)
-        from routilux.job_state import JobState
+        from routilux.core import WorkerState
 
         if strategy == "concurrent":
             JobState.wait_for_completion(
@@ -422,7 +422,7 @@ def test_concurrent_with_error_handling():
     execution_time = time.time() - start_time
 
     # Wait for concurrent tasks to complete
-    from routilux.job_state import JobState
+    from routilux.core import WorkerState
 
     if flow.execution_strategy == "concurrent":
         JobState.wait_for_completion(flow, job_state, timeout=2.0)
@@ -527,7 +527,7 @@ def main():
         # 3. Use context managers or try/finally blocks to ensure cleanup
         #
         # Example:
-        #   from routilux.job_state import JobState
+        #   from routilux.core import WorkerState
         #   flow = Flow(execution_strategy="concurrent")
         #   try:
         #       job_state = flow.execute(...)

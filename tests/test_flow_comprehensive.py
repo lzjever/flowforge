@@ -5,7 +5,7 @@ Flow 综合测试用例 - 补充缺失的功能测试
 import pytest
 
 from routilux import ErrorHandler, ErrorStrategy, Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestFlowCancel:

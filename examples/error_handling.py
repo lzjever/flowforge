@@ -11,7 +11,7 @@ import random
 
 from routilux import Flow, Routine
 from routilux.exceptions import ExecutionError, RoutiluxError
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class RiskyOperation(Routine):

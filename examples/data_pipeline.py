@@ -11,7 +11,7 @@ This example demonstrates a realistic data processing workflow:
 
 from routilux import Flow, Routine
 from routilux.exceptions import RoutiluxError
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class DataIngestor(Routine):

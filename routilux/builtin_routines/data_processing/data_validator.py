@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from routilux.routine import Routine
+from routilux.core import Routine
 
 
 class DataValidator(Routine):

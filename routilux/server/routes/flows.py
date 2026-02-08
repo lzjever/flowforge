@@ -6,7 +6,7 @@ from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from routilux.flow import Flow
+from routilux.core import Flow
 from routilux.monitoring.monitor_service import get_monitor_service
 from routilux.monitoring.registry import MonitoringRegistry
 from routilux.monitoring.storage import flow_store

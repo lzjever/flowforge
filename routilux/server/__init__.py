@@ -11,11 +11,22 @@ This module provides REST API and WebSocket endpoints for:
 This is an optional module. Install with: pip install routilux[api]
 """
 
-__all__ = ["app"]
+__all__ = ["app", "config"]
 
+# Export config module - this doesn't require FastAPI
+from routilux.server import config
+
+# Import app only if FastAPI is available
 try:
     from routilux.server.main import app
-except ImportError as e:
-    raise ImportError(
-        "FastAPI dependencies are not installed. Install them with: pip install routilux[api]"
-    ) from e
+    _app_available = True
+except ImportError:
+    _app_available = False
+    app = None
+
+def _ensure_fastapi():
+    """Ensure FastAPI dependencies are available."""
+    if not _app_available:
+        raise ImportError(
+            "FastAPI dependencies are not installed. Install them with: pip install routilux[api]"
+        )

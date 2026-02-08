@@ -6,7 +6,7 @@ to multiple connected slots, especially when downstream slots emit further event
 """
 
 from routilux import Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class ExecutionOrderTracker:

@@ -118,7 +118,11 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
-# Minimum coverage threshold (optional, can be enabled later)
-# fail_under = 80
+# Minimum coverage threshold - set to 20% as baseline (current coverage ~23%)
+# This establishes a floor to prevent regression while allowing room for improvement
+fail_under = 20
+# TODO: Gradually increase threshold toward 80% target as test coverage improves
+# Current baseline: ~23% (2026-02)
+# Roadmap: 30% by Q1, 50% by Q2, 80% by Q3
 
 

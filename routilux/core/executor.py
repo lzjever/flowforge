@@ -221,27 +221,52 @@ class WorkerExecutor:
         self._cleanup()
 
     def _execute_task(self, task: SlotActivationTask) -> None:
-        """Execute a single task.
+        """Execute a routine task with data from a slot.
 
-        This method sets the unified execution context (ExecutionContext) in context variables
-        before executing the task. This provides a single source of truth for all execution
+        This is the core execution method that processes SlotActivationTask objects.
+        It sets up the unified execution context (ExecutionContext) in context variables
+        before executing the task, providing a single source of truth for all execution
         context information.
 
+        Execution Flow:
+            1. Save current context variables (for restoration after execution)
+            2. Build unified ExecutionContext with flow, worker_state, routine_id, job_context
+            3. Set context variables (execution_context, worker_state, job_context)
+            4. Enqueue data to the target slot
+            5. Trigger routine activation check (may execute routine logic)
+            6. Check if routine should be marked IDLE (no pending data)
+            7. Handle any errors via error handler
+            8. Restore previous context variables
+
+        Context Management:
+            - Uses contextvars to provide thread-local execution context
+            - ExecutionContext provides unified access to flow, worker_state, routine_id, job_context
+            - Context is properly restored after execution (even on error)
+
         Args:
-            task: SlotActivationTask to execute
+            task: SlotActivationTask containing slot, data, and job_context
+
+        Raises:
+            Exception: Propagates exceptions from slot enqueue or activation check
+                       (logged and handled by error handler if available)
+
+        Note:
+            - This method is called from the global thread pool (not event loop thread)
+            - Event routing is handled separately via EventRoutingTask in event loop
+            - Routine logic execution happens during activation check, not here
         """
-        # Save old context for restoration
+        # Step 1: Save old context for restoration (ensures isolation)
         old_execution_context = get_current_execution_context()
         old_worker_state = _current_worker_state.get(None)
         old_job = _current_job.get(None)
 
         try:
-            # Get routine_id before setting context
+            # Step 2: Get routine_id before setting context (needed for ExecutionContext)
             routine_id = ""
             if task.slot.routine:
                 routine_id = self.flow._get_routine_id(task.slot.routine) or ""
 
-            # Build complete ExecutionContext
+            # Step 3: Build complete ExecutionContext (single source of truth)
             ctx = ExecutionContext(
                 flow=self.flow,
                 worker_state=self.worker_state,
@@ -249,7 +274,7 @@ class WorkerExecutor:
                 job_context=task.job_context,
             )
 
-            # Set unified execution context
+            # Step 4: Set unified execution context (thread-local via contextvars)
             set_current_execution_context(ctx)
             set_current_worker_state(self.worker_state)
             if task.job_context:
@@ -260,7 +285,7 @@ class WorkerExecutor:
             # NOTE: No longer set routine._current_flow or routine._current_runtime
             # All context information is now available via ExecutionContext
 
-            # Enqueue data to slot
+            # Step 5: Enqueue data to slot (triggers downstream processing)
             from datetime import datetime
 
             task.slot.enqueue(
@@ -273,34 +298,39 @@ class WorkerExecutor:
                 emitted_at=datetime.now(),
             )
 
-            # Trigger routine activation check
+            # Step 6: Trigger routine activation check
+            # This may execute the routine's logic() if activation policy allows
             routine = task.slot.routine
             if routine is not None:
                 runtime = getattr(self.worker_state, "_runtime", None)
                 if runtime:
                     runtime._check_routine_activation(routine, self.worker_state)
 
-            # Check if routine should be marked as IDLE
+            # Step 7: Check if routine should be marked as IDLE
+            # A routine is IDLE when all its slots have no unconsumed data
             if task.slot.routine:
                 routine_id = self.flow._get_routine_id(task.slot.routine)
                 if routine_id:
+                    # Check all slots for pending data
                     has_pending_data = False
                     for slot in task.slot.routine.slots.values():
                         if slot.get_unconsumed_count() > 0:
                             has_pending_data = True
                             break
 
+                    # Mark as IDLE if no pending data
                     if not has_pending_data:
                         self.worker_state.update_routine_state(
                             routine_id, {"status": RoutineStatus.IDLE.value}
                         )
 
+                        # Check if entire worker is idle (all routines idle + no pending tasks)
                         if self._all_routines_idle() and self._is_complete():
                             self._handle_idle()
 
         except Exception as e:
+            # Step 8: Handle errors via error handler if available
             logger.exception(f"Error executing task: {e}")
-            # Handle error via error handler if available
             if task.slot.routine:
                 routine_id = self.flow._get_routine_id(task.slot.routine)
                 if routine_id:
@@ -316,7 +346,8 @@ class WorkerExecutor:
                             self.worker_state,
                         )
         finally:
-            # Restore old context
+            # Step 9: Always restore old context (even on error)
+            # This prevents context leakage between tasks
             set_current_execution_context(old_execution_context)
             if old_worker_state:
                 set_current_worker_state(old_worker_state)
@@ -326,7 +357,6 @@ class WorkerExecutor:
                 set_current_job(old_job)
             else:
                 set_current_job(None)
-                logger.exception("Failed to restore context variables")
 
     def enqueue_task(self, task: Any) -> None:
         """Enqueue a task for execution.

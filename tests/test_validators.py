@@ -2,8 +2,8 @@
 
 import pytest
 
-from routilux.routine import Routine
-from routilux.slot import Slot
+from routilux.core import Routine
+from routilux.core import Slot
 from routilux.validators import ValidationError, Validator
 
 

@@ -3,7 +3,7 @@
 import gc
 
 from routilux import Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class ChainProcessorRoutine(Routine):

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 from routilux import Routine, Flow
-from routilux.error_handler import ErrorHandler, ErrorStrategy
+from routilux.core import ErrorHandler, ErrorStrategy
 from serilux import register_serializable
 
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from routilux.job_state import ExecutionRecord, JobState
+from routilux.core import ExecutionRecord, WorkerState
 
 
 class TestExecutionRecordEdgeCases:

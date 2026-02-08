@@ -10,7 +10,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-from routilux.routine import Routine
+from routilux.core import Routine
 
 
 class TimeProvider(Routine):

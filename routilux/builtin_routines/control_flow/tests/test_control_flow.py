@@ -9,7 +9,7 @@ import unittest
 from routilux.builtin_routines.control_flow import (
     ConditionalRouter,
 )
-from routilux.slot import Slot
+from routilux.core import Slot
 
 
 class TestConditionalRouter(unittest.TestCase):

@@ -66,7 +66,7 @@ def test_retry_strategy():
     # Execute
     job_state = flow.execute(unreliable_id)
 
-    from routilux.job_state import JobState
+    from routilux.core import WorkerState
 
     JobState.wait_for_completion(flow, job_state, timeout=2.0)
 

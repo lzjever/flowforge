@@ -123,7 +123,7 @@ class TestAggregatorPattern:
         job_state = flow.execute(source_id)
 
         # Wait for all tasks to complete
-        from routilux.job_state import JobState
+        from routilux.core import WorkerState
 
         JobState.wait_for_completion(flow, job_state, timeout=2.0)
         time.sleep(0.1)  # Additional wait for handler execution
@@ -169,7 +169,7 @@ class TestAggregatorPattern:
         job_state = flow.execute(source_id)
 
         # Wait for all tasks to complete
-        from routilux.job_state import JobState
+        from routilux.core import WorkerState
 
         JobState.wait_for_completion(flow, job_state, timeout=2.0)
         time.sleep(0.1)  # Additional wait for handler execution
@@ -205,7 +205,7 @@ class TestAggregatorPattern:
             job_state = flow.execute(source_id)
 
             # Wait for completion
-            from routilux.job_state import JobState
+            from routilux.core import WorkerState
 
             JobState.wait_for_completion(flow, job_state, timeout=5.0)
             time.sleep(0.1)  # Additional wait for handler execution

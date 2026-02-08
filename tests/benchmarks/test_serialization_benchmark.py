@@ -1,6 +1,6 @@
 """Benchmarks for serialization performance."""
 
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestSerializationBenchmark:

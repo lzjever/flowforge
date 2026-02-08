@@ -18,8 +18,8 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple
 from routilux import Flow, JobState
-from routilux.error_handler import ErrorHandler, ErrorStrategy
-from routilux.job_state import JobState
+from routilux.core import ErrorHandler, ErrorStrategy
+from routilux.core import WorkerState
 from playground.retry_serialization_demo.failing_routine import (
     FailingRoutine,
     LongRunningRoutine,

@@ -11,7 +11,7 @@ from routilux.builtin_routines.utils import (
     DataFlattener,
     TimeProvider,
 )
-from routilux.slot import Slot
+from routilux.core import Slot
 
 
 class TestTimeProvider(unittest.TestCase):

@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from routilux import ErrorHandler, ErrorStrategy, Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestConcurrentExecutionBasic:

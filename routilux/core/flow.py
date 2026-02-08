@@ -6,11 +6,22 @@ Flow manager responsible for managing multiple Routine nodes and execution flow.
 
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from serilux import Serializable
+
+from routilux.exceptions import SerializationError
+
+logger = logging.getLogger(__name__)
+
+# Serialization version management
+# These must be defined here to avoid circular import with core/__init__.py
+SERIALIZATION_VERSION = 1
+SUPPORTED_SERIALIZATION_VERSIONS = {1}
 
 if TYPE_CHECKING:
     from routilux.core.connection import Connection
@@ -63,6 +74,9 @@ class Flow(Serializable):
         self.connections: list[Connection] = []
         self.error_handler: ErrorHandler | None = None
 
+        # Serialization version management
+        self._serialization_version: int = SERIALIZATION_VERSION
+
         # Thread safety lock for configuration operations
         self._config_lock: threading.RLock = threading.RLock()
 
@@ -96,6 +110,7 @@ class Flow(Serializable):
                 "error_handler",
                 "routines",
                 "connections",
+                "_serialization_version",
             ]
         )
 
@@ -301,6 +316,9 @@ class Flow(Serializable):
         """Serialize Flow."""
         data = super().serialize()
 
+        # Add version field for serialization format management
+        data["version"] = self._serialization_version
+
         # Serialize routines
         if "routines" in data:
             data["routines"] = {rid: routine.serialize() for rid, routine in self.routines.items()}
@@ -325,9 +343,51 @@ class Flow(Serializable):
         return data
 
     def deserialize(self, data: dict[str, Any], strict: bool = False, registry: Any = None) -> None:
-        """Deserialize Flow."""
+        """Deserialize Flow.
+
+        Args:
+            data: Serialized data dictionary
+            strict: Whether to use strict deserialization
+            registry: Optional registry for deserialization
+
+        Raises:
+            SerializationError: If version is not supported
+        """
         from routilux.core.connection import Connection
         from routilux.core.routine import Routine
+
+        # Validate serialization version
+        version = data.get("version")
+
+        # Validate version type if present
+        if version is not None and not isinstance(version, int):
+            raise SerializationError(
+                f"Version must be an integer, got {type(version).__name__}"
+            )
+
+        if version is not None and version not in SUPPORTED_SERIALIZATION_VERSIONS:
+            raise SerializationError(
+                f"Unsupported serialization version: {version}. "
+                f"Supported versions: {SUPPORTED_SERIALIZATION_VERSIONS}"
+            )
+        # If version is missing, treat as legacy data (version 0, before versioning was added)
+        # and let it proceed for backward compatibility
+        if version is None:
+            # Legacy data - issue deprecation warning
+            warnings.warn(
+                "Deserializing Flow data without version field. "
+                "This data was created before versioning was introduced. "
+                "Please re-serialize your data to use the new format.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            logger.info("Deserializing legacy Flow data (no version field)")
+            self._serialization_version = SERIALIZATION_VERSION
+        else:
+            self._serialization_version = version
+
+        # Remove version from data before deserializing (not a serializable field)
+        data.pop("version", None)
 
         # Deserialize routines first
         routines_data = data.pop("routines", {})

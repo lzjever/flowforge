@@ -11,7 +11,7 @@ from routilux.builtin_routines.data_processing import (
     DataTransformer,
     DataValidator,
 )
-from routilux.slot import Slot
+from routilux.core import Slot
 
 
 class TestDataTransformer(unittest.TestCase):

@@ -7,10 +7,15 @@ All-or-nothing: when ROUTILUX_API_KEY_ENABLED=true, every endpoint (REST and
 WebSocket) requires a valid X-API-Key; when false, all are public. No mixed mode.
 """
 
-from fastapi import Depends, HTTPException, Security
+import logging
+
+from fastapi import Depends, HTTPException, Security, Request
 from fastapi.security import APIKeyHeader
 
+from routilux.server.audit import get_audit_logger
 from routilux.server.config import get_config
+
+logger = logging.getLogger(__name__)
 
 # API Key header name (OpenAPI: X-API-Key, In: header)
 API_KEY_HEADER = "X-API-Key"
@@ -19,7 +24,9 @@ API_KEY_HEADER = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
 
 
-def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+def verify_api_key(
+    api_key: str = Security(api_key_header), request: Request | None = None
+) -> str:
     """Verify API key from request header.
 
     When api_key_enabled is False: allows all (returns 'anonymous').
@@ -27,6 +34,7 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
 
     Args:
         api_key: API key from request header.
+        request: FastAPI Request object for audit logging.
 
     Returns:
         API key if valid, or 'anonymous' when auth is disabled.
@@ -35,13 +43,27 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
         HTTPException: If API key is invalid or missing when auth is enabled.
     """
     config = get_config()
+    audit_logger = get_audit_logger()
+    client_ip = request.client.host if request and request.client else None
 
     # Auth disabled: allow all requests (all-or-nothing: 全部放开)
     if not config.api_key_enabled:
+        logger.warning(
+            "Authentication is disabled. Allowing anonymous access. "
+            "This should only be used for development."
+        )
         return api_key or "anonymous"
 
     # Check if API key is provided
     if not api_key:
+        logger.warning(
+            "Authentication failed: API key is missing from request headers"
+        )
+        audit_logger.log_auth_failure(
+            reason="missing_api_key",
+            ip_address=client_ip,
+            api_key_provided=False,
+        )
         raise HTTPException(
             status_code=401,
             detail={
@@ -52,6 +74,14 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
 
     # Validate API key
     if not config.is_api_key_valid(api_key):
+        logger.warning(
+            f"Authentication failed: Invalid API key provided (first 8 chars: {api_key[:8]}...)"
+        )
+        audit_logger.log_auth_failure(
+            reason="invalid_api_key",
+            ip_address=client_ip,
+            api_key_provided=True,
+        )
         raise HTTPException(
             status_code=403,
             detail={

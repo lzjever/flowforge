@@ -100,7 +100,7 @@ class ToolExecutor(Routine):
         """Execute the tool if it matches"""
         # Execution state should be stored in JobState, not routine._stats
         # Get execution count from JobState if needed
-        from routilux.routine import _current_job_state
+        from routilux.core import get_current_job
 
         job_state = _current_job_state.get(None)
         execution_count = 0
@@ -173,7 +173,7 @@ class ResultValidator(Routine):
     def validate_result(self, result: Any, tool_name: str, task_id: str, success: bool):
         """Validate tool execution result"""
         # Execution state should be stored in JobState, not routine._stats
-        from routilux.routine import _current_job_state
+        from routilux.core import get_current_job
 
         job_state = _current_job_state.get(None)
         if job_state:
@@ -232,7 +232,7 @@ class ResultAggregator(Routine):
     def aggregate_results(self, valid: bool, result: Any, task_id: str, tool_name: str):
         """Aggregate results from multiple tools"""
         # Execution state should be stored in JobState, not routine._stats
-        from routilux.routine import _current_job_state
+        from routilux.core import get_current_job
 
         job_state = _current_job_state.get(None)
         aggregation_count = 0

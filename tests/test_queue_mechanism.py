@@ -12,7 +12,7 @@ import threading
 import time
 
 from routilux import Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestNonBlockingEmit:
@@ -309,7 +309,7 @@ class TestPauseResumeSerialization:
         serialized = job_state.serialize()
 
         # 创建新 flow 并恢复（使用相同的 flow_id）
-        from routilux.job_state import JobState
+        from routilux.core import WorkerState
 
         flow2 = Flow(flow_id=flow.flow_id)  # 使用相同的 flow_id
         flow2.add_routine(SourceRoutine(), "source")

@@ -7,7 +7,7 @@ Event 综合测试用例
 import threading
 
 from routilux import ErrorHandler, ErrorStrategy, Event, Flow, Routine, Slot
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestEventConcurrentEmit:

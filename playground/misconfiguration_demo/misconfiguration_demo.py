@@ -20,7 +20,7 @@ import time
 import threading
 from typing import Dict, Any, Optional, Tuple
 from routilux import Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class DataProcessor(Routine):

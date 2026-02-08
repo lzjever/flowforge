@@ -12,7 +12,7 @@ from routilux.builtin_routines.text_processing import (
     TextClipper,
     TextRenderer,
 )
-from routilux.slot import Slot
+from routilux.core import Slot
 
 
 class TestTextClipper(unittest.TestCase):

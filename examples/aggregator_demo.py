@@ -247,7 +247,7 @@ def demo_aggregator():
     job_state = flow.execute(trigger_id, entry_params={"query": "test query"})
 
     # Wait for all async tasks to complete
-    from routilux.job_state import JobState
+    from routilux.core import WorkerState
 
     JobState.wait_for_completion(flow, job_state, timeout=2.0)
 

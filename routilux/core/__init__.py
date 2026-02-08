@@ -93,6 +93,16 @@ from routilux.core.task import EventRoutingTask, SlotActivationTask, TaskPriorit
 # Worker state and registry
 from routilux.core.worker import ExecutionRecord, WorkerState
 
+# Migration framework
+from routilux.core.migration import (
+    MigrationRegistry,
+    get_migration_registry,
+    reset_migration_registry,
+)
+
+# Serialization version management (import from flow to avoid circular import)
+from routilux.core.flow import SERIALIZATION_VERSION, SUPPORTED_SERIALIZATION_VERSIONS
+
 __all__ = [
     # Status enums
     "ExecutionStatus",
@@ -153,4 +163,11 @@ __all__ = [
     "reset_worker_manager",
     # Runtime
     "Runtime",
+    # Migration framework
+    "MigrationRegistry",
+    "get_migration_registry",
+    "reset_migration_registry",
+    # Serialization version management
+    "SERIALIZATION_VERSION",
+    "SUPPORTED_SERIALIZATION_VERSIONS",
 ]

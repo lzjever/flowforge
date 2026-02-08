@@ -14,7 +14,7 @@ import threading
 from datetime import datetime
 from typing import List, Dict, Any
 from routilux import Flow
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 from playground.concurrent_execution_demo.data_generator_routines import (
     DataSourceRoutine,
     DataProcessorRoutine,

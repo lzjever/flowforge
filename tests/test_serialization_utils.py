@@ -168,7 +168,7 @@ class TestDeserializeCallable:
     def test_deserialize_function(self):
         """测试反序列化函数"""
         # 使用一个在模块中定义的函数
-        from routilux.routine import Routine
+        from routilux.core import Routine
 
         # 序列化 Routine 类的方法
         serialized = serialize_callable(Routine.__init__)

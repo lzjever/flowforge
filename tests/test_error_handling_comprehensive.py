@@ -7,7 +7,7 @@
 import time
 
 from routilux import ErrorHandler, ErrorStrategy, Flow, Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestErrorHandlerPriority:

@@ -10,7 +10,7 @@ from typing import Any
 
 from serilux import Serializable
 
-from routilux.routine import Routine
+from routilux.core import Routine
 
 
 class DataFlattener(Routine):

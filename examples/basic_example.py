@@ -99,7 +99,7 @@ def main():
     job_state = flow.execute(source_id, entry_params={"data": "Hello, World!"})
 
     # Wait for execution to complete
-    from routilux.job_state import JobState
+    from routilux.core import WorkerState
 
     JobState.wait_for_completion(flow, job_state, timeout=2.0)
 

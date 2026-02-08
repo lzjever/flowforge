@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from routilux.core.routine import Routine
-from routilux.flow import Flow
+from routilux.core import Flow
 from routilux.tools.analysis.analyzers.routine import RoutineAnalyzer
 
 

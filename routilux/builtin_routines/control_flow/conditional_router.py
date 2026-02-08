@@ -14,7 +14,7 @@ from serilux import (
     serialize_callable_with_fallback,
 )
 
-from routilux.routine import Routine
+from routilux.core import Routine
 
 
 @register_serializable

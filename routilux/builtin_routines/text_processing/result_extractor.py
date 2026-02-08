@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any, Callable, Protocol
 
-from routilux.routine import Routine
+from routilux.core import Routine
 
 logger = logging.getLogger(__name__)
 

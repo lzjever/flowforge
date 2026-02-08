@@ -309,71 +309,78 @@ class Runtime:
         event_data: dict[str, Any],
         worker_state: WorkerState,
     ) -> None:
-        """Handle event emission and route to connected slots.
+        """Handle event emission and route data to all connected slots.
 
-        This method routes event data to all connected slots. It is called by
+        This method implements the core event routing mechanism, dispatching event
+        data to all slots connected to the emitted event. It is called by
         WorkerExecutor's event loop thread when processing EventRoutingTask.
 
+        Dispatching Strategy:
+            1. Get flow from registry and find all connections for this event
+            2. Get current JobContext from thread-local context (for hooks)
+            3. Record event emission in worker_state execution history
+            4. Call on_event_emit hook (may cancel further processing)
+            5. For each connected slot:
+               a. Validate event_data structure (must have "data" and "metadata")
+               b. Call on_slot_before_enqueue hook (may skip enqueue)
+               c. Enqueue data to slot (non-blocking, may raise SlotQueueFullError)
+               d. Trigger routine activation check
+            6. Handle SlotQueueFullError with warning (drops event)
+            7. Handle other exceptions with error logging
+
+        Context Variable (contextvar) Requirements:
+            This method retrieves the current JobContext from thread-local context
+            using get_current_job(). The job_context is used for:
+
+            1. Hook-based interception: on_slot_before_enqueue hook can control
+               whether data is enqueued (used for breakpoints)
+            2. Execution hooks: Hooks receive job_context for tracking/monitoring
+            3. Event tracking: Event emissions recorded with job_id for debugging
+
+        Important:
+            - This method is called from WorkerExecutor's event loop thread
+            - WorkerExecutor sets job_context in context before calling this method
+            - The job_context comes from EventRoutingTask.job_context, captured
+              when Event.emit() was called
+
+        Hook-Based Interception:
+            Before enqueueing, on_slot_before_enqueue hook is called. If the hook
+            returns should_enqueue=False, the enqueue is skipped. This mechanism
+            is used by monitoring to implement breakpoints, but can be used for
+            other interception purposes.
+
         Args:
-            event: Event that was emitted
-            event_data: Event data with "data" and "metadata" keys
-            worker_state: WorkerState for this execution
+            event: Event object that was emitted (contains name, routine ref)
+            event_data: Dictionary with "data" (payload) and "metadata" keys
+            worker_state: WorkerState for tracking execution history
 
-        **Context Variable (contextvar) Requirements:**
+        Raises:
+            No exceptions raised (errors are logged and handled internally)
 
-        This method retrieves the current ``JobContext`` from the thread-local context
-        using ``get_current_job()``. The job_context is used for:
+        Example Context Setup (for testing):
+            When testing event routing directly, ensure job_context is set:
 
-        1. **Hook-based interception**: The `on_slot_before_enqueue` hook is called
-           before enqueueing data to slots. This allows breakpoints and other
-           interceptors to control whether data is enqueued. Without job_context,
-           hooks may not function correctly.
+            .. code-block:: python
 
-        2. **Execution hooks**: Hooks receive job_context for tracking and monitoring.
+                from routilux.core.context import set_current_job
 
-        3. **Event tracking**: Event emissions are recorded with job_id for debugging.
+                worker_state, job_context = runtime.post(...)
+                set_current_job(job_context)
 
-        **Important:**
-
-        - This method is called from WorkerExecutor's event loop thread
-        - WorkerExecutor sets job_context in the context before calling this method
-        - The job_context comes from EventRoutingTask.job_context, which was
-          captured when Event.emit() was called
-
-        **For Testing:**
-
-        When testing event routing directly, ensure job_context is set in the context:
-
-        .. code-block:: python
-
-            from routilux.core.context import set_current_job
-
-            # In your test
-            worker_state, job_context = runtime.post(...)
-            set_current_job(job_context)
-
-            # Now event routing will have access to job_context
-            source.output.emit(runtime=runtime, worker_state=worker_state, data="test")
-
-        **Hook-Based Interception:**
-
-        Before enqueueing data to a slot, this method calls the
-        `on_slot_before_enqueue` hook. If the hook returns `should_enqueue=False`,
-        the enqueue operation is skipped. This mechanism is used by monitoring to
-        implement breakpoints, but can be used for other interception purposes
-        as well.
+                # Now event routing has access to job_context
+                source.output.emit(runtime=runtime, worker_state=worker_state, data="test")
         """
         from routilux.core.hooks import get_execution_hooks
         from routilux.core.registry import FlowRegistry
 
-        # Get flow to find connections
+        # Step 1: Get flow from registry to find connections
         flow_registry = FlowRegistry.get_instance()
         flow = flow_registry.get(worker_state.flow_id)
         if flow is None:
             logger.warning(f"Flow {worker_state.flow_id} not found, cannot route event")
             return
 
-        # Find connections for this event
+        # Step 2: Find all connections for this event
         connections = flow.get_connections_for_event(event)
         if not connections:
             logger.debug(
@@ -381,7 +388,7 @@ class Runtime:
             )
             return  # No consumers - normal case
 
-        # Get job context early (needed for hooks)
+        # Step 3: Get job context early (needed for hooks)
         from routilux.core.context import get_current_job
 
         job_context = get_current_job()
@@ -391,7 +398,7 @@ class Runtime:
             f"job_context={job_context.job_id if job_context else None}"
         )
 
-        # Track event emission
+        # Step 4: Track event emission and call on_event_emit hook
         source_routine_id = self._get_routine_id(event.routine, worker_state)
         hooks = get_execution_hooks()
 
@@ -403,19 +410,21 @@ class Runtime:
                 {"event_name": event.name, "data": data},
             )
 
+            # Hook may cancel event routing
             should_continue = hooks.on_event_emit(
                 event, source_routine_id, worker_state, job_context, data
             )
             if not should_continue:
                 return
 
-        # Route to all connected slots
+        # Step 5: Route to all connected slots
         for connection in connections:
             slot = connection.target_slot
             if slot is None:
                 continue
 
             try:
+                # Validate event_data structure
                 if not isinstance(event_data, dict):
                     logger.error(f"Invalid event_data type: {type(event_data).__name__}")
                     continue
@@ -435,7 +444,8 @@ class Runtime:
                 if target_routine is not None:
                     target_routine_id = flow._get_routine_id(target_routine)
 
-                # Call hook before enqueueing (only if we have routine_id)
+                # Call on_slot_before_enqueue hook (may skip enqueue)
+                # This is used for breakpoints and other interception
                 if target_routine_id is None:
                     # If we can't find routine_id, allow enqueue (backward compatibility)
                     logger.debug(f"Skipping hook call: routine_id not found for slot {slot.name}")
@@ -454,7 +464,7 @@ class Runtime:
                             logger.info(f"Skipping slot enqueue: {reason}")
                         continue
 
-                # Proceed with enqueue (if hook wasn't called or hook allowed enqueue)
+                # Enqueue data to slot (non-blocking, may raise SlotQueueFullError)
                 slot.enqueue(
                     data=data,
                     emitted_from=emitted_from,
@@ -462,13 +472,16 @@ class Runtime:
                 )
 
                 # Trigger routine activation check
+                # This may execute the routine's logic() if activation policy allows
                 routine = slot.routine
                 if routine is not None:
                     self._check_routine_activation(routine, worker_state)
 
             except SlotQueueFullError as e:
+                # Step 6: Handle backpressure (slot queue full)
                 logger.warning(f"Slot queue full, dropping event: {e}")
             except Exception as e:
+                # Step 7: Handle other errors
                 logger.exception(f"Error routing event to slot: {e}")
 
     def _check_routine_activation(self, routine: Routine, worker_state: WorkerState) -> None:

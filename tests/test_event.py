@@ -3,7 +3,7 @@ Event 测试用例
 """
 
 from routilux import Routine
-from routilux.job_state import JobState
+from routilux.core import WorkerState
 
 
 class TestEventConnection:
@@ -487,7 +487,7 @@ class TestEmitAutoFlowDetection:
 
         # Resume
         resumed_job_state = flow.resume(job_state)
-        from routilux.job_state import JobState
+        from routilux.core import WorkerState
 
         JobState.wait_for_completion(flow, resumed_job_state, timeout=2.0)
 
