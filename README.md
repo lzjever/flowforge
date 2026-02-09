@@ -87,6 +87,44 @@ pip install -e ".[dev]"
 make dev-install
 ```
 
+## 🖥️ CLI
+
+Routilux includes a command-line interface for workflow management:
+
+```bash
+# Install with CLI support
+pip install routilux[cli]
+
+# Run a workflow
+routilux run --workflow flow.yaml
+
+# Start server
+routilux server start
+
+# See all commands
+routilux --help
+```
+
+### CLI Commands
+
+- **`routilux init`** - Initialize a new project with example files
+- **`routilux run`** - Execute a workflow from a DSL file
+- **`routilux server`** - Start the HTTP server for API access
+- **`routilux list`** - List available routines or flows
+- **`routilux validate`** - Validate a workflow DSL file
+
+See [CLI Documentation](docs/cli/usage.md) for details.
+
+## 🚀 Quick Start
+
+For development with all dependencies using pip:
+
+```bash
+pip install -e ".[dev]"
+# Or using Makefile
+make dev-install
+```
+
 ## 🚀 Quick Start
 
 ### Create Your First Workflow in 3 Steps
