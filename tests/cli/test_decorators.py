@@ -2,6 +2,7 @@
 """Tests for @register_routine decorator."""
 
 import pytest
+
 from routilux.cli.decorators import register_routine
 from routilux.tools.factory.factory import ObjectFactory
 
@@ -55,8 +56,6 @@ def test_create_routine_from_factory():
 
 def test_duplicate_registration_raises():
     """Test that duplicate registration raises error."""
-    factory = ObjectFactory.get_instance()
-
     @register_routine("duplicate_test")
     def func1(data):
         return data
