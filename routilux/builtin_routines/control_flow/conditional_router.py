@@ -282,8 +282,28 @@ class ConditionalRouter(Routine):
                     "float": float,
                     "bool": bool,
                     "len": len,
-                    "getattr": getattr,
-                    "hasattr": hasattr,
+                    "max": max,
+                    "min": min,
+                    "abs": abs,
+                    "sum": sum,
+                    "any": any,
+                    "all": all,
+                    "range": range,
+                    "enumerate": enumerate,
+                    "zip": zip,
+                    "sorted": sorted,
+                    "reversed": reversed,
+                    "round": round,
+                    "pow": pow,
+                    "divmod": divmod,
+                    # Type conversions
+                    "ord": ord,
+                    "chr": chr,
+                    "bin": bin,
+                    "hex": hex,
+                    "oct": oct,
+                    # String operations
+                    "slice": slice,
                 }
             }
             # Provide data, config, and stats to the expression

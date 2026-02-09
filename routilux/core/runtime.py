@@ -737,15 +737,26 @@ class Runtime(IEventHandler):
         with self._jobs_lock:
             self._active_jobs.clear()
 
-    def wait_until_all_workers_idle(self, timeout: float = 300.0) -> bool:
+    def wait_until_all_workers_idle(self, timeout: float | None = None, check_interval: float = 0.1) -> bool:
         """Wait until all workers are idle.
 
         Args:
-            timeout: Maximum wait time in seconds
+            timeout: Maximum wait time in seconds. None means wait indefinitely (not recommended).
+                Default is 300 seconds (5 minutes).
+            check_interval: Time between status checks in seconds (default: 0.1).
 
         Returns:
             True if all workers idle, False if timeout
+
+        Note:
+            If timeout is None, this method will wait indefinitely.
+            Use with caution as it may block forever if workers never become idle.
         """
+        if timeout is None:
+            timeout = 300.0  # Default 5 minutes
+        elif timeout <= 0:
+            raise ValueError(f"timeout must be positive or None, got {timeout}")
+
         start_time = time.time()
         while time.time() - start_time < timeout:
             with self._worker_lock:
@@ -755,5 +766,5 @@ class Runtime(IEventHandler):
                 )
                 if all_idle:
                     return True
-            time.sleep(0.1)
+            time.sleep(check_interval)
         return False

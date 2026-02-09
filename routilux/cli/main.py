@@ -4,6 +4,7 @@ from pathlib import Path
 
 import click
 
+from routilux import __version__
 from routilux.cli.commands.init import initialize
 from routilux.cli.commands.list import list_cmd
 
@@ -14,7 +15,7 @@ from routilux.cli.commands.validate import validate
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version=__version__)
 @click.option(
     "--routines-dir",
     multiple=True,

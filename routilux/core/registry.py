@@ -349,9 +349,12 @@ class WorkerRegistry:
         while self._cleanup_running:
             try:
                 time.sleep(self._cleanup_interval)
+                if not self._cleanup_running:
+                    break
                 self._cleanup_completed_workers()
             except Exception as e:
                 logger.exception(f"Error in cleanup loop: {e}")
+        logger.debug("WorkerRegistry cleanup thread stopped")
 
     def _cleanup_completed_workers(self) -> None:
         """Clean up completed workers that have exceeded retention period."""
@@ -394,6 +397,25 @@ class WorkerRegistry:
 
         with self._cleanup_thread_lock:
             self._cleanup_running = False
+
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Gracefully shutdown the cleanup thread.
+
+        Args:
+            timeout: Maximum time to wait for cleanup thread to stop (seconds).
+        """
+        with self._cleanup_thread_lock:
+            if not self._cleanup_running:
+                return
+            self._cleanup_running = False
+
+        # Wait for cleanup thread to finish
+        if self._cleanup_thread is not None and self._cleanup_thread.is_alive():
+            self._cleanup_thread.join(timeout=timeout)
+            if self._cleanup_thread.is_alive():
+                logger.warning("WorkerRegistry cleanup thread did not stop within timeout")
+            else:
+                logger.debug("WorkerRegistry cleanup thread stopped gracefully")
 
 
 # Convenience functions
