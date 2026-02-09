@@ -8,7 +8,7 @@ from routilux.cli.commands.run import run
 from routilux.cli.commands.server import server
 from routilux.cli.commands.list import list_cmd
 from routilux.cli.commands.validate import validate
-# from routilux.cli.commands.init import initialize
+from routilux.cli.commands.init import initialize
 
 
 @click.group()
@@ -41,12 +41,7 @@ cli.add_command(run)
 cli.add_command(server)
 cli.add_command(list_cmd)
 cli.add_command(validate)
-
-
-@cli.command()
-def init():
-    """Initialize a new routilux project."""
-    click.echo("init command - to be implemented")
+cli.add_command(initialize, name="init")
 
 
 def main():
