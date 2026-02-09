@@ -1,9 +1,6 @@
 """Tests for 'routilux run' command."""
 
-import json
-import pytest
 from click.testing import CliRunner
-from pathlib import Path
 
 
 def test_run_requires_workflow_option():

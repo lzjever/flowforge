@@ -1,8 +1,6 @@
 """Tests for 'routilux init' command."""
 
-import pytest
 from click.testing import CliRunner
-from pathlib import Path
 
 
 def test_init_creates_project_structure(tmp_path):

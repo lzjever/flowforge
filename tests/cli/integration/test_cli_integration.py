@@ -1,9 +1,7 @@
 # tests/cli/integration/test_cli_integration.py
 """Integration tests for CLI commands."""
 
-import pytest
 from click.testing import CliRunner
-from pathlib import Path
 
 
 def test_full_workflow_cli(tmp_path):
@@ -49,9 +47,7 @@ def test_full_workflow_cli(tmp_path):
 
 def test_discovery_integration(tmp_path):
     """Test routine discovery with actual files."""
-    from routilux.cli.main import cli
     from routilux.cli.discovery import discover_routines
-    from routilux.tools.factory.factory import ObjectFactory
 
     # Create routine files
     routines_dir = tmp_path / "routines"

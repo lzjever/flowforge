@@ -1,6 +1,5 @@
 """Tests for 'routilux list' command."""
 
-import pytest
 from click.testing import CliRunner
 
 

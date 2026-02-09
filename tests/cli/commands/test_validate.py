@@ -1,8 +1,6 @@
 """Tests for 'routilux validate' command."""
 
-import pytest
 from click.testing import CliRunner
-from pathlib import Path
 
 
 def test_validate_requires_workflow_option():
