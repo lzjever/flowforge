@@ -53,6 +53,15 @@ docs = [
     "sphinx-design>=0.5.0",
 ]
 
+[project.optional-dependencies]
+cli = [
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+routilux = "routilux.cli.main:main"
+
 [project.urls]
 Homepage = "https://github.com/lzjever/routilux"
 Documentation = "https://routilux.readthedocs.io"
