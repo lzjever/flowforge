@@ -503,7 +503,7 @@ async def get_discovery_status():
     ```
     """
     import os
-    from pathlib import Path
+
     from routilux.tools.factory.factory import ObjectFactory
 
     factory = ObjectFactory.get_instance()
@@ -546,17 +546,20 @@ async def load_dsl_from_file(request: dict):
     **Response**: Flow object (same as POST /api/v1/flows)
     """
     from pathlib import Path
-    from routilux.tools.factory.factory import ObjectFactory
+
     from routilux.cli.commands.run import _load_dsl
+    from routilux.tools.factory.factory import ObjectFactory
 
     file_path = request.get("file_path")
     if not file_path:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail="file_path is required")
 
     path = Path(file_path)
     if not path.exists():
         from fastapi import HTTPException
+
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
     # Load DSL
@@ -568,8 +571,9 @@ async def load_dsl_from_file(request: dict):
 
     # Store flow
     from routilux.monitoring.storage import flow_store
+
     flow_store.add(flow)
 
     from routilux.server.routes.flows import _flow_to_response
-    return _flow_to_response(flow)
 
+    return _flow_to_response(flow)

@@ -94,6 +94,8 @@ class WorkerExecutor:
         self._paused = False
         self._lock = threading.Lock()
         self._start_time: float | None = None
+        # Counter for queued tasks (avoids race condition with Queue.empty())
+        self._pending_task_count: int = 0
 
         # Set executor reference in WorkerState
         worker_state._executor = self
@@ -164,6 +166,8 @@ class WorkerExecutor:
                 # Get task from queue
                 try:
                     task = self.task_queue.get(timeout=0.1)
+                    with self._lock:
+                        self._pending_task_count -= 1
                 except queue.Empty:
                     # Check if complete
                     if self._is_complete():
@@ -211,11 +215,13 @@ class WorkerExecutor:
                     self.task_queue.task_done()
 
             except Exception as e:
+                # Only break on fatal errors, continue on non-fatal exceptions
+                if isinstance(e, (SystemExit, KeyboardInterrupt)):
+                    raise
                 logger.exception(
                     f"Error in event loop for worker {self.worker_state.worker_id}: {e}"
                 )
-                self._handle_error(e)
-                break
+                # Continue running - don't break the loop for transient errors
 
         # Cleanup
         self._cleanup()
@@ -370,6 +376,8 @@ class WorkerExecutor:
             with self._lock:
                 self.pending_tasks.append(task)
         else:
+            with self._lock:
+                self._pending_task_count += 1
             self.task_queue.put(task)
 
     def _check_timeout(self) -> bool:
@@ -391,11 +399,13 @@ class WorkerExecutor:
     def _is_complete(self) -> bool:
         """Check if worker has no pending work.
 
+        Uses counter instead of Queue.empty() to avoid race condition.
+
         Returns:
             True if queue is empty and no active tasks
         """
         with self._lock:
-            if not self.task_queue.empty():
+            if self._pending_task_count > 0:
                 return False
             active = [f for f in self.active_tasks if not f.done()]
             return len(active) == 0
@@ -475,6 +485,10 @@ class WorkerExecutor:
                     pass
             self.active_tasks.clear()
 
+        # Note: We cannot join the event loop thread from within itself
+        # The thread will naturally terminate when _running becomes False
+        # External shutdown should call cancel() or stop() which sets _running = False
+
     def pause(self, reason: str = "", checkpoint: dict | None = None) -> None:
         """Pause worker execution.
 
@@ -496,8 +510,9 @@ class WorkerExecutor:
             self._paused = False
             self.worker_state._set_running()
 
-            # Move pending tasks back to queue
+            # Move pending tasks back to queue (update counter for each)
             for task in self.pending_tasks:
+                self._pending_task_count += 1
                 self.task_queue.put(task)
             self.pending_tasks.clear()
 

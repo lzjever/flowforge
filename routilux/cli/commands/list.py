@@ -65,6 +65,7 @@ def _list_routines(category: Optional[str], routines_dirs: tuple, output_format:
 
     if output_format == "json":
         import json
+
         click.echo(json.dumps(routines, indent=2))
     elif output_format == "plain":
         for routine in routines:
@@ -111,22 +112,28 @@ def _list_flows(directory: Optional[Path], output_format: str, quiet: bool):
                         data = yaml.safe_load(content)
                     else:
                         import json
+
                         data = json.loads(content)
 
                     flow_id = data.get("flow_id", flow_file.stem)
-                    flows.append({
-                        "flow_id": flow_id,
-                        "file": str(flow_file),
-                    })
+                    flows.append(
+                        {
+                            "flow_id": flow_id,
+                            "file": str(flow_file),
+                        }
+                    )
                 except Exception:
                     # Skip invalid files
-                    flows.append({
-                        "flow_id": f"<parse error: {flow_file.stem}>",
-                        "file": str(flow_file),
-                    })
+                    flows.append(
+                        {
+                            "flow_id": f"<parse error: {flow_file.stem}>",
+                            "file": str(flow_file),
+                        }
+                    )
 
     if output_format == "json":
         import json
+
         click.echo(json.dumps(flows, indent=2))
     elif output_format == "plain":
         for flow in flows:

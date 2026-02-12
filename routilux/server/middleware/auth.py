@@ -9,7 +9,7 @@ WebSocket) requires a valid X-API-Key; when false, all are public. No mixed mode
 
 import logging
 
-from fastapi import Depends, HTTPException, Security, Request
+from fastapi import Depends, HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 
 from routilux.server.audit import get_audit_logger
@@ -24,9 +24,7 @@ API_KEY_HEADER = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
 
 
-def verify_api_key(
-    api_key: str = Security(api_key_header), request: Request | None = None
-) -> str:
+def verify_api_key(api_key: str = Security(api_key_header), request: Request | None = None) -> str:
     """Verify API key from request header.
 
     When api_key_enabled is False: allows all (returns 'anonymous').
@@ -56,9 +54,7 @@ def verify_api_key(
 
     # Check if API key is provided
     if not api_key:
-        logger.warning(
-            "Authentication failed: API key is missing from request headers"
-        )
+        logger.warning("Authentication failed: API key is missing from request headers")
         audit_logger.log_auth_failure(
             reason="missing_api_key",
             ip_address=client_ip,

@@ -19,10 +19,12 @@ from routilux.server import config
 # Import app only if FastAPI is available
 try:
     from routilux.server.main import app
+
     _app_available = True
 except ImportError:
     _app_available = False
     app = None
+
 
 def _ensure_fastapi():
     """Ensure FastAPI dependencies are available."""

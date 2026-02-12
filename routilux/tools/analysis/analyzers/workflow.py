@@ -12,8 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from routilux.core.routine import Routine
 from routilux.core import Flow
+from routilux.core.routine import Routine
 from routilux.tools.analysis.analyzers.routine import RoutineAnalyzer
 
 

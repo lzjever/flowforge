@@ -8,10 +8,36 @@ For the core workflow engine, import from routilux.core:
 """
 
 # Import from new core architecture - only what's exported
+# Import analysis tools
+from routilux.analysis import (
+    BaseFormatter,
+    RoutineAnalyzer,
+    RoutineMarkdownFormatter,
+    WorkflowAnalyzer,
+    WorkflowD2Formatter,
+    analyze_routine_file,
+    analyze_workflow,
+)
+
+# Import built-in routines
+from routilux.builtin_routines import (
+    ConditionalRouter,
+    DataFlattener,
+    DataTransformer,
+    DataValidator,
+    ResultExtractor,
+    TextClipper,
+    TextRenderer,
+    TimeProvider,
+)
 from routilux.core import (
     Connection,
+    # Error handling
+    ErrorHandler,
+    ErrorStrategy,
     Event,
     EventRoutingTask,
+    ExecutionContext,
     ExecutionHooksInterface,
     ExecutionRecord,
     ExecutionStatus,
@@ -20,10 +46,11 @@ from routilux.core import (
     JobContext,
     JobStatus,
     NullExecutionHooks,
+    RoutedStdout,
     Routine,
     RoutineConfig,
     RoutineStatus,
-    RoutedStdout,
+    Runtime,
     Slot,
     SlotActivationTask,
     SlotDataPoint,
@@ -52,36 +79,6 @@ from routilux.core import (
     set_current_worker_state,
     set_execution_hooks,
     uninstall_routed_stdout,
-    Runtime,
-    # Error handling
-    ErrorHandler,
-    ErrorStrategy,
-)
-
-# Import ExecutionContext directly since it's defined but not exported
-from routilux.core.context import ExecutionContext
-
-# Import analysis tools
-from routilux.analysis import (
-    BaseFormatter,
-    RoutineAnalyzer,
-    RoutineMarkdownFormatter,
-    WorkflowAnalyzer,
-    WorkflowD2Formatter,
-    analyze_routine_file,
-    analyze_workflow,
-)
-
-# Import built-in routines
-from routilux.builtin_routines import (
-    ConditionalRouter,
-    DataFlattener,
-    DataTransformer,
-    DataValidator,
-    ResultExtractor,
-    TextClipper,
-    TextRenderer,
-    TimeProvider,
 )
 
 # Import exceptions (these are still useful utilities)
@@ -93,9 +90,6 @@ from routilux.exceptions import (
     StateError,
 )
 
-# Import validators (still useful)
-from routilux.validators import ValidationError, Validator
-
 # Import metrics (still useful)
 from routilux.metrics import (
     Counter,
@@ -104,6 +98,9 @@ from routilux.metrics import (
     MetricsCollector,
     MetricTimer,
 )
+
+# Import validators (still useful)
+from routilux.validators import ValidationError, Validator
 
 __all__ = [
     # Core classes (from new core architecture)
@@ -197,4 +194,4 @@ __all__ = [
     "WorkflowD2Formatter",
 ]
 
-__version__ = "0.11.0"
+__version__ = "0.11.1"

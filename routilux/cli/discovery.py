@@ -82,11 +82,7 @@ class RoutineDiscovery:
             logger.warning(f"Failed to load {file_path}: {e}")
             return None
 
-    def discover_from_directory(
-        self,
-        directory: Path,
-        on_error: str = "warn"
-    ) -> int:
+    def discover_from_directory(self, directory: Path, on_error: str = "warn") -> int:
         """Discover and register routines from a directory.
 
         Args:
@@ -119,9 +115,7 @@ class RoutineDiscovery:
 
 
 def discover_routines(
-    directories: List[Path],
-    factory: Optional[ObjectFactory] = None,
-    on_error: str = "warn"
+    directories: List[Path], factory: Optional[ObjectFactory] = None, on_error: str = "warn"
 ) -> ObjectFactory:
     """Discover and register routines from multiple directories.
 

@@ -76,6 +76,7 @@ you MUST manually set the context variables:
 
 from __future__ import annotations
 
+import threading
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -225,6 +226,8 @@ class JobContext:
     trace_log: list[dict[str, Any]] = field(default_factory=list)
     status: str = "pending"  # pending, running, completed, failed
     error: str | None = None
+    # Thread safety lock for data and trace_log
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def trace(self, routine_id: str, action: str, details: dict[str, Any] | None = None) -> None:
         """Record a trace entry for this job.
@@ -234,14 +237,15 @@ class JobContext:
             action: Action being performed (e.g., "slot_activated", "completed", "error")
             details: Optional additional details
         """
-        self.trace_log.append(
-            {
-                "timestamp": datetime.now().isoformat(),
-                "routine_id": routine_id,
-                "action": action,
-                "details": details or {},
-            }
-        )
+        with self._lock:
+            self.trace_log.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "routine_id": routine_id,
+                    "action": action,
+                    "details": details or {},
+                }
+            )
 
     def set_data(self, key: str, value: Any) -> None:
         """Set job-level shared data (across routines).
@@ -256,7 +260,8 @@ class JobContext:
             key: Data key
             value: Data value
         """
-        self.data[key] = value
+        with self._lock:
+            self.data[key] = value
 
     def get_data(self, key: str, default: Any = None) -> Any:
         """Get job-level shared data (across routines).
@@ -268,7 +273,8 @@ class JobContext:
         Returns:
             Value for key, or default
         """
-        return self.data.get(key, default)
+        with self._lock:
+            return self.data.get(key, default)
 
     def set_routine_data(self, routine_id: str, key: str, value: Any) -> None:
         """Set routine-specific data in job (automatically namespaced).
@@ -282,7 +288,8 @@ class JobContext:
             value: Data value
         """
         full_key = f"{routine_id}_{key}"
-        self.data[full_key] = value
+        with self._lock:
+            self.data[full_key] = value
 
     def get_routine_data(self, routine_id: str, key: str, default: Any = None) -> Any:
         """Get routine-specific data from job (automatically namespaced).
@@ -299,7 +306,8 @@ class JobContext:
             Data value or default
         """
         full_key = f"{routine_id}_{key}"
-        return self.data.get(full_key, default)
+        with self._lock:
+            return self.data.get(full_key, default)
 
     def start(self) -> None:
         """Mark job as running."""
@@ -347,6 +355,9 @@ class JobContext:
         Returns:
             Dictionary representation
         """
+        with self._lock:
+            data_copy = self.data.copy()
+            trace_log_copy = self.trace_log.copy()
         return {
             "job_id": self.job_id,
             "worker_id": self.worker_id,
@@ -354,8 +365,8 @@ class JobContext:
             "created_at": self.created_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "metadata": self.metadata,
-            "data": self.data,
-            "trace_log": self.trace_log,
+            "data": data_copy,
+            "trace_log": trace_log_copy,
             "status": self.status,
             "error": self.error,
         }

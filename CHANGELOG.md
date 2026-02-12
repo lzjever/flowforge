@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] - 2026-02-13
+
+### Fixed
+
+#### Critical Bug Fixes (P0)
+
+- **Job memory leak** (runtime.py): Fixed `complete_job()` not removing completed jobs from `_active_jobs` dictionary, preventing OOM in long-running processes
+- **Deadlock risk** (runtime.py): Fixed lock ordering in `get_active_thread_count()` and `get_all_active_thread_counts()` to prevent deadlocks from inconsistent lock acquisition order
+- **Event loop race condition** (executor.py): Fixed `_is_complete()` race condition by using atomic counter instead of `Queue.empty()` check
+- **Event loop resilience** (executor.py): Fixed event loop breaking on any unexpected exception - now only exits on fatal errors (SystemExit, KeyboardInterrupt)
+- **JobContext thread safety** (context.py): Added thread lock to protect `data` and `trace_log` access, preventing data corruption in multi-threaded environments
+- **resume() counter bug** (executor.py): Fixed `resume()` not updating `_pending_task_count` when moving pending tasks back to queue
+
+#### Medium Priority Fixes (P1)
+
+- **Dictionary shallow copy** (worker.py): Fixed shallow copy issue in `update_routine_state()` and `get_routine_state()` by using `deepcopy`
+- **Routine data bypassing lock** (routine.py): Fixed `set_job_data()` and `get_job_data()` directly accessing `job.data` instead of thread-safe methods
+- **Shutdown resource leak** (runtime.py): Fixed `shutdown()` not waiting for workers to stop, which could leave orphaned threads running
+
+### Changed
+
+- Improved thread safety across core modules (runtime.py, executor.py, context.py, worker.py, routine.py)
+- Enhanced shutdown process to properly cancel workers before clearing
+
 ## [0.11.0] - 2026-02-07
 
 ### Changed

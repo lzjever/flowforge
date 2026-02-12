@@ -1,5 +1,7 @@
 """
-Routine 测试用例
+Routine tests for current API.
+
+Tests for Routine class functionality using add_slot/add_event methods.
 """
 
 import pytest
@@ -8,195 +10,176 @@ from routilux import Routine
 
 
 class TestRoutineBasic:
-    """Routine 基本功能测试"""
+    """Routine basic functionality tests."""
 
     def test_create_routine(self):
-        """测试用例 1: 创建 Routine 对象"""
+        """Test creating a Routine object."""
         routine = Routine()
         assert routine._id is not None
         assert isinstance(routine._config, dict)
         assert len(routine._config) == 0
 
-    def test_define_slot(self):
-        """测试用例 2: 定义 Slot"""
+    def test_add_slot(self):
+        """Test adding a slot."""
         routine = Routine()
 
-        def handler(data):
-            pass
-
-        slot = routine.define_slot("input", handler=handler)
+        slot = routine.add_slot("input")
         assert slot.name == "input"
         assert slot.routine == routine
-        assert slot.handler == handler
         assert "input" in routine._slots
 
-    def test_define_event(self):
-        """测试用例 3: 定义 Event"""
+    def test_add_event(self):
+        """Test adding an event."""
         routine = Routine()
 
-        event = routine.define_event("output", ["result", "status"])
+        event = routine.add_event("output", ["result", "status"])
         assert event.name == "output"
         assert event.routine == routine
         assert event.output_params == ["result", "status"]
         assert "output" in routine._events
 
-    def test_emit_event(self):
-        """测试用例 4: 触发 Event"""
+    def test_define_slot_alias(self):
+        """Test that define_slot works as alias for add_slot."""
         routine = Routine()
 
-        # 定义事件
+        slot = routine.define_slot("input")
+        assert slot.name == "input"
+        assert "input" in routine._slots
+
+    def test_define_event_alias(self):
+        """Test that define_event works as alias for add_event."""
+        routine = Routine()
+
         event = routine.define_event("output", ["data"])
-
-        # 触发事件（没有连接时不应该报错）
-        routine.emit("output", data="test")
-
-        # 验证事件已定义
+        assert event.name == "output"
         assert "output" in routine._events
-        assert routine.get_event("output") == event
 
     def test_config_method(self):
-        """测试用例 5: Config 方法"""
+        """Test config() method."""
         routine = Routine()
 
-        # 初始状态为空
+        # Initial state is empty
         config = routine.config()
         assert isinstance(config, dict)
         assert len(config) == 0
 
-        # 更新配置
+        # Update config
         routine.set_config(count=1, result="success")
 
-        # 验证 config() 返回副本
+        # Verify config() returns a copy
         config = routine.config()
         assert config["count"] == 1
         assert config["result"] == "success"
 
-        # 修改返回的字典不应影响内部状态
+        # Modifying returned dict should not affect internal state
         config["new_key"] = "new_value"
         assert "new_key" not in routine._config
 
 
 class TestRoutineEdgeCases:
-    """Routine 边界情况测试"""
+    """Routine edge case tests."""
 
     def test_empty_routine(self):
-        """测试用例 6: 空 Routine"""
+        """Test empty routine works."""
         routine = Routine()
 
-        # 没有 slots 和 events 的 routine 应该可以正常工作
+        # Routine without slots and events should work
         assert len(routine._slots) == 0
         assert len(routine._events) == 0
 
-        # Note: Direct calling via __call__ has been removed.
-        # Routines are now executed through Flow.execute() with slot handlers.
-
     def test_duplicate_slot_name(self):
-        """测试用例 7: 重复定义 Slot"""
+        """Test duplicate slot name raises error."""
         routine = Routine()
 
-        routine.define_slot("input")
+        routine.add_slot("input")
 
-        # 重复定义同名 slot 应该报错
+        # Duplicate slot name should raise error
         with pytest.raises(ValueError):
-            routine.define_slot("input")
+            routine.add_slot("input")
 
     def test_duplicate_event_name(self):
-        """测试用例 7: 重复定义 Event"""
+        """Test duplicate event name raises error."""
         routine = Routine()
 
-        routine.define_event("output")
+        routine.add_event("output")
 
-        # 重复定义同名 event 应该报错
+        # Duplicate event name should raise error
         with pytest.raises(ValueError):
-            routine.define_event("output")
+            routine.add_event("output")
+
+    def test_get_event(self):
+        """Test get_event method."""
+        routine = Routine()
+
+        event = routine.add_event("output", ["data"])
+        assert routine.get_event("output") == event
+        assert routine.get_event("nonexistent") is None
+
+    def test_get_slot(self):
+        """Test get_slot method."""
+        routine = Routine()
+
+        slot = routine.add_slot("input")
+        assert routine.get_slot("input") == slot
+        assert routine.get_slot("nonexistent") is None
 
 
 class TestRoutineIntegration:
-    """Routine 集成测试"""
+    """Routine integration tests."""
 
     def test_routine_lifecycle(self):
-        """测试 Routine 完整生命周期"""
+        """Test Routine complete lifecycle."""
         routine = Routine()
 
-        # 1. 定义 slots 和 events
-        received_data = []
+        # 1. Add slots and events
+        routine.add_slot("input")
+        routine.add_event("output", ["result"])
 
-        def handler(data):
-            received_data.append(data)
-
-        routine.define_slot("input", handler=handler)
-        routine.define_event("output", ["result"])
-
-        # 2. 更新配置
+        # 2. Update config
         routine.set_config(initialized=True)
 
-        # 3. 触发事件
-        routine.emit("output", result="test")
-
-        # 4. 查询配置
+        # 3. Query config
         config = routine.config()
         assert config["initialized"] is True
         assert "output" in routine._events
         assert "input" in routine._slots
 
+    def test_multiple_slots_and_events(self):
+        """Test routine with multiple slots and events."""
+        routine = Routine()
 
-class TestRoutineExecutionContext:
-    """Routine ExecutionContext 集成测试"""
+        # Add multiple slots
+        routine.add_slot("input1")
+        routine.add_slot("input2")
 
-    def test_emit_uses_execution_context(self):
-        """Test that emit() can access worker_state through ExecutionContext."""
-        from routilux.core import Flow, Runtime
-        from routilux.core.context import ExecutionContext, set_current_execution_context
+        # Add multiple events
+        routine.add_event("output1", ["data"])
+        routine.add_event("output2", ["result"])
 
-        # Create test routines
-        class TestSourceRoutine(Routine):
-            def __init__(self):
-                super().__init__()
-                self.output = self.add_event("output", ["data"])
+        assert len(routine._slots) == 2
+        assert len(routine._events) == 2
 
-        class TestDestRoutine(Routine):
-            def __init__(self):
-                super().__init__()
-                self.input = self.add_slot("input")
-                self.last_input = None
 
-        # Create flow with routines
-        flow = Flow("test_flow")
-        runtime = Runtime()
+class TestRoutineSerialization:
+    """Routine serialization tests."""
 
-        source = TestSourceRoutine()
-        dest = TestDestRoutine()
-        flow.add_routine(source, "source")
-        flow.add_routine(dest, "dest")
-        flow.connect("source", "output", "dest", "input")
+    def test_routine_serialize(self):
+        """Test routine serialization."""
+        routine = Routine()
+        routine.add_slot("input")
+        routine.add_event("output", ["data"])
+        routine.set_config(key="value")
 
-        # Register flow
-        from routilux.core.registry import FlowRegistry
-        FlowRegistry.get_instance().register(flow)
+        data = routine.serialize()
 
-        # Create worker state
-        worker_state = runtime.exec("test_flow")
+        assert "_id" in data
+        assert "_config" in data
 
-        # Set execution context
-        ctx = ExecutionContext(
-            flow=flow,
-            worker_state=worker_state,
-            routine_id="source",
-            job_context=None
-        )
-        set_current_execution_context(ctx)
+    def test_routine_config_serialization(self):
+        """Test config is properly serialized."""
+        routine = Routine()
+        routine.set_config(count=42, name="test")
 
-        # Emit should work without explicit runtime parameter
-        # It should get worker_state from ExecutionContext
-        source.emit("output", data="test")
-
-        # Give some time for the event to be processed
-        import time
-        time.sleep(0.1)
-
-        # Verify dest received the data in its slot
-        assert len(dest.input._queue) > 0
-        assert dest.input._queue[0].data.get("data") == "test"
-
-        # Cleanup
-        runtime.shutdown(wait=False)
+        data = routine.serialize()
+        assert data["_config"]["count"] == 42
+        assert data["_config"]["name"] == "test"

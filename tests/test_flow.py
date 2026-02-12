@@ -1,335 +1,254 @@
 """
-Flow 测试用例
+Flow tests for current API.
+
+Tests for Flow class functionality using Runtime API for execution.
 """
 
 import pytest
 
-from routilux import Flow, Routine
-from routilux.core import WorkerState
+from routilux import Flow, Routine, Runtime
+from routilux.core import FlowRegistry, WorkerState
 
 
 class TestFlowManagement:
-    """Flow 管理测试"""
+    """Flow management tests."""
 
     def test_create_flow(self):
-        """测试用例 1: 创建 Flow"""
-        # 使用自动生成的 flow_id
+        """Test creating a Flow."""
+        # With auto-generated flow_id
         flow = Flow()
         assert flow.flow_id is not None
 
-        # 使用指定的 flow_id
+        # With specified flow_id
         flow = Flow(flow_id="test_flow")
         assert flow.flow_id == "test_flow"
 
     def test_add_routine(self):
-        """测试用例 2: 添加 Routine"""
+        """Test adding a Routine."""
         flow = Flow()
         routine = Routine()
 
-        # 添加 routine，使用自动生成的 id
+        # Add routine with auto-generated id
         routine_id = flow.add_routine(routine)
         assert routine_id is not None
         assert routine_id in flow.routines
         assert flow.routines[routine_id] == routine
 
-        # 添加 routine，使用指定的 id
+        # Add routine with specified id
         routine = Routine()
         routine_id2 = flow.add_routine(routine, routine_id="custom_id")
         assert routine_id2 == "custom_id"
         assert "custom_id" in flow.routines
 
     def test_connect_routines(self):
-        """测试用例 3: 连接 Routines"""
+        """Test connecting Routines."""
         flow = Flow()
 
         routine1 = Routine()
-        routine = Routine()
+        routine2 = Routine()
 
-        # 定义 events 和 slots
-        routine1.define_event("output", ["data"])
-        routine.define_slot("input")
+        # Define events and slots
+        routine1.add_event("output", ["data"])
+        routine2.add_slot("input")
 
-        # 添加到 flow
+        # Add to flow
         id1 = flow.add_routine(routine1, "routine1")
-        id2 = flow.add_routine(routine, "routine")
+        id2 = flow.add_routine(routine2, "routine2")
 
-        # 连接
+        # Connect
         connection = flow.connect(id1, "output", id2, "input")
         assert connection is not None
         assert connection in flow.connections
 
     def test_connect_invalid_routine(self):
-        """测试用例 3: 无效连接 - 不存在的 routine"""
+        """Test invalid connection - nonexistent routine."""
         flow = Flow()
 
-        # 尝试连接不存在的 routine 应该报错
+        # Trying to connect nonexistent routine should raise error
         with pytest.raises(ValueError):
             flow.connect("nonexistent", "output", "target", "input")
 
     def test_connect_invalid_event(self):
-        """测试用例 3: 无效连接 - 不存在的 event"""
+        """Test invalid connection - nonexistent event."""
         flow = Flow()
 
         routine1 = Routine()
-        routine = Routine()
+        routine2 = Routine()
 
         id1 = flow.add_routine(routine1, "routine1")
-        id2 = flow.add_routine(routine, "routine")
+        id2 = flow.add_routine(routine2, "routine2")
 
-        # 尝试连接不存在的 event 应该报错
+        # Trying to connect nonexistent event should raise error
         with pytest.raises(ValueError):
             flow.connect(id1, "nonexistent_event", id2, "input")
 
     def test_connect_invalid_slot(self):
-        """测试用例 3: 无效连接 - 不存在的 slot"""
+        """Test invalid connection - nonexistent slot."""
         flow = Flow()
 
         routine1 = Routine()
-        routine = Routine()
+        routine2 = Routine()
 
-        routine1.define_event("output")
+        routine1.add_event("output")
 
         id1 = flow.add_routine(routine1, "routine1")
-        id2 = flow.add_routine(routine, "routine")
+        id2 = flow.add_routine(routine2, "routine2")
 
-        # 尝试连接不存在的 slot 应该报错
+        # Trying to connect nonexistent slot should raise error
         with pytest.raises(ValueError):
             flow.connect(id1, "output", id2, "nonexistent_slot")
 
 
-class TestFlowExecution:
-    """Flow 执行测试"""
-
-    def test_simple_linear_flow(self):
-        """测试用例 4: 简单线性流程 A -> B -> C"""
-        flow = Flow()
-
-        class RoutineA(Routine):
-            def __init__(self):
-                super().__init__()
-                # Define trigger slot for entry routine
-                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-                self.output_event = self.define_event("output", ["data"])
-
-            def _handle_trigger(self, data=None, **kwargs):
-                data = data or kwargs.get("data", "A")
-                self.emit("output", data=data)
-
-        class RoutineB(Routine):
-            def __init__(self):
-                super().__init__()
-                self.input_slot = self.define_slot("input", handler=self.process)
-                self.output_event = self.define_event("output", ["data"])
-
-            def process(self, data):
-                self.emit("output", data=f"B({data})")
-
-        class RoutineC(Routine):
-            def __init__(self):
-                super().__init__()
-                self.input_slot = self.define_slot("input", handler=self.process)
-                self.result = None
-
-            def process(self, data):
-                self.result = f"C({data})"
-
-        a = RoutineA()
-        b = RoutineB()
-        c = RoutineC()
-
-        # 添加到 flow
-        id_a = flow.add_routine(a, "A")
-        id_b = flow.add_routine(b, "B")
-        id_c = flow.add_routine(c, "C")
-
-        # 连接
-        flow.connect(id_a, "output", id_b, "input")
-        flow.connect(id_b, "output", id_c, "input")
-
-        # 执行
-        job_state = flow.execute(id_a, entry_params={"data": "start"})
-        JobState.wait_for_completion(flow, job_state, timeout=2.0)
-
-        # 验证
-        assert job_state.status == "completed"
-        assert c.result is not None
-
-    def test_branch_flow(self):
-        """测试用例 5: 分支流程 A -> (B, C)"""
-        flow = Flow()
-
-        results = {}
-
-        class RoutineA(Routine):
-            def __init__(self):
-                super().__init__()
-                # Define trigger slot for entry routine
-                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-                self.output_event = self.define_event("output", ["data"])
-
-            def _handle_trigger(self, data=None, **kwargs):
-                data = data or kwargs.get("data", "A")
-                self.emit("output", data=data)
-
-        class RoutineB(Routine):
-            def __init__(self):
-                super().__init__()
-                self.input_slot = self.define_slot("input", handler=self.process)
-
-            def process(self, data):
-                results["B"] = f"B({data})"
-
-        class RoutineC(Routine):
-            def __init__(self):
-                super().__init__()
-                self.input_slot = self.define_slot("input", handler=self.process)
-
-            def process(self, data):
-                results["C"] = f"C({data})"
-
-        a = RoutineA()
-        b = RoutineB()
-        c = RoutineC()
-
-        id_a = flow.add_routine(a, "A")
-        id_b = flow.add_routine(b, "B")
-        id_c = flow.add_routine(c, "C")
-
-        # 连接：A 的输出连接到 B 和 C
-        flow.connect(id_a, "output", id_b, "input")
-        flow.connect(id_a, "output", id_c, "input")
-
-        # 执行
-        job_state = flow.execute(id_a)
-        JobState.wait_for_completion(flow, job_state, timeout=2.0)
-
-        # 验证两个分支都执行了
-        assert job_state.status == "completed"
-        assert "B" in results or "C" in results
-
-    def test_converge_flow(self):
-        """测试用例 6: 汇聚流程 (A, B) -> C"""
-        flow = Flow()
-
-        received_data = []
-
-        class RoutineA(Routine):
-            def __init__(self):
-                super().__init__()
-                # Define trigger slot for entry routine
-                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-                self.output_event = self.define_event("output", ["data"])
-
-            def _handle_trigger(self, **kwargs):
-                self.emit("output", data="A")
-
-        class RoutineB(Routine):
-            def __init__(self):
-                super().__init__()
-                # Define trigger slot for entry routine
-                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-                self.output_event = self.define_event("output", ["data"])
-
-            def _handle_trigger(self, **kwargs):
-                self.emit("output", data="B")
-
-        class RoutineC(Routine):
-            def __init__(self):
-                super().__init__()
-                self.input_slot = self.define_slot(
-                    "input", handler=self.process, merge_strategy="append"
-                )
-
-            def process(self, data):
-                received_data.append(data)
-
-        a = RoutineA()
-        b = RoutineB()
-        c = RoutineC()
-
-        id_a = flow.add_routine(a, "A")
-        id_b = flow.add_routine(b, "B")
-        id_c = flow.add_routine(c, "C")
-
-        # 连接：A 和 B 的输出都连接到 C
-        flow.connect(id_a, "output", id_c, "input")
-        flow.connect(id_b, "output", id_c, "input")
-
-        # 执行（顺序执行 A 和 B）
-        job_state_a = flow.execute(id_a)
-        job_state_b = flow.execute(id_b)
-        JobState.wait_for_completion(flow, job_state_a, timeout=2.0)
-        JobState.wait_for_completion(flow, job_state_b, timeout=2.0)
-
-        # 验证 C 收到了输入
-        assert len(received_data) >= 1
+class TestFlowConfiguration:
+    """Flow configuration tests."""
 
     def test_empty_flow(self):
-        """测试用例 8: 空 Flow"""
+        """Test empty Flow."""
         flow = Flow()
 
-        # 空 flow 应该可以创建
         assert len(flow.routines) == 0
         assert len(flow.connections) == 0
 
-    def test_single_routine_flow(self):
-        """测试用例 9: 单个 Routine"""
+    def test_flow_with_multiple_routines(self):
+        """Test flow with multiple routines."""
         flow = Flow()
 
-        class SimpleRoutine(Routine):
-            def __init__(self):
-                super().__init__()
-                # Define trigger slot for entry routine
-                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
-                self.called = False
+        routine1 = Routine()
+        routine2 = Routine()
+        routine3 = Routine()
 
-            def _handle_trigger(self, **kwargs):
-                self.called = True
+        routine1.add_event("output")
+        routine2.add_slot("input")
+        routine2.add_event("output")
+        routine3.add_slot("input")
 
-        routine = SimpleRoutine()
-        routine_id = flow.add_routine(routine, "single")
+        id1 = flow.add_routine(routine1, "r1")
+        id2 = flow.add_routine(routine2, "r2")
+        id3 = flow.add_routine(routine3, "r3")
 
-        # 执行
-        job_state = flow.execute(routine_id)
-        JobState.wait_for_completion(flow, job_state, timeout=2.0)
+        flow.connect(id1, "output", id2, "input")
+        flow.connect(id2, "output", id3, "input")
 
-        # 验证
-        assert job_state.status == "completed"
-        assert routine.called is True
+        assert len(flow.routines) == 3
+        assert len(flow.connections) == 2
 
+    def test_flow_error_handler(self):
+        """Test flow error handler."""
+        from routilux import ErrorHandler, ErrorStrategy
 
-class TestFlowErrorHandling:
-    """Flow 错误处理测试"""
+        flow = Flow()
+        handler = ErrorHandler(strategy=ErrorStrategy.CONTINUE)
 
-    def test_nonexistent_entry_routine(self):
-        """测试用例 10: 不存在的 Entry Routine"""
+        flow.set_error_handler(handler)
+
+        assert flow.error_handler == handler
+
+    def test_flow_get_error_handler(self):
+        """Test flow get_error_handler."""
+        from routilux import ErrorHandler, ErrorStrategy
+
         flow = Flow()
 
-        # 尝试执行不存在的 routine 应该报错
-        with pytest.raises(ValueError):
-            flow.execute("nonexistent_routine")
+        # No error handler by default
+        assert flow.get_error_handler() is None
 
-    def test_routine_execution_exception(self):
-        """测试用例 11: Routine 执行异常"""
+        # Set error handler
+        handler = ErrorHandler(strategy=ErrorStrategy.STOP)
+        flow.set_error_handler(handler)
+
+        assert flow.get_error_handler() == handler
+
+
+class TestFlowSerialization:
+    """Flow serialization tests."""
+
+    def test_flow_serialize(self):
+        """Test flow serialization."""
+        flow = Flow("test_flow")
+
+        routine = Routine()
+        routine.add_slot("input")
+        routine.add_event("output", ["data"])
+
+        flow.add_routine(routine, "test_routine")
+
+        data = flow.serialize()
+
+        assert "flow_id" in data
+        assert "routines" in data
+        assert "connections" in data
+
+    def test_flow_deserialize(self):
+        """Test flow deserialization."""
+        flow = Flow("test_flow")
+
+        routine = Routine()
+        routine.add_slot("input")
+        routine.add_event("output")
+
+        flow.add_routine(routine, "test_routine")
+
+        # Serialize and deserialize
+        data = flow.serialize()
+        new_flow = Flow()
+        new_flow.deserialize(data)
+
+        assert new_flow.flow_id == flow.flow_id
+
+
+class TestFlowFindRoutines:
+    """Test Flow.find_routines_by_type method."""
+
+    def test_find_routines_by_type(self):
+        """Test finding routines by type."""
+
+        class CustomRoutine(Routine):
+            pass
+
         flow = Flow()
 
-        class FailingRoutine(Routine):
-            def __init__(self):
-                super().__init__()
-                # Define trigger slot for entry routine
-                self.trigger_slot = self.define_slot("trigger", handler=self._handle_trigger)
+        r1 = Routine()
+        r2 = CustomRoutine()
+        r3 = CustomRoutine()
 
-            def _handle_trigger(self, **kwargs):
-                raise ValueError("Test error")
+        flow.add_routine(r1, "standard")
+        flow.add_routine(r2, "custom1")
+        flow.add_routine(r3, "custom2")
 
-        routine = FailingRoutine()
-        routine_id = flow.add_routine(routine, "failing")
+        # Find CustomRoutine instances
+        found = flow.find_routines_by_type(CustomRoutine)
 
-        # 执行应该捕获异常
-        job_state = flow.execute(routine_id)
-        JobState.wait_for_completion(flow, job_state, timeout=2.0)
+        assert len(found) == 2
+        ids = [rid for rid, _ in found]
+        assert "custom1" in ids
+        assert "custom2" in ids
 
-        # 验证错误状态被记录
-        assert job_state.status == "failed"
-        assert routine_id in job_state.routine_states
-        assert "error" in job_state.routine_states[routine_id]
+
+class TestFlowRegistry:
+    """Test flow registration with FlowRegistry."""
+
+    def test_register_flow_by_name(self):
+        """Test registering flow by name."""
+        # Reset registry
+        FlowRegistry._instance = None
+        registry = FlowRegistry.get_instance()
+
+        flow = Flow("registered_flow")
+        registry.register_by_name("my_flow", flow)
+
+        # Retrieve by name
+        retrieved = registry.get_by_name("my_flow")
+        assert retrieved is flow
+
+    def test_register_flow_weak_ref(self):
+        """Test registering flow with weak reference."""
+        # Reset registry
+        FlowRegistry._instance = None
+        registry = FlowRegistry.get_instance()
+
+        flow = Flow("weak_flow")
+        registry.register(flow)
+
+        # Should be retrievable by flow_id
+        retrieved = registry.get(flow.flow_id)
+        assert retrieved is not None

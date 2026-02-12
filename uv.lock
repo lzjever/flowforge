@@ -3367,6 +3367,13 @@ dependencies = [
     { name = "serilux" },
 ]
 
+[package.optional-dependencies]
+cli = [
+    { name = "click", version = "8.1.8", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }, marker = "python_full_version < '3.10'" },
+    { name = "click", version = "8.3.1", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }, marker = "python_full_version >= '3.10'" },
+    { name = "pyyaml" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "bandit", version = "1.7.10", source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple/" }, marker = "python_full_version < '3.9'" },
@@ -3410,7 +3417,12 @@ docs = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "serilux", specifier = ">=0.3.1" }]
+requires-dist = [
+    { name = "click", marker = "extra == 'cli'", specifier = ">=8.0" },
+    { name = "pyyaml", marker = "extra == 'cli'", specifier = ">=6.0" },
+    { name = "serilux", specifier = ">=0.3.1" },
+]
+provides-extras = ["cli"]
 
 [package.metadata.requires-dev]
 dev = [

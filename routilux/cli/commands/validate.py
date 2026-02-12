@@ -56,7 +56,11 @@ def validate(ctx, workflow, routines_dir):
     try:
         from routilux.tools.factory.factory import ObjectFactory
 
-        factory = discover_routines(routines_dirs, on_error="warn") if routines_dirs else ObjectFactory.get_instance()
+        factory = (
+            discover_routines(routines_dirs, on_error="warn")
+            if routines_dirs
+            else ObjectFactory.get_instance()
+        )
         if verbose:
             routines = factory.list_available()
             click.echo(f"✓ Found {len(routines)} routines")

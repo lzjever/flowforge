@@ -24,6 +24,7 @@ SERIALIZATION_VERSION = 1
 SUPPORTED_SERIALIZATION_VERSIONS = {1}
 
 # Direct imports for data classes (no circular dependency)
+# ruff: noqa: E402
 from routilux.core.connection import Connection
 from routilux.core.event import Event
 from routilux.core.slot import Slot
@@ -364,9 +365,7 @@ class Flow(Serializable):
 
         # Validate version type if present
         if version is not None and not isinstance(version, int):
-            raise SerializationError(
-                f"Version must be an integer, got {type(version).__name__}"
-            )
+            raise SerializationError(f"Version must be an integer, got {type(version).__name__}")
 
         if version is not None and version not in SUPPORTED_SERIALIZATION_VERSIONS:
             raise SerializationError(

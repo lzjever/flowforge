@@ -157,6 +157,35 @@ class Routine(Serializable):
             self._events[name] = event
             return event
 
+    # Alias methods for backward compatibility
+    def define_slot(
+        self, name: str, handler=None, max_queue_length: int = 1000, watermark: float = 0.8
+    ) -> Slot:
+        """Alias for add_slot for backward compatibility.
+
+        Args:
+            name: Slot name (must be unique within this routine)
+            handler: Ignored (for backward compatibility only)
+            max_queue_length: Maximum queue length (default: 1000)
+            watermark: Watermark threshold for auto-shrink (default: 0.8)
+
+        Returns:
+            Slot object
+        """
+        return self.add_slot(name, max_queue_length=max_queue_length, watermark=watermark)
+
+    def define_event(self, name: str, output_params: list[str] | None = None) -> Event:
+        """Alias for add_event for backward compatibility.
+
+        Args:
+            name: Event name (must be unique within this routine)
+            output_params: Optional list of parameter names (for documentation)
+
+        Returns:
+            Event object
+        """
+        return self.add_event(name, output_params=output_params)
+
     def emit(
         self,
         event_name: str,
@@ -484,9 +513,8 @@ class Routine(Serializable):
         if job is None:
             raise RuntimeError("set_job_data requires job context")
 
-        # Direct access to routine_id from ExecutionContext
-        full_key = f"{ctx.routine_id}_{key}"
-        job.data[full_key] = value
+        # Use thread-safe set_routine_data method
+        job.set_routine_data(ctx.routine_id, key, value)
 
     def get_job_data(self, key: str, default: Any = None) -> Any:
         """Get job-level data for this routine (automatically namespaced by routine_id).
@@ -508,9 +536,8 @@ class Routine(Serializable):
         if job is None:
             return default
 
-        # Direct access to routine_id from ExecutionContext
-        full_key = f"{ctx.routine_id}_{key}"
-        return job.data.get(full_key, default)
+        # Use thread-safe get_routine_data method
+        return job.get_routine_data(ctx.routine_id, key, default)
 
     def __call__(self, **kwargs: Any) -> None:
         """Execute routine (deprecated - use slot handlers instead).

@@ -39,15 +39,15 @@ class APIConfig:
         # Determine environment (production vs development)
         # Check both ROUTILUX_ENV and ENVIRONMENT for flexibility
         self.is_production = (
-            os.getenv("ROUTILUX_ENV", "").lower() == "production" or
-            os.getenv("ENVIRONMENT", "").lower() == "production"
+            os.getenv("ROUTILUX_ENV", "").lower() == "production"
+            or os.getenv("ENVIRONMENT", "").lower() == "production"
         )
 
         # Check for development mode flag (explicit opt-out for development)
         # In production, DEV_DISABLE_SECURITY is ignored for safety
         dev_disable_security = (
-            not self.is_production and
-            os.getenv("ROUTILUX_DEV_DISABLE_SECURITY", "false").lower() == "true"
+            not self.is_production
+            and os.getenv("ROUTILUX_DEV_DISABLE_SECURITY", "false").lower() == "true"
         )
 
         # API Key authentication: defaults to True (secure by default)
@@ -62,7 +62,7 @@ class APIConfig:
             warnings.warn(
                 "API key authentication is disabled via ROUTILUX_DEV_DISABLE_SECURITY. "
                 "This should only be used for local development.",
-                stacklevel=2
+                stacklevel=2,
             )
         elif self.is_production:
             # Production enforces security - ignore explicit disable attempts
@@ -80,7 +80,7 @@ class APIConfig:
                 )
                 warnings.warn(
                     "API key authentication is disabled. The API will be open to all requests.",
-                    stacklevel=2
+                    stacklevel=2,
                 )
 
         self.api_keys: List[str] = self._load_api_keys()
@@ -110,8 +110,7 @@ class APIConfig:
                     "The API will be vulnerable to abuse and DoS attacks."
                 )
                 warnings.warn(
-                    "Rate limiting is disabled. The API will be vulnerable to abuse.",
-                    stacklevel=2
+                    "Rate limiting is disabled. The API will be vulnerable to abuse.", stacklevel=2
                 )
 
         # Validate rate_limit_per_minute with proper error handling

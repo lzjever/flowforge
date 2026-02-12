@@ -7,6 +7,7 @@ One Worker can process multiple Jobs.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import threading
@@ -209,7 +210,8 @@ class WorkerState(Serializable):
             raise TypeError(f"state must be a dict, got {type(state).__name__}")
 
         with self._routine_states_lock:
-            self.routine_states[routine_id] = state.copy()
+            # Use deepcopy to prevent mutations from affecting stored state
+            self.routine_states[routine_id] = copy.deepcopy(state)
             self.updated_at = datetime.now()
 
     def get_routine_state(self, routine_id: str) -> dict[str, Any] | None:
@@ -219,10 +221,11 @@ class WorkerState(Serializable):
             routine_id: Routine identifier
 
         Returns:
-            State dictionary or None
+            State dictionary or None (returns a copy to prevent external mutations)
         """
         with self._routine_states_lock:
-            return self.routine_states.get(routine_id)
+            state = self.routine_states.get(routine_id)
+            return copy.deepcopy(state) if state else None
 
     def record_execution(self, routine_id: str, event_name: str, data: dict[str, Any]) -> None:
         """Record an execution event (thread-safe).

@@ -10,8 +10,9 @@ import threading
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from routilux.core.interfaces import IEventHandler
 from serilux import Serializable
+
+from routilux.core.interfaces import IEventHandler
 
 if TYPE_CHECKING:
     from routilux.core.routine import Routine
@@ -87,9 +88,7 @@ class Event(Serializable):
                 if self in slot.connected_events:
                     slot.connected_events.remove(self)
 
-    def emit(
-        self, runtime: IEventHandler, worker_state: WorkerState, **kwargs: Any
-    ) -> None:
+    def emit(self, runtime: IEventHandler, worker_state: WorkerState, **kwargs: Any) -> None:
         """Emit the event and route data to connected slots.
 
         This method packs data with metadata and creates an EventRoutingTask

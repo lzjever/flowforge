@@ -110,6 +110,7 @@ def run(ctx, workflow, routines_dir, param, output, timeout):
 
         # Wait for completion
         import time
+
         start_time = time.time()
 
         while time.time() - start_time < timeout:

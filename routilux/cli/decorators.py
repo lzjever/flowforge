@@ -39,6 +39,7 @@ def register_routine(
         ... def my_logic(data, **kwargs):
         ...     return process(data)
     """
+
     def decorator(func: Callable) -> Callable:
         factory = ObjectFactory.get_instance()
 
@@ -53,7 +54,7 @@ def register_routine(
                 name=name,
                 description=description or docstring or "",
                 category=category,
-                tags=tags or []
+                tags=tags or [],
             )
         else:
             metadata_obj = metadata
@@ -123,6 +124,7 @@ def auto_register_routine(
         ...     def setup(self):
         ...         self.add_slot("input")
     """
+
     def decorator(c: type[Routine]) -> type[Routine]:
         factory = ObjectFactory.get_instance()
 
@@ -135,7 +137,7 @@ def auto_register_routine(
             name=factory_name,
             description=description or docstring or "",
             category=category,
-            tags=tags or []
+            tags=tags or [],
         )
 
         # Register the class

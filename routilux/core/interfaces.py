@@ -7,6 +7,7 @@ Dependency Inversion Principle (SOLID).
 The key insight: Python's structural typing means any class with the
 right methods satisfies the Protocol, regardless of inheritance.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Protocol

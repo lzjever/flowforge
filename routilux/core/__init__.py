@@ -51,7 +51,14 @@ from routilux.core.event import Event
 from routilux.core.executor import WorkerExecutor
 
 # Flow
-from routilux.core.flow import Flow, RoutineConfig, WorkerNotRunningError
+# Serialization version management (import from flow to avoid circular import)
+from routilux.core.flow import (
+    SERIALIZATION_VERSION,
+    SUPPORTED_SERIALIZATION_VERSIONS,
+    Flow,
+    RoutineConfig,
+    WorkerNotRunningError,
+)
 
 # Hooks interface
 from routilux.core.hooks import (
@@ -62,6 +69,13 @@ from routilux.core.hooks import (
     set_execution_hooks,
 )
 from routilux.core.manager import WorkerManager, get_worker_manager, reset_worker_manager
+
+# Migration framework
+from routilux.core.migration import (
+    MigrationRegistry,
+    get_migration_registry,
+    reset_migration_registry,
+)
 
 # Output capture
 from routilux.core.output import (
@@ -92,16 +106,6 @@ from routilux.core.task import EventRoutingTask, SlotActivationTask, TaskPriorit
 
 # Worker state and registry
 from routilux.core.worker import ExecutionRecord, WorkerState
-
-# Migration framework
-from routilux.core.migration import (
-    MigrationRegistry,
-    get_migration_registry,
-    reset_migration_registry,
-)
-
-# Serialization version management (import from flow to avoid circular import)
-from routilux.core.flow import SERIALIZATION_VERSION, SUPPORTED_SERIALIZATION_VERSIONS
 
 __all__ = [
     # Status enums

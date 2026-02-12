@@ -614,16 +614,21 @@ class Runtime(IEventHandler):
         Returns:
             Number of active threads executing this routine (0 if not found)
         """
-        with self._active_routines_lock:
-            # Check if routine is active for this job
-            # We need to find which worker this job belongs to
-            with self._jobs_lock:
-                for worker_id, jobs in self._active_jobs.items():
-                    if job_id in jobs:
-                        # Found the worker, check active routines
-                        active_routines = self._active_routines.get(worker_id, set())
-                        return 1 if routine_id in active_routines else 0
+        # Find worker_id first with _jobs_lock, then check routines
+        with self._jobs_lock:
+            worker_id_found = None
+            for worker_id, jobs in self._active_jobs.items():
+                if job_id in jobs:
+                    worker_id_found = worker_id
+                    break
+
+        if worker_id_found is None:
             return 0
+
+        # Check active routines with separate lock acquisition
+        with self._active_routines_lock:
+            active_routines = self._active_routines.get(worker_id_found, set())
+            return 1 if routine_id in active_routines else 0
 
     def get_all_active_thread_counts(self, job_id: str) -> dict[str, int]:
         """Get active thread counts for all routines in a job.
@@ -634,18 +639,24 @@ class Runtime(IEventHandler):
         Returns:
             Dictionary mapping routine_id to thread count
         """
-        with self._active_routines_lock:
-            # Find which worker this job belongs to
-            with self._jobs_lock:
-                for worker_id, jobs in self._active_jobs.items():
-                    if job_id in jobs:
-                        # Found the worker, get all active routines
-                        active_routines = self._active_routines.get(worker_id, set())
-                        return {
-                            routine_id: 1 if routine_id in active_routines else 0
-                            for routine_id in active_routines
-                        }
+        # Find worker_id first with _jobs_lock
+        with self._jobs_lock:
+            worker_id_found = None
+            for worker_id, jobs in self._active_jobs.items():
+                if job_id in jobs:
+                    worker_id_found = worker_id
+                    break
+
+        if worker_id_found is None:
             return {}
+
+        # Check active routines with separate lock acquisition
+        with self._active_routines_lock:
+            active_routines = self._active_routines.get(worker_id_found, set())
+            return {
+                routine_id: 1 if routine_id in active_routines else 0
+                for routine_id in active_routines
+            }
 
     def get_job(self, job_id: str) -> JobContext | None:
         """Get job by ID.
@@ -691,6 +702,9 @@ class Runtime(IEventHandler):
 
                     clear_job_output(job_id)
 
+                    # Remove job from active jobs to prevent memory leak
+                    del worker_jobs[job_id]
+
                     return True
         return False
 
@@ -723,6 +737,18 @@ class Runtime(IEventHandler):
         self._shutdown = True
         self._is_shutdown = True
 
+        # Cancel all active workers first
+        with self._worker_lock:
+            workers_to_stop = list(self._active_workers.items())
+
+        for worker_id, worker_state in workers_to_stop:
+            try:
+                executor = getattr(worker_state, "_executor", None)
+                if executor is not None:
+                    executor.cancel(reason="Runtime shutdown")
+            except Exception as e:
+                logger.warning(f"Error cancelling worker {worker_id}: {e}")
+
         if self.thread_pool is not None:
             try:
                 self.thread_pool.shutdown(wait=wait)
@@ -737,7 +763,9 @@ class Runtime(IEventHandler):
         with self._jobs_lock:
             self._active_jobs.clear()
 
-    def wait_until_all_workers_idle(self, timeout: float | None = None, check_interval: float = 0.1) -> bool:
+    def wait_until_all_workers_idle(
+        self, timeout: float | None = None, check_interval: float = 0.1
+    ) -> bool:
         """Wait until all workers are idle.
 
         Args:

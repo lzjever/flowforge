@@ -50,9 +50,7 @@ class DataFlattener(Routine):
         self.input_slot = self.add_slot("input")
 
         # Define output event
-        self.output_event = self.add_event(
-            "output", ["flattened_data", "original_type", "depth"]
-        )
+        self.output_event = self.add_event("output", ["flattened_data", "original_type", "depth"])
 
         # Set up activation policy and logic
         self.set_activation_policy(

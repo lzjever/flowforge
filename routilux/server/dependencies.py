@@ -111,7 +111,8 @@ def reset_storage() -> None:
     global _job_storage, _idempotency_backend
     _job_storage = None
     _idempotency_backend = None
-    
+
     # Clear flow store
     from routilux.monitoring.storage import flow_store
+
     flow_store.clear()

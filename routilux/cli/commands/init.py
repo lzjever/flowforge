@@ -77,7 +77,7 @@ def example_logic(data, **kwargs):
     # Create example flow
     example_flow = flows_dir / "example_flow.yaml"
     if not example_flow.exists() or force:
-        example_flow.write_text('''# Example flow definition
+        example_flow.write_text("""# Example flow definition
 
 flow_id: example_flow
 
@@ -95,14 +95,14 @@ connections:
 
 execution:
   timeout: 300.0
-''')
+""")
         if not quiet:
             click.echo(f"Created: {example_flow}")
 
     # Create config file
     config_file = project_dir / "routilux.toml"
     if not config_file.exists() or force:
-        config_file.write_text('''# Routilux configuration file
+        config_file.write_text("""# Routilux configuration file
 
 [routines]
 directories = ["./routines"]
@@ -114,7 +114,7 @@ port = 8080
 [discovery]
 auto_reload = true
 ignore_patterns = ["*_test.py", "test_*.py"]
-''')
+""")
         if not quiet:
             click.echo(f"Created: {config_file}")
 
