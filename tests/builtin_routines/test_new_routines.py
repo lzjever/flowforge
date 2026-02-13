@@ -2,7 +2,6 @@
 Tests for new builtin routines.
 """
 
-
 import pytest
 
 from routilux.builtin_routines import (

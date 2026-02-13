@@ -31,13 +31,59 @@
 
 ## 📦 Installation
 
-### Quick Install (Recommended)
+### Recommended: Isolated CLI Installation (pipx)
+
+The best way to install Routilux CLI without affecting your system:
 
 ```bash
-pip install routilux
+# Install CLI with isolated environment
+pipx install "routilux[cli]"
+
+# Use anywhere
+routilux --help
+routilux run workflow.yaml
 ```
 
-That's it! You're ready to go.
+**Why pipx?**
+- ✅ Creates isolated virtual environment (no dependency conflicts)
+- ✅ CLI available globally
+- ✅ Easy to update: `pipx upgrade routilux`
+- ✅ Works on Mac and Linux
+
+### Alternative: Modern (uv tool)
+
+Using [uv](https://github.com/astral-sh/uv) (faster than pipx):
+
+```bash
+# Install
+uv tool install "routilux[cli]"
+
+# Use
+routilux --help
+```
+
+### macOS / Linux: Homebrew
+
+```bash
+# Add tap and install
+brew tap lzjever/routilux
+brew install routilux
+
+# Or directly
+brew install lzjever/routilux/routilux
+```
+
+### Standard pip Install
+
+For library use or development:
+
+```bash
+# Library only
+pip install routilux
+
+# With CLI support
+pip install "routilux[cli]"
+```
 
 ### Development Setup with uv (Recommended)
 

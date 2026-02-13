@@ -2,7 +2,6 @@
 Tests for the Flow.pipe() method.
 """
 
-
 from routilux import Flow, Routine
 from routilux.builtin_routines import Mapper
 

@@ -2,7 +2,6 @@
 Tests for the @routine decorator.
 """
 
-
 from routilux import Flow, routine
 
 

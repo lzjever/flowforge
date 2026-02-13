@@ -11,7 +11,7 @@ import os
 
 # Add the project root to the path for local development
 # In Read the Docs, the package is installed via pip, so this is mainly for local builds
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -24,38 +24,38 @@ except ImportError as e:
         "Make sure the package is installed or the project root is in sys.path."
     ) from e
 
-project = 'Routilux'
-copyright = '2024, Routilux Team'
-author = 'Routilux Team'
+project = "Routilux"
+copyright = "2024, Routilux Team"
+author = "Routilux Team"
 release = __version__  # Full version (e.g., '0.8.1')
-version = '.'.join(__version__.split('.')[:2])  # Major.minor version (e.g., '0.8')
+version = ".".join(__version__.split(".")[:2])  # Major.minor version (e.g., '0.8')
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.viewcode',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.intersphinx',
-    'sphinx.ext.todo',
-    'sphinx.ext.coverage',
-    'sphinx.ext.mathjax',
-    'sphinx.ext.githubpages',
-    'sphinx.ext.graphviz',  # Support for Graphviz diagrams
-    'sphinx_copybutton',    # Add copy button to code blocks
-    'sphinx_design',        # Add design components (cards, badges, etc.)
+    "sphinx.ext.autodoc",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "sphinx.ext.todo",
+    "sphinx.ext.coverage",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.githubpages",
+    "sphinx.ext.graphviz",  # Support for Graphviz diagrams
+    "sphinx_copybutton",  # Add copy button to code blocks
+    "sphinx_design",  # Add design components (cards, badges, etc.)
 ]
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 exclude_patterns = []
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 # Use Furo theme (modern, beautiful, and feature-rich)
-html_theme = 'furo'
-html_static_path = ['_static']
+html_theme = "furo"
+html_static_path = ["_static"]
 html_logo = None
 html_favicon = None
 
@@ -64,7 +64,6 @@ html_theme_options = {
     # Sidebar
     "sidebar_hide_name": False,
     "navigation_with_keys": True,
-    
     # Footer
     "footer_icons": [
         {
@@ -78,7 +77,6 @@ html_theme_options = {
             "class": "",
         },
     ],
-    
     # Source repository (for edit button)
     "source_repository": "https://github.com/lzjever/routilux",
     "source_branch": "main",
@@ -87,7 +85,7 @@ html_theme_options = {
 
 # Add custom CSS
 html_css_files = [
-    'custom.css',
+    "custom.css",
 ]
 
 # Sidebar configuration (Furo uses default, but we can customize)
@@ -113,19 +111,19 @@ napoleon_attr_annotations = True
 
 # Autodoc settings
 autodoc_default_options = {
-    'members': True,
-    'member-order': 'bysource',
-    'special-members': '__init__',
-    'undoc-members': False,
-    'exclude-members': '__weakref__',
-    'show-inheritance': True,
+    "members": True,
+    "member-order": "bysource",
+    "special-members": "__init__",
+    "undoc-members": False,
+    "exclude-members": "__weakref__",
+    "show-inheritance": True,
 }
 
 autodoc_mock_imports = []
 
 # Intersphinx mapping
 intersphinx_mapping = {
-    'python': ('https://docs.python.org/3', None),
+    "python": ("https://docs.python.org/3", None),
 }
 
 # Todo extension
@@ -133,6 +131,5 @@ todo_include_todos = True
 
 # -- Options for autodoc ----------------------------------------------------
 # Automatically extract type hints
-autodoc_typehints = 'description'
-autodoc_typehints_description_target = 'documented'
-
+autodoc_typehints = "description"
+autodoc_typehints_description_target = "documented"

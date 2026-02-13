@@ -33,9 +33,7 @@ def optional_routine_example():
     flow = Flow()
 
     routine = OptionalEnrichmentRoutine()
-    routine.set_error_handler(
-        ErrorHandler(strategy=ErrorStrategy.CONTINUE)
-    )
+    routine.set_error_handler(ErrorHandler(strategy=ErrorStrategy.CONTINUE))
     flow.add_routine(routine, "enricher")
 
 
@@ -74,13 +72,9 @@ def flow_level_handler_example():
     flow = Flow()
 
     # Set CONTINUE as default for all routines
-    flow.set_error_handler(
-        ErrorHandler(strategy=ErrorStrategy.CONTINUE)
-    )
+    flow.set_error_handler(ErrorHandler(strategy=ErrorStrategy.CONTINUE))
 
     # Individual routines can override
     critical = CriticalAPICall()
-    critical.set_error_handler(
-        ErrorHandler(strategy=ErrorStrategy.STOP)
-    )
+    critical.set_error_handler(ErrorHandler(strategy=ErrorStrategy.STOP))
     flow.add_routine(critical, "critical")
