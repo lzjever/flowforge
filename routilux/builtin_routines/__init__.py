@@ -48,4 +48,33 @@ __all__ = [
     "Splitter",
     # Reliability
     "RetryHandler",
+    # Registration function
+    "register_all_builtins",
 ]
+
+
+def register_all_builtins(factory) -> None:
+    """Register all built-in routines with the given factory.
+
+    Args:
+        factory: ObjectFactory instance to register routines with
+    """
+    # Data processing
+    factory.register("Mapper", Mapper)
+    factory.register("Filter", Filter)
+    factory.register("SchemaValidator", SchemaValidator)
+    factory.register("DataTransformer", DataTransformer)
+    factory.register("DataValidator", DataValidator)
+
+    # Control flow
+    factory.register("ConditionalRouter", ConditionalRouter)
+    factory.register("Aggregator", Aggregator)
+    factory.register("Splitter", Splitter)
+    factory.register("Batcher", Batcher)
+    factory.register("Debouncer", Debouncer)
+
+    # Text processing
+    factory.register("ResultExtractor", ResultExtractor)
+
+    # Reliability
+    factory.register("RetryHandler", RetryHandler)
