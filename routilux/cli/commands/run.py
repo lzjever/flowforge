@@ -133,7 +133,13 @@ def run(ctx, workflow, routines_dir, param, output, timeout):
         click.echo(f"Error loading flow from DSL: {e}", err=True)
         raise click.Abort()
 
+    # Validate flow has routines
+    if not flow.routines:
+        click.echo("Error: Flow has no routines defined", err=True)
+        raise click.Abort(1)
+
     # Execute flow
+    runtime = None
     try:
         from routilux.core.runtime import Runtime
 
@@ -193,6 +199,13 @@ def run(ctx, workflow, routines_dir, param, output, timeout):
     except Exception as e:
         click.echo(f"Error executing flow: {e}", err=True)
         raise click.Abort(1)
+    finally:
+        # Ensure runtime is properly shut down to prevent thread pool leaks
+        if runtime is not None:
+            try:
+                runtime.shutdown(wait=False)
+            except Exception:
+                pass
 
 
 def _load_dsl(file_path: Path) -> dict:

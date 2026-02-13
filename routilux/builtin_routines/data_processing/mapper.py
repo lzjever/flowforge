@@ -86,6 +86,7 @@ class Mapper(Routine):
             drop_missing=True,  # Drop fields that don't exist
             keep_unmapped=False,  # Keep fields not in mappings
             default_value=None,  # Default for missing fields
+            max_cache_size=100,  # Max cached JSONPath expressions (0 = unlimited)
         )
 
         # Define input slot
@@ -99,8 +100,9 @@ class Mapper(Routine):
         self.set_activation_policy(self._activation_policy)
         self.set_logic(self._run_logic)
 
-        # Cache for compiled JSONPath expressions
+        # Cache for compiled JSONPath expressions (with size limit)
         self._jsonpath_cache: dict[str, Any] = {}
+        self._cache_lock = None  # Lazy init for thread safety
 
     def _activation_policy(self, slots: dict, worker_state: Any) -> tuple[bool, dict, str]:
         """Check if routine should activate based on input slot state."""
@@ -266,13 +268,30 @@ class Mapper(Routine):
         """
         if not HAS_JSONPATH:
             # Fallback to dot notation
-            return self._extract_dot_path(data, path.lstrip("$."))
+            return self._extract_dot_path(data, path.lstrip("$.old_string"))
 
-        # Use cached compiled expression
-        if path not in self._jsonpath_cache:
-            self._jsonpath_cache[path] = jsonpath_parse(path)
+        max_cache_size = self.get_config("max_cache_size", 100)
 
-        expr = self._jsonpath_cache[path]
+        # Lazy init lock for thread safety
+        if self._cache_lock is None:
+            import threading
+
+            self._cache_lock = threading.Lock()
+
+        # Use cached compiled expression with size limit
+        with self._cache_lock:
+            if path not in self._jsonpath_cache:
+                # Enforce cache size limit
+                if max_cache_size > 0 and len(self._jsonpath_cache) >= max_cache_size:
+                    # Remove oldest entries (first half)
+                    keys_to_remove = list(self._jsonpath_cache.keys())[: max_cache_size // 2]
+                    for key in keys_to_remove:
+                        del self._jsonpath_cache[key]
+
+                self._jsonpath_cache[path] = jsonpath_parse(path)
+
+            expr = self._jsonpath_cache[path]
+
         matches = expr.find(data)
 
         if matches:

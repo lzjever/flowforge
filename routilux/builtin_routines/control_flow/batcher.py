@@ -18,6 +18,7 @@ class Batcher(Routine):
     - A specified batch size is reached
     - A timeout expires
     - Explicit flush is triggered
+    - Maximum batch size limit is reached
 
     Useful for optimizing I/O operations, bulk processing, and rate limiting.
 
@@ -27,6 +28,7 @@ class Batcher(Routine):
         flush_on_shutdown: Emit remaining items on shutdown (default: True)
         max_batches: Maximum batches to keep in memory (default: 10)
         emit_empty: Whether to emit empty batches on timeout (default: False)
+        max_batch_size: Hard limit on batch size to prevent OOM (default: 10000, 0 = unlimited)
 
     Examples:
         Basic batching:
@@ -60,6 +62,7 @@ class Batcher(Routine):
             flush_on_shutdown=True,  # Emit remaining on shutdown
             max_batches=10,  # Max batches in memory
             emit_empty=False,  # Emit empty batches
+            max_batch_size=10000,  # Hard limit on batch size (0 = unlimited)
         )
 
         # Define input slot
@@ -84,6 +87,7 @@ class Batcher(Routine):
         """Check if batch is ready or timeout has occurred."""
         batch_size = self.get_config("batch_size", 100)
         batch_timeout = self.get_config("batch_timeout", 5.0)
+        max_batch_size = self.get_config("max_batch_size", 10000)
 
         slot = slots.get("input")
         if slot is None:
@@ -96,6 +100,10 @@ class Batcher(Routine):
                 self._batch.extend(new_items)
                 if self._first_item_time is None:
                     self._first_item_time = time.time()
+
+            # Check for hard limit first (prevents OOM)
+            if max_batch_size > 0 and len(self._batch) >= max_batch_size:
+                return True, {"_trigger": "max_limit"}, "max_batch_size_reached"
 
             # Check if batch is full
             if len(self._batch) >= batch_size:

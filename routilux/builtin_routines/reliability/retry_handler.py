@@ -4,12 +4,15 @@ Retry handler routine for retrying failed operations.
 
 from __future__ import annotations
 
+import logging
 import random
 import threading
 import time
 from typing import Any, Callable
 
 from routilux.core import Routine
+
+logger = logging.getLogger(__name__)
 
 
 class RetryHandler(Routine):
@@ -31,6 +34,8 @@ class RetryHandler(Routine):
         retryable_error_codes: List of error codes to retry (default: None)
         on_retry: Callback function called on each retry
         on_exhausted: Callback function called when retries exhausted
+        max_items: Maximum items to process per batch (default: 100, 0 = unlimited)
+        max_errors_kept: Maximum errors to keep in history (default: 10)
 
     Examples:
         Basic retry with exponential backoff:
@@ -76,6 +81,8 @@ class RetryHandler(Routine):
             retryable_error_codes=None,  # Error codes to retry
             on_retry=None,  # Retry callback
             on_exhausted=None,  # Exhausted callback
+            max_items=100,  # Max items per batch (0 = unlimited)
+            max_errors_kept=10,  # Max errors to keep in history
         )
 
         # Define input slot
@@ -118,6 +125,13 @@ class RetryHandler(Routine):
         retryable_exceptions = self.get_config("retryable_exceptions")
         on_retry = self.get_config("on_retry")
         on_exhausted = self.get_config("on_exhausted")
+        max_items = self.get_config("max_items", 100)
+        max_errors_kept = self.get_config("max_errors_kept", 10)
+
+        # Limit items to prevent input amplification
+        if max_items > 0 and len(items) > max_items:
+            logger.warning(f"RetryHandler: Limiting items from {len(items)} to {max_items}")
+            items = items[:max_items]
 
         for item in items:
             # Extract operation if item is a dict with operation
@@ -151,6 +165,9 @@ class RetryHandler(Routine):
                     break
 
                 except Exception as e:
+                    # Limit errors list size to prevent memory growth
+                    if len(errors) >= max_errors_kept:
+                        errors = errors[-(max_errors_kept - 1) :]
                     errors.append(str(e))
 
                     # Check if this exception is retryable
@@ -164,8 +181,10 @@ class RetryHandler(Routine):
                         if on_exhausted and callable(on_exhausted):
                             try:
                                 on_exhausted(attempt, errors, item)
-                            except Exception:
-                                pass
+                            except Exception as callback_err:
+                                logger.warning(
+                                    f"RetryHandler on_exhausted callback error: {callback_err}"
+                                )
                         self.emit("exhausted", data=item, attempts=attempt, errors=errors)
                         break
 
@@ -179,8 +198,8 @@ class RetryHandler(Routine):
                     if on_retry and callable(on_retry):
                         try:
                             on_retry(attempt, e, delay)
-                        except Exception:
-                            pass
+                        except Exception as callback_err:
+                            logger.warning(f"RetryHandler on_retry callback error: {callback_err}")
 
                     # Wait before retry
                     time.sleep(delay)

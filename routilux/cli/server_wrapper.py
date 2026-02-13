@@ -6,12 +6,38 @@ including routine discovery and registration.
 
 import atexit
 import os
+import signal
 from pathlib import Path
 from typing import List, Optional
 
 from routilux.cli.discovery import discover_routines, get_default_routines_dirs
 
 # PID file management
+
+# Track registered ports for signal handler cleanup
+_registered_ports: set[int] = set()
+_cleanup_registered = False
+
+
+def _signal_handler(signum, frame):
+    """Signal handler to clean up PID files on termination."""
+    for port in list(_registered_ports):
+        remove_pid_file(port)
+    # Re-raise signal with default handler
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+def _register_signal_handlers():
+    """Register signal handlers for PID file cleanup."""
+    global _cleanup_registered
+    if _cleanup_registered:
+        return
+    _cleanup_registered = True
+
+    # Handle SIGTERM and SIGINT for cleanup
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
 
 
 def get_pid_file(port: int) -> Path:
@@ -35,6 +61,12 @@ def write_pid_file(port: int, pid: int) -> None:
     """
     pid_file = get_pid_file(port)
     pid_file.write_text(str(pid))
+    _registered_ports.add(port)
+
+    # Register signal handlers for cleanup
+    _register_signal_handlers()
+
+    # Also use atexit as fallback
     atexit.register(lambda: remove_pid_file(port))
 
 
@@ -68,6 +100,7 @@ def remove_pid_file(port: int) -> None:
             pid_file.unlink()
         except OSError:
             pass
+    _registered_ports.discard(port)
 
 
 def start_server(

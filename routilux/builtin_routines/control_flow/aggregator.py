@@ -4,11 +4,14 @@ Aggregator routine for collecting and combining data from multiple sources.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any
 
 from routilux.core import Routine
+
+logger = logging.getLogger(__name__)
 
 
 class Aggregator(Routine):
@@ -31,6 +34,7 @@ class Aggregator(Routine):
             - "list": Combine as list of values
             - "flatten": Flatten all lists into one
             - callable: Custom function to merge data
+        max_pending_items: Maximum items to keep per slot (default: 1000, 0 = unlimited)
 
     Examples:
         Wait for all inputs:
@@ -74,6 +78,7 @@ class Aggregator(Routine):
             threshold=None,  # For n_of_m mode
             timeout=30.0,  # Max wait time
             merge_strategy="dict",  # How to combine data
+            max_pending_items=1000,  # Max items per slot (0 = unlimited)
         )
 
         # Internal state (per-worker)
@@ -105,6 +110,7 @@ class Aggregator(Routine):
         config_slots = self.get_config("slots", [])
         mode = self.get_config("mode", "all")
         threshold = self.get_config("threshold")
+        max_pending = self.get_config("max_pending_items", 1000)
 
         with self._lock:
             # Collect new data from each slot
@@ -113,7 +119,28 @@ class Aggregator(Routine):
                 if slot and len(slot.new_data) > 0:
                     if slot_name not in self._pending_data:
                         self._pending_data[slot_name] = []
-                    self._pending_data[slot_name].extend(slot.consume_all_new())
+
+                    new_items = slot.consume_all_new()
+
+                    # Limit items to prevent memory growth
+                    if max_pending > 0:
+                        current_len = len(self._pending_data[slot_name])
+                        if current_len + len(new_items) > max_pending:
+                            # Keep only the most recent items
+                            available_space = max_pending - current_len
+                            if available_space > 0:
+                                new_items = new_items[-available_space:]
+                            else:
+                                # No space, drop oldest and add new
+                                self._pending_data[slot_name] = (
+                                    self._pending_data[slot_name][-max_pending // 2 :] + new_items
+                                )
+                                logger.warning(
+                                    f"Aggregator: Pending items limit reached for slot '{slot_name}'"
+                                )
+                                continue
+
+                    self._pending_data[slot_name].extend(new_items)
 
                     if self._first_data_time is None:
                         self._first_data_time = time.time()

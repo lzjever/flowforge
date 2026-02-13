@@ -138,8 +138,9 @@ def start(ctx, host, port, routines_dir, reload, log_level):
     "--port", default=8080, type=int, callback=_validate_port, help="Port of the server to stop"
 )
 @click.option("--force", "-f", is_flag=True, help="Force kill the server")
+@click.option("--timeout", default=10, type=int, help="Seconds to wait for graceful shutdown")
 @click.pass_context
-def stop(ctx, port, force):
+def stop(ctx, port, force, timeout):
     """Stop a running routilux server.
 
     \b
@@ -154,6 +155,7 @@ def stop(ctx, port, force):
         $ routilux server stop --force
     """
     import signal
+    import time
 
     from routilux.cli.server_wrapper import read_pid_file, remove_pid_file
 
@@ -163,9 +165,35 @@ def stop(ctx, port, force):
         raise click.Abort(1)
 
     try:
-        os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+        # Send signal
+        sig = signal.SIGKILL if force else signal.SIGTERM
+        os.kill(pid, sig)
+
+        # Wait for process to actually terminate
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                os.kill(pid, 0)  # Check if process still exists
+                time.sleep(0.1)
+            except ProcessLookupError:
+                # Process has terminated
+                break
+        else:
+            # Timeout - process didn't terminate
+            if not force:
+                click.echo(
+                    click.style("Warning: ", fg="yellow")
+                    + "Server did not stop gracefully, force killing..."
+                )
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                    time.sleep(0.5)  # Brief wait for SIGKILL
+                except ProcessLookupError:
+                    pass
+
         remove_pid_file(port)
         click.echo(click.style("Server stopped", fg="green"))
+
     except ProcessLookupError:
         click.echo(
             click.style("Warning: ", fg="yellow") + f"Process {pid} not found, cleaning up PID file"
