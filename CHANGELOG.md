@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.4] - 2026-02-13
+
+### Fixed
+
+- **CLI init command**: Now accepts positional argument (`routilux init my-project`) instead of requiring `--name` option
+
+### Tests
+
+- Added comprehensive CLI integration tests to prevent basic command errors
+- Tests now cover: init, help, version, list, run, server, validate commands
+
 ## [0.14.3] - 2026-02-13
 
 ### Added

@@ -10,8 +10,8 @@ def test_full_workflow_cli(tmp_path):
 
     runner = CliRunner()
 
-    # Initialize project in temp directory
-    result = runner.invoke(cli, ["init", "--name", str(tmp_path)])
+    # Initialize project in temp directory (use positional argument)
+    result = runner.invoke(cli, ["init", str(tmp_path)])
     # Init may have warnings but should create directories
     assert (tmp_path / "routines").exists()
     assert (tmp_path / "flows").exists()

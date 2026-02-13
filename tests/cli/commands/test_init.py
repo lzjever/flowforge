@@ -32,7 +32,8 @@ def test_init_with_custom_name(tmp_path):
 
         os.chdir(tmp_path)
 
-        result = runner.invoke(cli, ["init", "--name", "my_project"])
+        # Use positional argument (new syntax)
+        result = runner.invoke(cli, ["init", "my_project"])
 
         assert result.exit_code == 0
         assert (tmp_path / "my_project" / "routines").exists()

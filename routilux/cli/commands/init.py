@@ -19,16 +19,15 @@ def _validate_project_name(ctx, param, value):
     Raises:
         click.BadParameter: If project name is invalid
     """
-    if value == ".":
-        return value
+    if value is None or value == ".":
+        return "."
 
     # Check for invalid characters
     if not re.match(r"^[a-zA-Z0-9_\-./]+$", value):
         raise click.BadParameter(
             f"'{value}' contains invalid characters.\n"
             f"Project names can only contain letters, numbers, underscores, hyphens, dots, and slashes.\n"
-            f"Example: --name my-project",
-            param_hint="--name",
+            f"Example: routilux init my-project",
         )
 
     # Check for reserved names
@@ -38,21 +37,13 @@ def _validate_project_name(ctx, param, value):
         + [f"lpt{i}" for i in range(1, 10)]
     )
     if value.lower() in reserved_names:
-        raise click.BadParameter(
-            f"'{value}' is a reserved name.\nPlease choose a different name.", param_hint="--name"
-        )
+        raise click.BadParameter(f"'{value}' is a reserved name.\nPlease choose a different name.")
 
     return value
 
 
 @click.command()
-@click.option(
-    "--name",
-    "-n",
-    default=".",
-    callback=_validate_project_name,
-    help="Project name (default: current directory)",
-)
+@click.argument("name", default=".", callback=_validate_project_name)
 @click.option(
     "--force",
     is_flag=True,
@@ -71,10 +62,10 @@ def initialize(ctx, name, force):
         $ routilux init
 
         # Create a named project
-        $ routilux init --name myproject
+        $ routilux init my-project
 
         # Overwrite existing files
-        $ routilux init --force
+        $ routilux init my-project --force
     """
     quiet = ctx.obj.get("quiet", False)
 
