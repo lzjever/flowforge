@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-02-13
+
+### Added
+
+- **One-click installer script** (`install.sh`): Universal installation for Mac and Linux
+  - Auto-detects OS and architecture
+  - Supports multiple installation methods: uv (default), pipx, pip
+  - Optional version specification via VERSION env var
+  - Clean, minimal output
+
+### Changed
+
+- **Improved installation documentation**: Added comprehensive installation guide with pipx, uv, Homebrew, and pip methods
+- **Enhanced pyproject.toml**: Added more classifiers and metadata for better discoverability
+- **Simplified installer banner**: Removed ASCII art for cleaner, faster startup
+
+### Documentation
+
+- Updated README.md with one-click install command
+- Updated docs/source/installation.rst with comprehensive installation methods
+
 ## [0.14.0] - 2026-02-13
 
 ### Fixed

@@ -186,21 +186,7 @@ Try one of these fixes:
 
 print_banner() {
     echo ""
-    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║${NC}                                                                          ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}               ${GREEN}██╗   ██╗████████╗██╗██╗     ███████╗${NC}                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}               ${GREEN}██║   ██║╚══██╔══╝██║██║     ██╔════╝${NC}                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}               ${GREEN}██║   ██║   ██║   ██║██║     █████╗  ${NC}                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}               ${GREEN}╚██╗ ██╔╝   ██║   ██║██║     ██╔══╝  ${NC}                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}                ${GREEN}╚████╔╝    ██║   ██║███████╗███████╗${NC}                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}                 ${GREEN}╚═══╝     ╚═╝   ╚═╝╚══════╝╚══════╝${NC}                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}                                                                          ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}       ${YELLOW}R O U T I L U X${NC}                                                   ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}                                                                          ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${BLUE}Event-driven Workflow Orchestration Framework${NC}                        ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${BLUE}Installer v1.0  •  Mac & Linux${NC}                                        ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}                                                                          ${CYAN}║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${GREEN}Routilux${NC} - Event-driven Workflow Orchestration"
     echo ""
 }
 
