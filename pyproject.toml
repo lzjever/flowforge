@@ -46,6 +46,7 @@ server = [
     "fastapi>=0.100.0",
     "websockets>=10.0",
     "slowapi>=0.1.9",
+    "watchdog>=3.0.0",
 ]
 # Convenience extra that includes all optional dependencies
 all = [
@@ -56,6 +57,7 @@ all = [
     "fastapi>=0.100.0",
     "websockets>=10.0",
     "slowapi>=0.1.9",
+    "watchdog>=3.0.0",
 ]
 
 [dependency-groups]

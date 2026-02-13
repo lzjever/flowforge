@@ -177,6 +177,88 @@ def load_flows_from_directory(flows_dir: Path, factory) -> Dict[str, Flow]:
     return flows
 
 
+class FlowReloadHandler:
+    """Handler for flow file changes using watchdog."""
+
+    def __init__(self, flows_dir: Path, factory, flow_store):
+        self.flows_dir = flows_dir
+        self.factory = factory
+        self.flow_store = flow_store
+
+    def on_modified(self, event):
+        """Handle file modification events."""
+        if event.is_directory:
+            return
+        if event.src_path.endswith((".yaml", ".json")):
+            print(f"Flow file modified: {event.src_path}, reloading...")
+            self._reload_flow(Path(event.src_path))
+
+    def on_created(self, event):
+        """Handle file creation events."""
+        if event.is_directory:
+            return
+        if event.src_path.endswith((".yaml", ".json")):
+            print(f"Flow file created: {event.src_path}, loading...")
+            self._reload_flow(Path(event.src_path))
+
+    def _reload_flow(self, flow_file: Path):
+        """Reload a single flow file."""
+        try:
+            dsl_content = flow_file.read_text()
+            if flow_file.suffix == ".yaml":
+                dsl_dict = yaml.safe_load(dsl_content)
+            else:
+                dsl_dict = json.loads(dsl_content)
+
+            flow = self.factory.load_flow_from_dsl(dsl_dict)
+
+            # Update or add the flow
+            self.flow_store.add(flow)
+            print(f"Reloaded flow: {flow.flow_id}")
+
+        except Exception as e:
+            print(f"Error reloading flow from {flow_file}: {e}")
+
+
+def start_flow_watcher(flows_dir: Path, factory, flow_store):
+    """Start watching flow directory for changes.
+
+    Args:
+        flows_dir: Directory to watch for flow files
+        factory: ObjectFactory for loading flows
+        flow_store: FlowStore to register flows
+
+    Returns:
+        Observer instance or None if watchdog not available
+    """
+    try:
+        from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
+
+        # Create a handler that wraps our FlowReloadHandler
+        class WatchdogHandler(FileSystemEventHandler):
+            def __init__(self, handler: FlowReloadHandler):
+                self.handler = handler
+
+            def on_modified(self, event):
+                self.handler.on_modified(event)
+
+            def on_created(self, event):
+                self.handler.on_created(event)
+
+        observer = Observer()
+        handler = FlowReloadHandler(flows_dir, factory, flow_store)
+        watchdog_handler = WatchdogHandler(handler)
+        observer.schedule(watchdog_handler, str(flows_dir), recursive=False)
+        observer.start()
+        print(f"Watching for flow changes in: {flows_dir}")
+        return observer
+
+    except ImportError:
+        print("Warning: watchdog not installed, hot reload disabled")
+        return None
+
+
 def start_server(
     host: str = "0.0.0.0",
     port: int = 8080,
@@ -225,6 +307,7 @@ def start_server(
         os.environ["ROUTILUX_ROUTINES_DIRS"] = ":".join(str(d) for d in all_dirs)
 
     # Load flows from directory
+    observer = None
     if flows_dir:
         print(f"Loading flows from: {flows_dir}")
         flows = load_flows_from_directory(flows_dir, factory)
@@ -236,16 +319,25 @@ def start_server(
         for flow_id, flow in flows.items():
             flow_store.add(flow)
 
+        # Start flow watcher for hot reload
+        observer = start_flow_watcher(flows_dir, factory, flow_store)
+
     # Write PID file
     write_pid_file(port, os.getpid())
 
     # Import and start server
     import uvicorn
 
-    uvicorn.run(
-        "routilux.server.main:app",
-        host=host,
-        port=port,
-        reload=reload,
-        log_level=log_level,
-    )
+    try:
+        uvicorn.run(
+            "routilux.server.main:app",
+            host=host,
+            port=port,
+            reload=reload,
+            log_level=log_level,
+        )
+    finally:
+        # Stop flow watcher on exit
+        if observer:
+            observer.stop()
+            observer.join()
