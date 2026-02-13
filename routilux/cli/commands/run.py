@@ -9,6 +9,34 @@ import yaml
 from routilux.cli.discovery import discover_routines, get_default_routines_dirs
 
 
+def _validate_timeout(ctx, param, value):
+    """Validate timeout value.
+
+    Args:
+        ctx: Click context
+        param: Parameter object
+        value: The timeout value to validate
+
+    Returns:
+        Validated timeout value
+
+    Raises:
+        click.BadParameter: If timeout is invalid
+    """
+    if value is not None:
+        if value <= 0:
+            raise click.BadParameter(
+                f"Timeout must be positive, got {value}.\nExample: --timeout 60",
+                param_hint="--timeout",
+            )
+        if value > 86400:  # 24 hours
+            click.echo(
+                click.style("Warning: ", fg="yellow") + f"Timeout {value}s is very long (>24h)",
+                err=True,
+            )
+    return value
+
+
 @click.command()
 @click.option(
     "--workflow",
@@ -39,6 +67,7 @@ from routilux.cli.discovery import discover_routines, get_default_routines_dirs
     "--timeout",
     type=float,
     default=300.0,
+    callback=_validate_timeout,
     help="Execution timeout in seconds (default: 300)",
 )
 @click.pass_context
@@ -47,6 +76,23 @@ def run(ctx, workflow, routines_dir, param, output, timeout):
 
     Loads a workflow definition from a JSON or YAML file, discovers routines
     from specified directories, and executes the workflow.
+
+    \b
+    Examples:
+        # Run a workflow
+        $ routilux run --workflow flows/my_flow.yaml
+
+        # Pass parameters
+        $ routilux run -w flow.yaml -p name=John -p count=10
+
+        # Save output to file
+        $ routilux run -w flow.yaml --output result.json
+
+        # Set timeout
+        $ routilux run -w flow.yaml --timeout 60
+
+        # Use custom routines directory
+        $ routilux run -w flow.yaml --routines-dir ./my_routines
     """
     quiet = ctx.obj.get("quiet", False)
     verbose = ctx.obj.get("verbose", False)
@@ -185,18 +231,28 @@ def _load_dsl(file_path: Path) -> dict:
 
 
 def _parse_params(param_list: tuple) -> dict:
-    """Parse KEY=VALUE parameters into a dictionary.
+    """Parse KEY=VALUE parameters with validation.
 
     Args:
         param_list: Tuple of KEY=VALUE strings
 
     Returns:
         Dictionary of parameters
+
+    Raises:
+        click.BadParameter: If parameter format is invalid
     """
     params = {}
     for param in param_list:
         if "=" not in param:
-            continue
+            raise click.BadParameter(
+                f"'{param}' is not in KEY=VALUE format.\nExample: --param name=value",
+                param_hint="--param",
+            )
         key, value = param.split("=", 1)
+        if not key:
+            raise click.BadParameter(
+                f"'{param}' has empty key.\nExample: --param name=value", param_hint="--param"
+            )
         params[key] = value
     return params

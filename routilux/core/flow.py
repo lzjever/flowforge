@@ -108,6 +108,9 @@ class Flow(Serializable):
         except ImportError:
             pass
 
+        # Track last routine for pipe() chaining
+        self._last_routine_id: str | None = None
+
         self.add_serializable_fields(
             [
                 "flow_id",
@@ -158,6 +161,73 @@ class Flow(Serializable):
 
             self.routines[rid] = routine
             return rid
+
+    def pipe(
+        self,
+        routine: Routine,
+        routine_id: str | None = None,
+        *,
+        from_routine: str | None = None,
+        from_event: str = "output",
+        to_slot: str = "input",
+    ) -> Flow:
+        """Add a routine and automatically connect it to the previous routine.
+
+        This method provides a chainable API for building pipelines.
+        Each call adds a routine and connects it to the previous one
+        (or a specified source routine).
+
+        Args:
+            routine: Routine instance to add
+            routine_id: Optional unique identifier (defaults to routine._id)
+            from_routine: Source routine ID to connect from (defaults to last added)
+            from_event: Event name to connect from (default: "output")
+            to_slot: Slot name to connect to (default: "input")
+
+        Returns:
+            Self for method chaining
+
+        Raises:
+            ValueError: If routine_id already exists or connection is invalid
+
+        Examples:
+            Basic chaining:
+
+            >>> flow = (Flow("pipeline")
+            ...     .pipe(Step1(), "step1")
+            ...     .pipe(Step2(), "step2")
+            ...     .pipe(Step3(), "step3"))
+
+            With custom connections:
+
+            >>> flow = (Flow("pipeline")
+            ...     .pipe(Source(), "source")
+            ...     .pipe(ProcessA(), "process_a", from_event="data")
+            ...     .pipe(ProcessB(), "process_b", from_routine="source"))
+
+            First routine (no incoming connection):
+
+            >>> flow = Flow("pipeline")
+            >>> flow.pipe(FirstStep(), "first")  # No connection made
+
+        Note:
+            The first pipe() call won't create any connections since there's
+            no previous routine to connect from.
+        """
+        # Add the routine
+        rid = self.add_routine(routine, routine_id)
+
+        # Determine source routine
+        source_id = from_routine or self._last_routine_id
+
+        # Create connection if there's a source
+        if source_id is not None:
+            self.connect(source_id, from_event, rid, to_slot)
+
+        # Update last routine for chaining
+        self._last_routine_id = rid
+
+        return self
 
     def connect(
         self,

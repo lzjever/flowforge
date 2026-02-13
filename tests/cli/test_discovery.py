@@ -1,7 +1,6 @@
 # tests/cli/test_discovery.py
 """Tests for routine discovery system."""
 
-
 import pytest
 
 from routilux.cli.discovery import RoutineDiscovery, discover_routines

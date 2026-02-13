@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-02-13
+
+### Added
+
+#### CLI Improvements
+
+- **Help information enhancement**: Added clear usage examples to all CLI commands (`init`, `run`, `list`, `validate`, `server`)
+- **Parameter validation**: Comprehensive validation with helpful error messages and recovery suggestions
+  - `run`: `--param` format validation (KEY=VALUE required), `--timeout` validation (must be positive)
+  - `init`: Project name validation (valid characters, reserved names)
+  - `server`: Port validation (0-65535, warning for privileged ports)
+- **Configuration file support**: Full `routilux.toml` configuration support
+  - Supports TOML, YAML, JSON formats
+  - Auto-discovers `routilux.toml` or `pyproject.toml`
+  - CLI options take precedence over config file values
+  - New `routilux/cli/config.py` module with `ConfigLoader` class
+- **Shell completion support**: Auto-completion for Bash, Zsh, and Fish shells
+  - New `routilux completion <shell>` command
+  - `--install` option for automatic installation
+  - Comprehensive completion for all commands and options
+- **Server management commands**: Full server lifecycle management
+  - `server stop`: Stop running server with PID file management
+  - `server status`: Check server status with JSON output option
+  - PID file management in `server_wrapper.py`
+- **Output beautification**: Rich library integration for better CLI output
+  - `list`: Rich tables for routines and flows
+  - `validate`: Colored output for validation results
+  - Graceful fallback when rich is not installed
+
+### Changed
+
+- Added `rich>=13.0.0` as optional CLI dependency
+- Updated `--config` option to actually load and use configuration files
+- Improved error messages with actionable recovery suggestions
+
+### Documentation
+
+- Updated CLI documentation with new features and examples
+- Added shell completion installation guide
+
+### Tests
+
+- Added `tests/cli/test_config.py` for configuration loading tests
+- Added `tests/cli/commands/test_completion.py` for completion command tests
+- Updated `tests/cli/commands/test_server.py` with stop/status tests
+- Updated `tests/cli/commands/test_run.py` with parameter validation tests
+
+## [0.12.0] - 2026-02-13
+
+### Added
+
+- **Built-in routines refactoring**: Reorganized and enhanced built-in routines
+  - **Control Flow**: Aggregator, Batcher, Debouncer, Splitter
+  - **Data Processing**: Filter, Mapper, SchemaValidator
+  - **Reliability**: RetryHandler with configurable strategies
+- **Simplified API**: New `pipeline`, `run_sync`, `run_async` functions for easier workflow creation
+- **Decorators**: `@routine` and `@routine_class` decorators for easy routine definition
+- **Analysis tools**: RoutineAnalyzer, WorkflowAnalyzer with formatters
+
+### Changed
+
+- Improved core architecture stability
+- Enhanced error handling and recovery
+
 ## [0.11.1] - 2026-02-13
 
 ### Fixed

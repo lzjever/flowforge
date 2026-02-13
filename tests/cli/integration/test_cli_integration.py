@@ -18,6 +18,7 @@ def test_full_workflow_cli(tmp_path):
 
     # Change to temp directory for subsequent commands
     import os
+
     original_cwd = os.getcwd()
     try:
         os.chdir(tmp_path)
@@ -120,6 +121,7 @@ connections: []
 
     # Verify flow can be loaded (not executed, just loaded)
     import yaml
+
     with open(flow_file) as f:
         dsl_dict = yaml.safe_load(f)
 

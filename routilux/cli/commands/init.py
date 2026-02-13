@@ -1,6 +1,48 @@
 """Init command implementation."""
 
+import re
+
 import click
+
+
+def _validate_project_name(ctx, param, value):
+    """Validate project name.
+
+    Args:
+        ctx: Click context
+        param: Parameter object
+        value: The project name to validate
+
+    Returns:
+        Validated project name
+
+    Raises:
+        click.BadParameter: If project name is invalid
+    """
+    if value == ".":
+        return value
+
+    # Check for invalid characters
+    if not re.match(r"^[a-zA-Z0-9_\-./]+$", value):
+        raise click.BadParameter(
+            f"'{value}' contains invalid characters.\n"
+            f"Project names can only contain letters, numbers, underscores, hyphens, dots, and slashes.\n"
+            f"Example: --name my-project",
+            param_hint="--name",
+        )
+
+    # Check for reserved names
+    reserved_names = (
+        ["con", "prn", "aux", "nul"]
+        + [f"com{i}" for i in range(1, 10)]
+        + [f"lpt{i}" for i in range(1, 10)]
+    )
+    if value.lower() in reserved_names:
+        raise click.BadParameter(
+            f"'{value}' is a reserved name.\nPlease choose a different name.", param_hint="--name"
+        )
+
+    return value
 
 
 @click.command()
@@ -8,6 +50,7 @@ import click
     "--name",
     "-n",
     default=".",
+    callback=_validate_project_name,
     help="Project name (default: current directory)",
 )
 @click.option(
@@ -19,7 +62,19 @@ import click
 def initialize(ctx, name, force):
     """Initialize a new routilux project.
 
-    Creates the directory structure and example files for a routilux project.
+    Creates the directory structure and example files for a routilux project,
+    including routines/, flows/ directories and example files.
+
+    \b
+    Examples:
+        # Initialize in current directory
+        $ routilux init
+
+        # Create a named project
+        $ routilux init --name myproject
+
+        # Overwrite existing files
+        $ routilux init --force
     """
     quiet = ctx.obj.get("quiet", False)
 

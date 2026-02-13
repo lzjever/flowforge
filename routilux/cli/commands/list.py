@@ -8,6 +8,22 @@ import click
 from routilux.cli.discovery import discover_routines, get_default_routines_dirs
 from routilux.tools.factory.factory import ObjectFactory
 
+# Optional rich support
+try:
+    from rich.console import Console
+    from rich.table import Table
+
+    HAS_RICH = True
+except ImportError:
+    HAS_RICH = False
+
+
+def _create_console():
+    """Create a rich console if available."""
+    if HAS_RICH:
+        return Console()
+    return None
+
 
 @click.command()
 @click.argument("resource", type=click.Choice(["routines", "flows"]))
@@ -39,6 +55,23 @@ def list_cmd(ctx, resource, category, routines_dir, dir, output_format):
     """List available resources.
 
     List either discovered routines or available flow DSL files.
+
+    \b
+    Examples:
+        # List all routines
+        $ routilux list routines
+
+        # List routines in a category
+        $ routilux list routines --category example
+
+        # List routines as JSON
+        $ routilux list routines --format json
+
+        # List available flows
+        $ routilux list flows
+
+        # List flows from specific directory
+        $ routilux list flows --dir ./my_flows
     """
     quiet = ctx.obj.get("quiet", False)
 
@@ -76,15 +109,33 @@ def _list_routines(category: Optional[str], routines_dirs: tuple, output_format:
                 click.echo("No routines found.")
             return
 
-        # Table format
-        click.echo(f"{'Name':<30} {'Type':<10} {'Category':<15} {'Description'}")
-        click.echo("-" * 100)
-        for routine in routines:
-            name = routine["name"][:30]
-            obj_type = routine["object_type"][:10]
-            cat = (routine.get("category") or "")[:15]
-            desc = (routine.get("description") or "")[:40]
-            click.echo(f"{name:<30} {obj_type:<10} {cat:<15} {desc}")
+        # Use rich table if available
+        if HAS_RICH:
+            console = _create_console()
+            table = Table(title="Available Routines")
+            table.add_column("Name", style="cyan", no_wrap=True)
+            table.add_column("Type", style="green")
+            table.add_column("Category", style="yellow")
+            table.add_column("Description", style="dim")
+
+            for routine in routines:
+                name = routine["name"][:30]
+                obj_type = routine["object_type"][:10]
+                cat = (routine.get("category") or "")[:15]
+                desc = (routine.get("description") or "")[:50]
+                table.add_row(name, obj_type, cat, desc)
+
+            console.print(table)
+        else:
+            # Fallback to basic table
+            click.echo(f"{'Name':<30} {'Type':<10} {'Category':<15} {'Description'}")
+            click.echo("-" * 100)
+            for routine in routines:
+                name = routine["name"][:30]
+                obj_type = routine["object_type"][:10]
+                cat = (routine.get("category") or "")[:15]
+                desc = (routine.get("description") or "")[:40]
+                click.echo(f"{name:<30} {obj_type:<10} {cat:<15} {desc}")
 
 
 def _list_flows(directory: Optional[Path], output_format: str, quiet: bool):
@@ -144,9 +195,24 @@ def _list_flows(directory: Optional[Path], output_format: str, quiet: bool):
                 click.echo("No flows found.")
             return
 
-        click.echo(f"{'Flow ID':<30} {'File'}")
-        click.echo("-" * 80)
-        for flow in flows:
-            flow_id = flow["flow_id"][:30]
-            file_path = flow["file"]
-            click.echo(f"{flow_id:<30} {file_path}")
+        # Use rich table if available
+        if HAS_RICH:
+            console = _create_console()
+            table = Table(title="Available Flows")
+            table.add_column("Flow ID", style="cyan", no_wrap=True)
+            table.add_column("File", style="green")
+
+            for flow in flows:
+                flow_id = flow["flow_id"][:30]
+                file_path = flow["file"]
+                table.add_row(flow_id, file_path)
+
+            console.print(table)
+        else:
+            # Fallback to basic table
+            click.echo(f"{'Flow ID':<30} {'File'}")
+            click.echo("-" * 80)
+            for flow in flows:
+                flow_id = flow["flow_id"][:30]
+                file_path = flow["file"]
+                click.echo(f"{flow_id:<30} {file_path}")

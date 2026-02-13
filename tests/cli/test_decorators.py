@@ -29,7 +29,7 @@ def test_register_with_metadata():
         "metadata_processor",
         category="processing",
         tags=["fast", "simple"],
-        description="A test processor"
+        description="A test processor",
     )
     def my_logic(data):
         return data
@@ -56,11 +56,13 @@ def test_create_routine_from_factory():
 
 def test_duplicate_registration_raises():
     """Test that duplicate registration raises error."""
+
     @register_routine("duplicate_test")
     def func1(data):
         return data
 
     with pytest.raises(ValueError, match="already registered"):
+
         @register_routine("duplicate_test")
         def func2(data):
             return data
@@ -68,6 +70,7 @@ def test_duplicate_registration_raises():
 
 def test_decorator_preserves_function():
     """Test that decorator preserves original function."""
+
     @register_routine("preserve_test")
     def my_function(data):
         return data

@@ -11,6 +11,7 @@ def test_init_creates_project_structure(tmp_path):
     with runner.isolated_filesystem():
         # Change to the temp directory for the test
         import os
+
         os.chdir(tmp_path)
 
         result = runner.invoke(cli, ["init"])
@@ -28,6 +29,7 @@ def test_init_with_custom_name(tmp_path):
     with runner.isolated_filesystem():
         # Change to the temp directory for the test
         import os
+
         os.chdir(tmp_path)
 
         result = runner.invoke(cli, ["init", "--name", "my_project"])

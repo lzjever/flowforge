@@ -7,6 +7,21 @@ import click
 from routilux.cli.commands.run import _load_dsl
 from routilux.cli.discovery import discover_routines, get_default_routines_dirs
 
+# Optional rich support
+try:
+    from rich.console import Console
+
+    HAS_RICH = True
+except ImportError:
+    HAS_RICH = False
+
+
+def _create_console():
+    """Create a rich console if available."""
+    if HAS_RICH:
+        return Console()
+    return None
+
 
 @click.command()
 @click.option(
@@ -27,6 +42,17 @@ def validate(ctx, workflow, routines_dir):
     """Validate a workflow DSL file.
 
     Checks DSL syntax, verifies all routines are registered, and validates connections.
+
+    \b
+    Examples:
+        # Validate a workflow
+        $ routilux validate --workflow flows/my_flow.yaml
+
+        # Validate with custom routines directory
+        $ routilux validate -w flow.yaml --routines-dir ./routines
+
+        # Validate with verbose output
+        $ routilux -v validate -w flow.yaml
     """
     quiet = ctx.obj.get("quiet", False)
     verbose = ctx.obj.get("verbose", False)
@@ -102,18 +128,39 @@ def _print_validation_result(errors: list, warnings: list, quiet: bool):
         return
 
     if not errors and not warnings:
-        click.echo("✓ Validation passed")
+        if HAS_RICH:
+            console = _create_console()
+            console.print("[green]✓[/green] Validation passed")
+        else:
+            click.echo("✓ Validation passed")
         return
 
-    if warnings:
-        click.echo("\nWarnings:")
-        for warning in warnings:
-            click.echo(f"  ⚠ {warning}")
+    if HAS_RICH:
+        console = _create_console()
 
-    if errors:
-        click.echo("\nErrors:")
-        for error in errors:
-            click.echo(f"  ✗ {error}")
-        click.echo("\n✗ Validation failed")
+        if warnings:
+            console.print("\n[yellow]Warnings:[/yellow]")
+            for warning in warnings:
+                console.print(f"  [yellow]⚠[/yellow] {warning}")
+
+        if errors:
+            console.print("\n[red]Errors:[/red]")
+            for error in errors:
+                console.print(f"  [red]✗[/red] {error}")
+            console.print("\n[red]✗ Validation failed[/red]")
+        else:
+            console.print("\n[green]✓[/green] Validation passed (with warnings)")
     else:
-        click.echo("\n✓ Validation passed (with warnings)")
+        # Fallback to basic output
+        if warnings:
+            click.echo("\nWarnings:")
+            for warning in warnings:
+                click.echo(f"  ⚠ {warning}")
+
+        if errors:
+            click.echo("\nErrors:")
+            for error in errors:
+                click.echo(f"  ✗ {error}")
+            click.echo("\n✗ Validation failed")
+        else:
+            click.echo("\n✓ Validation passed (with warnings)")

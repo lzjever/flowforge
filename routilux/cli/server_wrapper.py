@@ -4,11 +4,70 @@ Wraps the existing FastAPI server with CLI-specific configuration
 including routine discovery and registration.
 """
 
+import atexit
 import os
 from pathlib import Path
 from typing import List, Optional
 
 from routilux.cli.discovery import discover_routines, get_default_routines_dirs
+
+# PID file management
+
+
+def get_pid_file(port: int) -> Path:
+    """Get PID file path for a server instance.
+
+    Args:
+        port: Server port number
+
+    Returns:
+        Path to PID file
+    """
+    return Path(f"/tmp/routilux-server-{port}.pid")
+
+
+def write_pid_file(port: int, pid: int) -> None:
+    """Write PID file when server starts.
+
+    Args:
+        port: Server port number
+        pid: Process ID to write
+    """
+    pid_file = get_pid_file(port)
+    pid_file.write_text(str(pid))
+    atexit.register(lambda: remove_pid_file(port))
+
+
+def read_pid_file(port: int) -> Optional[int]:
+    """Read PID from file.
+
+    Args:
+        port: Server port number
+
+    Returns:
+        Process ID if file exists and is valid, None otherwise
+    """
+    pid_file = get_pid_file(port)
+    if pid_file.exists():
+        try:
+            return int(pid_file.read_text().strip())
+        except ValueError:
+            return None
+    return None
+
+
+def remove_pid_file(port: int) -> None:
+    """Remove PID file.
+
+    Args:
+        port: Server port number
+    """
+    pid_file = get_pid_file(port)
+    if pid_file.exists():
+        try:
+            pid_file.unlink()
+        except OSError:
+            pass
 
 
 def start_server(
@@ -48,6 +107,9 @@ def start_server(
     # Store routines directories for server endpoints
     if all_dirs:
         os.environ["ROUTILUX_ROUTINES_DIRS"] = ":".join(str(d) for d in all_dirs)
+
+    # Write PID file
+    write_pid_file(port, os.getpid())
 
     # Import and start server
     import uvicorn

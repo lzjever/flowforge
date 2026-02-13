@@ -29,7 +29,11 @@ connections: []
     runner = CliRunner()
     result = runner.invoke(cli, ["validate", "--workflow", str(dsl_file)])
     # Should succeed or contain validation info
-    assert result.exit_code == 0 or "valid" in result.output.lower() or "validating" in result.output.lower()
+    assert (
+        result.exit_code == 0
+        or "valid" in result.output.lower()
+        or "validating" in result.output.lower()
+    )
 
 
 def test_validate_invalid_yaml(tmp_path):
@@ -42,4 +46,8 @@ def test_validate_invalid_yaml(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, ["validate", "--workflow", str(dsl_file)])
     # Should show error about invalid syntax
-    assert result.exit_code != 0 or "error" in result.output.lower() or "valid" in result.output.lower()
+    assert (
+        result.exit_code != 0
+        or "error" in result.output.lower()
+        or "valid" in result.output.lower()
+    )

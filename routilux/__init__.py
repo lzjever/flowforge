@@ -21,14 +21,21 @@ from routilux.analysis import (
 
 # Import built-in routines
 from routilux.builtin_routines import (
+    # Core Patterns
+    Aggregator,
+    Batcher,
     ConditionalRouter,
-    DataFlattener,
+    # Data Processing
     DataTransformer,
     DataValidator,
+    Debouncer,
+    Filter,
+    Mapper,
     ResultExtractor,
-    TextClipper,
-    TextRenderer,
-    TimeProvider,
+    # Reliability
+    RetryHandler,
+    SchemaValidator,
+    Splitter,
 )
 from routilux.core import (
     Connection,
@@ -81,6 +88,9 @@ from routilux.core import (
     uninstall_routed_stdout,
 )
 
+# Import decorators
+from routilux.decorators import routine, routine_class
+
 # Import exceptions (these are still useful utilities)
 from routilux.exceptions import (
     ConfigurationError,
@@ -98,6 +108,9 @@ from routilux.metrics import (
     MetricsCollector,
     MetricTimer,
 )
+
+# Import simplified API
+from routilux.simple import pipeline, run_async, run_sync
 
 # Import validators (still useful)
 from routilux.validators import ValidationError, Validator
@@ -172,18 +185,28 @@ __all__ = [
     "Gauge",
     "Histogram",
     "MetricTimer",
-    # Built-in routines - Text processing
-    "TextClipper",
-    "TextRenderer",
-    "ResultExtractor",
-    # Built-in routines - Utils
-    "TimeProvider",
-    "DataFlattener",
-    # Built-in routines - Data processing
-    "DataTransformer",
-    "DataValidator",
-    # Built-in routines - Control flow
+    # Decorators
+    "routine",
+    "routine_class",
+    # Simplified API
+    "pipeline",
+    "run_sync",
+    "run_async",
+    # Built-in routines - Core Patterns
     "ConditionalRouter",
+    "Aggregator",
+    "Batcher",
+    "Debouncer",
+    "Splitter",
+    # Built-in routines - Data Processing
+    "ResultExtractor",
+    "Mapper",
+    "SchemaValidator",
+    "Filter",
+    "DataTransformer",  # Backward compatibility alias
+    "DataValidator",  # Backward compatibility alias
+    # Built-in routines - Reliability
+    "RetryHandler",
     # Analysis tools
     "RoutineAnalyzer",
     "analyze_routine_file",
@@ -194,4 +217,4 @@ __all__ = [
     "WorkflowD2Formatter",
 ]
 
-__version__ = "0.11.1"
+__version__ = "0.13.0"
