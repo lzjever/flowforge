@@ -176,10 +176,42 @@ routilux --help
 - **`routilux init`** - Initialize a new project with example files
 - **`routilux run`** - Execute a workflow from a DSL file
 - **`routilux server`** - Start the HTTP server for API access
+- **`routilux job`** - Submit and manage jobs
 - **`routilux list`** - List available routines or flows
 - **`routilux validate`** - Validate a workflow DSL file
 
 See [CLI Documentation](docs/cli/usage.md) for details.
+
+### Server with Flow Loading
+
+Start the HTTP server with flow auto-loading:
+
+```bash
+# Start server with flows directory
+routilux server start --flows-dir ./flows --port 8080
+
+# Built-in routines (Mapper, Filter, etc.) are automatically available
+# Flows from ./flows/*.yaml are loaded at startup
+# Hot reload enabled - flow files are watched for changes
+```
+
+### Job Management
+
+Submit and manage jobs via CLI:
+
+```bash
+# Submit job locally
+routilux job submit --flow myflow --routine processor --data '{"input": "value"}'
+
+# Submit job to remote server
+routilux job submit --server http://localhost:8080 --flow myflow --routine processor --data '{}'
+
+# Check job status
+routilux job status <job_id>
+
+# List jobs
+routilux job list --flow myflow
+```
 
 ## 🚀 Quick Start
 
