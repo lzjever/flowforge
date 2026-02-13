@@ -70,6 +70,11 @@ def server():
     help="Additional directories to scan for routines",
 )
 @click.option(
+    "--flows-dir",
+    type=click.Path(exists=True, path_type=Path),
+    help="Directory containing flow DSL files to load at startup",
+)
+@click.option(
     "--reload",
     is_flag=True,
     help="Enable auto-reload for development",
@@ -81,7 +86,7 @@ def server():
     help="Log level for uvicorn (default: info)",
 )
 @click.pass_context
-def start(ctx, host, port, routines_dir, reload, log_level):
+def start(ctx, host, port, routines_dir, flows_dir, reload, log_level):
     """Start the routilux HTTP server.
 
     Starts the FastAPI server with REST and WebSocket endpoints.
@@ -114,6 +119,8 @@ def start(ctx, host, port, routines_dir, reload, log_level):
         click.echo(f"Starting routilux server on {host}:{port}")
         if routines_dirs:
             click.echo(f"Routines directories: {routines_dirs}")
+        if flows_dir:
+            click.echo(f"Flows directory: {flows_dir}")
 
     from routilux.cli.server_wrapper import start_server
 
@@ -122,6 +129,7 @@ def start(ctx, host, port, routines_dir, reload, log_level):
             host=host,
             port=port,
             routines_dirs=routines_dirs if routines_dirs else None,
+            flows_dir=flows_dir,
             reload=reload,
             log_level=log_level,
         )

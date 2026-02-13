@@ -181,6 +181,7 @@ def start_server(
     host: str = "0.0.0.0",
     port: int = 8080,
     routines_dirs: Optional[List[Path]] = None,
+    flows_dir: Optional[Path] = None,
     reload: bool = False,
     log_level: str = "info",
 ):
@@ -192,9 +193,17 @@ def start_server(
         host: Host to bind to
         port: Port to bind to
         routines_dirs: Additional directories to scan for routines
+        flows_dir: Directory containing flow DSL files to load at startup
         reload: Enable auto-reload for development
         log_level: Log level for uvicorn
     """
+    # Register built-in routines first
+    from routilux.builtin_routines import register_all_builtins
+
+    factory = discover_routines([], on_error="warn")  # Get factory
+    register_all_builtins(factory)
+    print("Registered built-in routines")
+
     # Gather routines directories
     all_dirs = list(routines_dirs or [])
     all_dirs.extend(get_default_routines_dirs())
@@ -214,6 +223,18 @@ def start_server(
     # Store routines directories for server endpoints
     if all_dirs:
         os.environ["ROUTILUX_ROUTINES_DIRS"] = ":".join(str(d) for d in all_dirs)
+
+    # Load flows from directory
+    if flows_dir:
+        print(f"Loading flows from: {flows_dir}")
+        flows = load_flows_from_directory(flows_dir, factory)
+        print(f"Loaded {len(flows)} flows")
+
+        # Register flows with monitoring storage
+        from routilux.monitoring.storage import flow_store
+
+        for flow_id, flow in flows.items():
+            flow_store.add(flow)
 
     # Write PID file
     write_pid_file(port, os.getpid())
