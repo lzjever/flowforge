@@ -24,7 +24,7 @@ API_KEY_HEADER = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_HEADER, auto_error=False)
 
 
-def verify_api_key(api_key: str = Security(api_key_header), request: Request | None = None) -> str:
+def verify_api_key(request: Request, api_key: str = Security(api_key_header)) -> str:
     """Verify API key from request header.
 
     When api_key_enabled is False: allows all (returns 'anonymous').
