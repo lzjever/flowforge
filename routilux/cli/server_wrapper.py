@@ -5,12 +5,16 @@ including routine discovery and registration.
 """
 
 import atexit
+import json
 import os
 import signal
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
+
+import yaml
 
 from routilux.cli.discovery import discover_routines, get_default_routines_dirs
+from routilux.core.flow import Flow
 
 # PID file management
 
@@ -101,6 +105,76 @@ def remove_pid_file(port: int) -> None:
         except OSError:
             pass
     _registered_ports.discard(port)
+
+
+def load_flows_from_directory(flows_dir: Path, factory) -> Dict[str, Flow]:
+    """Load all flows from a directory.
+
+    Args:
+        flows_dir: Directory containing flow DSL files (.yaml, .json)
+        factory: ObjectFactory for loading flows
+
+    Returns:
+        Dictionary mapping flow_id to Flow instance
+
+    Raises:
+        ValueError: If duplicate flow_id is detected
+    """
+    flows: Dict[str, Flow] = {}
+    flows_path = Path(flows_dir)
+
+    if not flows_path.exists():
+        return flows
+
+    # Load YAML files
+    for dsl_file in flows_path.glob("*.yaml"):
+        try:
+            dsl_content = dsl_file.read_text()
+            dsl_dict = yaml.safe_load(dsl_content)
+
+            flow = factory.load_flow_from_dsl(dsl_dict)
+
+            if flow.flow_id in flows:
+                raise ValueError(
+                    f"Duplicate flow_id '{flow.flow_id}' in {dsl_file} "
+                    f"(already defined in another file)"
+                )
+
+            flows[flow.flow_id] = flow
+            print(f"Loaded flow: {flow.flow_id} from {dsl_file.name}")
+
+        except ValueError:
+            raise  # Re-raise duplicate flow_id errors
+        except yaml.YAMLError as e:
+            print(f"Warning: Failed to parse {dsl_file}: {e}")
+        except Exception as e:
+            print(f"Warning: Failed to load flow from {dsl_file}: {e}")
+
+    # Load JSON files
+    for dsl_file in flows_path.glob("*.json"):
+        try:
+            dsl_content = dsl_file.read_text()
+            dsl_dict = json.loads(dsl_content)
+
+            flow = factory.load_flow_from_dsl(dsl_dict)
+
+            if flow.flow_id in flows:
+                raise ValueError(
+                    f"Duplicate flow_id '{flow.flow_id}' in {dsl_file} "
+                    f"(already defined in another file)"
+                )
+
+            flows[flow.flow_id] = flow
+            print(f"Loaded flow: {flow.flow_id} from {dsl_file.name}")
+
+        except ValueError:
+            raise  # Re-raise duplicate flow_id errors
+        except json.JSONDecodeError as e:
+            print(f"Warning: Failed to parse {dsl_file}: {e}")
+        except Exception as e:
+            print(f"Warning: Failed to load flow from {dsl_file}: {e}")
+
+    return flows
 
 
 def start_server(
