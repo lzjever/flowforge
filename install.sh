@@ -11,12 +11,10 @@
 #   METHOD=pipx   - Use pipx install
 #   METHOD=pip    - Use pip --user install (not recommended)
 #   VERSION=x.x.x - Install specific version
-#   FORCE=1       - Upgrade if already installed
 #
 # Examples:
 #   METHOD=pipx curl -fsSL https://raw.githubusercontent.com/lzjever/routilux/main/install.sh | bash
 #   VERSION=0.14.0 curl -fsSL https://raw.githubusercontent.com/lzjever/routilux/main/install.sh | bash
-#   FORCE=1 curl -fsSL https://raw.githubusercontent.com/lzjever/routilux/main/install.sh | bash
 #
 set -e
 
@@ -33,7 +31,6 @@ ROUTILUX_REPO="lzjever/routilux"
 ROUTILUX_PYPI="routilux"
 METHOD="${METHOD:-uv}"
 VERSION="${VERSION:-}"
-FORCE="${FORCE:-}"
 PREFIX="${PREFIX:-$HOME/.local}"
 
 info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -122,14 +119,11 @@ install_routilux_uv() {
         pkg="routilux[cli]==$VERSION"
     fi
 
-    # Check if already installed
+    # Check if already installed - upgrade by default
     if uv tool list 2>/dev/null | grep -q "^routilux"; then
-        if [ -n "$FORCE" ]; then
-            info "Upgrading routilux with uv..."
-            uv tool upgrade routilux
-        else
-            success "routilux is already installed (use FORCE=1 to upgrade)"
-        fi
+        info "routilux already installed, upgrading..."
+        uv tool upgrade routilux
+        success "routilux upgraded with uv"
         return 0
     fi
 
@@ -144,14 +138,11 @@ install_routilux_pipx() {
         pkg="routilux[cli]==$VERSION"
     fi
 
-    # Check if already installed
+    # Check if already installed - upgrade by default
     if pipx list 2>/dev/null | grep -q "routilux"; then
-        if [ -n "$FORCE" ]; then
-            info "Upgrading routilux with pipx..."
-            pipx upgrade routilux
-        else
-            success "routilux is already installed (use FORCE=1 to upgrade)"
-        fi
+        info "routilux already installed, upgrading..."
+        pipx upgrade routilux
+        success "routilux upgraded with pipx"
         return 0
     fi
 
@@ -168,13 +159,9 @@ install_routilux_pip() {
         pkg="routilux[cli]==$VERSION"
     fi
 
-    local upgrade_flag=""
-    if [ -n "$FORCE" ] && $PYTHON -m pip show routilux &>/dev/null; then
-        upgrade_flag="--upgrade"
-    fi
-
-    info "Installing routilux with pip..."
-    $PYTHON -m pip install --user $upgrade_flag "$pkg"
+    # Always use --upgrade to handle both install and upgrade
+    info "Installing/upgrading routilux with pip..."
+    $PYTHON -m pip install --user --upgrade "$pkg"
     success "routilux installed with pip"
 }
 
