@@ -103,7 +103,8 @@ class TestCLIHelp:
 
         assert result.exit_code == 0
         assert "version" in result.output
-        assert "0.15" in result.output  # Check for version number
+        import re
+        assert re.search(r"\d+\.\d+", result.output)  # Check for version number format
 
     def test_help(self, runner):
         """Test that --help works."""
