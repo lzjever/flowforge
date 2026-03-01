@@ -272,13 +272,14 @@ async def sync_jobs():
                 flow_id = worker.flow_id
             job_storage.save_job(job, flow_id=flow_id)
 
+        total = len(all_jobs)
         return JobListResponse(
             jobs=[
                 _job_to_response(job, flow_id=job_storage.get_flow_id(job.job_id) or "")
                 for job in all_jobs
             ],
-            total=len(all_jobs),
-            limit=len(all_jobs),
+            total=total,
+            limit=max(1, min(total, 1000)),  # JobListResponse.limit has ge=1, le=1000
             offset=0,
         )
     except Exception as e:
@@ -375,10 +376,11 @@ async def discover_jobs():
                 flow_id = worker.flow_id
             responses.append(_job_to_response(job, flow_id=flow_id))
 
+        total = len(all_jobs)
         return JobListResponse(
             jobs=responses,
-            total=len(all_jobs),
-            limit=len(all_jobs),
+            total=total,
+            limit=max(1, min(total, 1000)),  # JobListResponse.limit has ge=1, le=1000
             offset=0,
         )
     except Exception as e:
