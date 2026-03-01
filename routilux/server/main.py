@@ -5,6 +5,7 @@ This is the entry point for the Routilux monitoring and flow builder API.
 """
 
 import os
+from routilux import __version__ as routilux_version
 import time
 from contextlib import asynccontextmanager
 
@@ -122,7 +123,7 @@ async def register_debugger_flows():
 app = FastAPI(
     title="Routilux API",
     description="Monitoring, debugging, and flow builder API for Routilux",
-    version="0.11.0",
+    version=routilux_version,
     lifespan=lifespan,
 )
 
@@ -301,6 +302,17 @@ def root():
     Raises:
         HTTPException: 401 if authentication fails
     """
+    return {
+        "name": "Routilux API",
+        "version": routilux_version,
+        "description": "Monitoring, debugging, and flow builder API for Routilux",
+        "api_version": "v1",
+        "endpoints": {
+            "v1": "/api/v1",
+            "health": "/api/v1/health/live",
+            "docs": "/docs",
+        },
+    }
 
 
 # OpenAPI: document X-API-Key so Swagger UI shows Authorize

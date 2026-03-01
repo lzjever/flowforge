@@ -66,6 +66,7 @@ state management, and workflow orchestration capabilities.
    examples/index
    design/index
    features
+   versioning
    testing
    changelog
 

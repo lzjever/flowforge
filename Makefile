@@ -84,14 +84,14 @@ install:
 dev-install:
 	@echo "Installing package with all development dependencies..."
 	@if [ -n "$(UV)" ]; then \
-		uv sync --group docs --all-extras; \
+		uv sync --group docs --group dev --all-extras; \
 	else \
 		$(PIP_CMD) install -e ".[dev]"; \
 	fi
 	@echo "✅ Package and dependencies installed! Ready for development."
 
 test:
-	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v
+	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v -n auto
 
 test-core:
 	$(PYTHON_CMD) -m pytest tests/ -v
@@ -100,7 +100,7 @@ test-builtin:
 	$(PYTHON_CMD) -m pytest routilux/builtin_routines/ -v
 
 test-cov:
-	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ --cov=routilux --cov-report=html --cov-report=term
+	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -n auto --cov=routilux --cov-report=html --cov-report=term
 
 test-integration:
 	@echo "Running integration tests (requires external services)..."

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-03-01
+
+### Added
+
+- **Versioning policy**: x.y.z scheme with coupled x.y for routilux and routilux-overseer; z can be updated independently without API/behavior breaks. See `VERSIONING.md` and docs `versioning` / `api/contract`.
+- **Documentation**: Versioning and API contract docs in Sphinx (`versioning.rst`, `api/contract.rst`).
+- **Parallel tests**: `pytest-xdist` for parallel test runs; `make test` and CI use `-n auto`.
+
+### Changed
+
+- **Server API version**: Root endpoint `GET /` and FastAPI app now use package `__version__` (no longer hardcoded). Ensures OpenAPI and root response report the same version.
+- **Server root endpoint**: Fixed missing return value; `GET /` now returns the documented JSON (name, version, description, api_version, endpoints).
+
+### Developer
+
+- Dev dependency: `pytest-xdist>=3.0.0` added to `[dependency-groups] dev`.
+
 ## [0.15.3] - 2026-02-14
 
 ### Fixed
