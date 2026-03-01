@@ -5,7 +5,6 @@ This is the entry point for the Routilux monitoring and flow builder API.
 """
 
 import os
-from routilux import __version__ as routilux_version
 import time
 from contextlib import asynccontextmanager
 
@@ -13,6 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from routilux import __version__ as routilux_version
 from routilux.server.audit import get_audit_logger, hash_api_key
 from routilux.server.middleware.auth import RequireAuth
 from routilux.server.routes import (

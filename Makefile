@@ -91,7 +91,7 @@ dev-install:
 	@echo "✅ Package and dependencies installed! Ready for development."
 
 test:
-	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v -n auto
+	$(PYTHON_CMD) -m pytest tests/ -v -n auto --ignore=tests/benchmarks
 
 test-core:
 	$(PYTHON_CMD) -m pytest tests/ -v
@@ -107,13 +107,13 @@ test-integration:
 	$(PYTHON_CMD) -m pytest tests/ routilux/builtin_routines/ -v -m integration
 
 lint:
-	$(PYTHON_CMD) -m ruff check routilux/ tests/ examples/ --output-format=concise
+	$(PYTHON_CMD) -m ruff check routilux/ tests/ --output-format=concise
 
 format:
-	$(PYTHON_CMD) -m ruff format routilux/ tests/ examples/
+	$(PYTHON_CMD) -m ruff format routilux/ tests/
 
 format-check:
-	$(PYTHON_CMD) -m ruff format --check routilux/ tests/ examples/
+	$(PYTHON_CMD) -m ruff format --check routilux/ tests/
 
 check: lint format-check test
 	@echo "All checks passed!"

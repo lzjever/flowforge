@@ -290,7 +290,7 @@ def start_server(
     all_dirs = []
     seen_paths = set()
 
-    for d in (routines_dirs or []):
+    for d in routines_dirs or []:
         resolved = Path(d).resolve()
         if str(resolved) not in seen_paths:
             seen_paths.add(str(resolved))

@@ -1,7 +1,6 @@
 """Tests for built-in routine registration."""
 
 
-
 def test_register_all_builtins_registers_all_routines():
     """Test that register_all_builtins registers all built-in routines."""
     from routilux.builtin_routines import register_all_builtins

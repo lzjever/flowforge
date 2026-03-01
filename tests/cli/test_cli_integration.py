@@ -104,6 +104,7 @@ class TestCLIHelp:
         assert result.exit_code == 0
         assert "version" in result.output
         import re
+
         assert re.search(r"\d+\.\d+", result.output)  # Check for version number format
 
     def test_help(self, runner):

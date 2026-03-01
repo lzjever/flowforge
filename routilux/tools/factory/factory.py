@@ -9,7 +9,6 @@ from routilux.tools.factory.metadata import ObjectMetadata
 
 if TYPE_CHECKING:
     from routilux.core.flow import Flow
-    from routilux.core.routine import Routine
 
 
 class ObjectFactory:
@@ -266,7 +265,12 @@ class ObjectFactory:
                 instance = proto_class()
                 # Ensure Routine subclasses have slots/events (setup() is not called in __init__)
                 from routilux.core.routine import Routine
-                if isinstance(instance, Routine) and hasattr(instance, "setup") and callable(instance.setup):
+
+                if (
+                    isinstance(instance, Routine)
+                    and hasattr(instance, "setup")
+                    and callable(instance.setup)
+                ):
                     instance.setup()
 
             # Merge override config (overrides prototype config)
