@@ -10,6 +10,7 @@ from routilux.core import Flow
 from routilux.monitoring.monitor_service import get_monitor_service
 from routilux.monitoring.registry import MonitoringRegistry
 from routilux.monitoring.storage import flow_store
+from routilux.server.dependencies import get_flow_registry
 from routilux.server.errors import ErrorCode, create_error_response
 from routilux.server.middleware.auth import RequireAuth
 from routilux.server.models.flow import (
@@ -378,6 +379,10 @@ async def create_flow(request: FlowCreateRequest):
 
         # Store flow
         flow_store.add(flow)
+        # Register in FlowRegistry so workers/jobs can resolve flow by id
+        flow_registry = get_flow_registry()
+        flow_registry.register(flow)
+        flow_registry.register_by_name(flow.flow_id, flow)
 
         return _flow_to_response(flow)
     except HTTPException:
@@ -404,6 +409,7 @@ async def create_flow(request: FlowCreateRequest):
 @router.delete("/flows/{flow_id}", status_code=204, dependencies=[RequireAuth])
 async def delete_flow(flow_id: str):
     """Delete a flow from the system.
+
 
     **Overview**:
     Permanently removes a flow from the system. This operation cannot be undone.
@@ -451,6 +457,7 @@ async def delete_flow(flow_id: str):
             ),
         )
     flow_store.remove(flow_id)
+    get_flow_registry().unregister_by_name(flow_id)
 
 
 @router.get("/flows/{flow_id}/metrics", dependencies=[RequireAuth])
