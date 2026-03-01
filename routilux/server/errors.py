@@ -47,6 +47,10 @@ class ErrorCode(str, Enum):
     VALIDATION_ERROR = "VALIDATION_ERROR"
     IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
 
+    # Auth and conflict (generic)
+    UNAUTHORIZED = "UNAUTHORIZED"
+    CONFLICT = "CONFLICT"
+
 
 def create_error_response(
     code: ErrorCode,
@@ -80,14 +84,18 @@ def create_error_response(
             }
         }
     """
-    return {
+    body = {
+        "code": code.value,
+        "message": message,
+        "details": details,
         "error": {
             "code": code.value,
             "message": message,
             "details": details,
             "request_id": request_id,
-        }
+        },
     }
+    return body
 
 
 def error_detail(

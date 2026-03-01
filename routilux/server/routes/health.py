@@ -10,7 +10,7 @@ import logging
 
 from fastapi import APIRouter
 
-from routilux.server.dependencies import get_runtime
+from routilux.server.dependencies import get_flow_registry, get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +73,18 @@ async def readiness():
         with runtime._worker_lock:
             active_workers = len(runtime._active_workers)
 
+        # Optional: flow count from registry (for UI empty-state / "flows loaded" hint)
+        flow_count = 0
+        try:
+            flow_registry = get_flow_registry()
+            flow_count = len(flow_registry.list_all())
+        except Exception:
+            pass
+
         return {
             "status": "ready",
             "runtime": {"shutdown": runtime._shutdown, "active_workers": active_workers},
+            "flow_count": flow_count,
         }
     except Exception as e:
         logger.warning(f"Readiness check failed: {e}")

@@ -107,9 +107,9 @@ async def http_exception_handler(request: Request, exc):
         # Other status codes mapping remains unchanged
         error_code_map = {
             400: ErrorCode.VALIDATION_ERROR,
-            401: ErrorCode.INTERNAL_ERROR,  # AUTH error not defined, use internal
+            401: ErrorCode.UNAUTHORIZED,
             403: ErrorCode.INTERNAL_ERROR,
-            409: ErrorCode.INTERNAL_ERROR,  # Should be provided by endpoint with specific error code
+            409: ErrorCode.CONFLICT,
             500: ErrorCode.INTERNAL_ERROR,
             503: ErrorCode.RUNTIME_SHUTDOWN,
         }

@@ -7,18 +7,20 @@
 [![CI](https://github.com/lzjever/routilux/workflows/CI/badge.svg)](https://github.com/lzjever/routilux/actions)
 [![codecov](https://codecov.io/gh/lzjever/routilux/branch/main/graph/badge.svg)](https://codecov.io/gh/lzjever/routilux)
 
-**Routilux** is a powerful, event-driven workflow orchestration framework that makes building complex data pipelines and workflows effortless. With its intuitive API and flexible architecture, you can create sophisticated workflows in minutes, not hours.
+**[简体中文](README.zh-CN.md)**
+
+**Routilux** — Event-driven workflow orchestration. Too many pipelines to tame? One event queue for orchestration, concurrency, and resume-from-checkpoint. Build in minutes, recover anytime.
 
 ## ✨ Why Routilux?
 
-- 🚀 **Event Queue Architecture**: Non-blocking event emission with unified execution model for both sequential and concurrent modes
-- 🔗 **Flexible Connections**: Many-to-many relationships between routines with intelligent data routing
-- 📊 **Built-in State Management**: Track execution state, performance metrics, and history out of the box
-- 🛡️ **Robust Error Handling**: Multiple strategies (STOP, CONTINUE, RETRY, SKIP) with automatic recovery
-- ⚡ **Concurrent Execution**: Automatic parallelization for I/O-bound operations via unified event queue
-- 💾 **Persistence & Recovery**: Save and resume workflows from any point with pending task serialization
-- 🎯 **Production Ready**: Comprehensive error handling, execution tracking, and monitoring
-- 🎨 **Simplified API**: Automatic flow detection - no need to pass flow parameter in most cases
+- 🚀 **Event queue**: Non-blocking, one model for sequential and concurrent execution
+- 🔗 **Flexible wiring**: Many-to-many routines, smart routing
+- 📊 **State built-in**: Execution state, metrics, history out of the box
+- 🛡️ **Error policies**: STOP / CONTINUE / RETRY / SKIP with automatic recovery
+- ⚡ **Concurrent execution**: I/O parallelized without blocking the main flow
+- 💾 **Checkpoint & resume**: Save and restore at any node; survive interruptions
+- 🎯 **Production-ready**: Error handling, tracing, and monitoring
+- 🎨 **Simple API**: Flow auto-detection; fewer parameters in most cases
 
 ## 🎯 Perfect For
 
@@ -367,6 +369,7 @@ flow.resume(saved_state)
 
 ### Documentation Highlights
 
+- **📄 [Where flows come from](docs/flow_sources.md)**: DSL, registry, API, and “Sync from registry” in Overseer
 - **📘 [User Guide](https://routilux.readthedocs.io/en/latest/user_guide/index.html)**: Comprehensive guide covering all features
 - **🔧 [API Reference](https://routilux.readthedocs.io/en/latest/api_reference/index.html)**: Complete API documentation
 - **💻 [Examples](https://routilux.readthedocs.io/en/latest/examples/index.html)**: Real-world code examples

@@ -115,10 +115,16 @@ routilux list routines --format json
 routilux list routines --format plain
 ```
 
-List available flows:
+List available flows (from local DSL files):
 
 ```bash
 routilux list flows
+```
+
+List flows from a running server:
+
+```bash
+routilux list flows --server http://localhost:20555
 ```
 
 ### routilux validate

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-01
+
+### Added
+
+- **CLI**: `routilux list flows --server URL` to list flows from a running API server (in addition to local DSL files).
+- **Health API**: `/health/ready` response now includes `flow_count` (number of flows in registry) for UI empty-state hints.
+- **Structured errors**: New error codes `UNAUTHORIZED` and `CONFLICT`; API error responses include top-level `code`, `message`, and `details` for client handling.
+
+### Changed
+
+- **Error handler**: 401 and 409 HTTP exceptions now map to `UNAUTHORIZED` and `CONFLICT` in JSON error body.
+
+### Documentation
+
+- CLI usage docs: added example for `routilux list flows --server http://localhost:20555`.
+
 ## [1.0.0] - 2026-03-01
 
 ### Added

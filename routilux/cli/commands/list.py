@@ -41,7 +41,11 @@ def _create_console():
 @click.option(
     "--dir",
     type=click.Path(exists=True, path_type=Path),
-    help="Directory to scan for flows",
+    help="Directory to scan for flows (local DSL files)",
+)
+@click.option(
+    "--server",
+    help="Server URL to list flows from (e.g. http://localhost:20555). If set, lists flows from API instead of local files.",
 )
 @click.option(
     "--format",
@@ -51,10 +55,11 @@ def _create_console():
     help="Output format (default: table)",
 )
 @click.pass_context
-def list_cmd(ctx, resource, category, routines_dir, dir, output_format):
+def list_cmd(ctx, resource, category, routines_dir, dir, server, output_format):
     """List available resources.
 
     List either discovered routines or available flow DSL files.
+    For flows, use --server to list from a running Routilux API server instead of local files.
 
     \b
     Examples:
@@ -67,8 +72,11 @@ def list_cmd(ctx, resource, category, routines_dir, dir, output_format):
         # List routines as JSON
         $ routilux list routines --format json
 
-        # List available flows
+        # List available flows (from local DSL files)
         $ routilux list flows
+
+        # List flows from a running server
+        $ routilux list flows --server http://localhost:20555
 
         # List flows from specific directory
         $ routilux list flows --dir ./my_flows
@@ -78,7 +86,10 @@ def list_cmd(ctx, resource, category, routines_dir, dir, output_format):
     if resource == "routines":
         _list_routines(category, routines_dir, output_format, quiet)
     elif resource == "flows":
-        _list_flows(dir, output_format, quiet)
+        if server:
+            _list_flows_from_server(server, output_format, quiet)
+        else:
+            _list_flows(dir, output_format, quiet)
 
 
 def _list_routines(category: Optional[str], routines_dirs: tuple, output_format: str, quiet: bool):
@@ -136,6 +147,50 @@ def _list_routines(category: Optional[str], routines_dirs: tuple, output_format:
                 cat = (routine.get("category") or "")[:15]
                 desc = (routine.get("description") or "")[:40]
                 click.echo(f"{name:<30} {obj_type:<10} {cat:<15} {desc}")
+
+
+def _list_flows_from_server(server_url: str, output_format: str, quiet: bool):
+    """List flows from a running Routilux API server."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    url = f"{server_url.rstrip('/')}/api/v1/flows"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode() if e.fp else ""
+        raise click.ClickException(f"Server error {e.code}: {body}")
+    except OSError as e:
+        raise click.ClickException(f"Cannot reach server: {e}")
+
+    flows = data.get("flows") or []
+    rows = [{"flow_id": f.get("flow_id", ""), "source": "api"} for f in flows]
+
+    if output_format == "json":
+        click.echo(json.dumps(rows, indent=2))
+    elif output_format == "plain":
+        for row in rows:
+            click.echo(row["flow_id"])
+    else:
+        if not rows and not quiet:
+            click.echo("No flows found on server.")
+            return
+        if HAS_RICH:
+            console = _create_console()
+            table = Table(title="Flows (from server)")
+            table.add_column("Flow ID", style="cyan", no_wrap=True)
+            table.add_column("Source", style="green")
+            for row in rows:
+                table.add_row(row["flow_id"][:50], row.get("source", ""))
+            console.print(table)
+        else:
+            click.echo(f"{'Flow ID':<50} {'Source'}")
+            click.echo("-" * 60)
+            for row in rows:
+                click.echo(f"{row['flow_id'][:50]:<50} {row.get('source', '')}")
 
 
 def _list_flows(directory: Optional[Path], output_format: str, quiet: bool):
